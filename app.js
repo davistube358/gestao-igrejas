@@ -16,10 +16,12 @@ try {
 var APP = window.APP_CONFIG || {};
 var URL_PADRAO = APP.apiUrl || 'https://script.google.com/macros/s/AKfycbxKyZ1pzhXbWCK-6vtO2av2ip08yxSY8QbyYWfrTyvpRzoU52Rqj1z9jZ1o3o4xKaJYPA/exec';
 var MODO_PWA = !!APP.apiUrl;      // app instalado (Cloudflare Pages): fala com o Apps Script por POST
-var LOGO_PADRAO = document.getElementById('h-img').getAttribute('src');
-var LOGO = LOGO_PADRAO;
-var VERSAO_APP = 26;
-var SERVIDOR_ESPERADO = 23;      // versão do Código.gs que acompanha este app
+var ICONE_2G = 'icons/icon-192.png';
+// padrão antes da 1ª configuração: no app instalado (PWA) é o 2Gather; na página antiga, o logo embutido
+var LOGO_PADRAO = (window.APP_CONFIG && window.APP_CONFIG.apiUrl) ? ICONE_2G : document.getElementById('h-img').getAttribute('src');
+var LOGO = LOGO_PADRAO;        // ícone usado na barra superior e nas telas internas
+var VERSAO_APP = 27;
+var SERVIDOR_ESPERADO = 24;      // versão do Código.gs que acompanha este app
 var EXIGE_HOSPEDADO = true;      // segurança: o app só funciona pelo endereço oficial (dados nunca trafegam pela URL)
 
 /* ───────── armazenamento ───────── */
@@ -216,6 +218,8 @@ function visitasDe(p) { var n = 0; ENC(p.gcId).forEach(function (e) { if (e.pres
 function souLiderDe(g) { return papel() === 'lider' && !!g && g.liderId === eu().id; }
 function podeEditarGC(g) { return ehGestor() || souLiderDe(g); }
 function fotoGC(id) { var f = fotos[id]; return f && f.data ? f.data : LOGO; }
+/** Ícone do GC (barra superior e listas): ícone próprio → foto do GC → ícone da igreja. */
+function iconeGC(id) { var ic = fotos[id + '#ic']; if (ic && ic.data) return ic.data; return fotoGC(id); }
 
 function statusDe(p, encs) {
   if (p.status === 'Em visita') return { s: 'visita', faltas: 0 };
@@ -616,13 +620,19 @@ function sincronizar(avisar) {
     .then(function () { sincronizando = false; setTimeout(pintarStatus, 1500); });
 }
 function buscarFotos() {
-  var falta = db.gcs.filter(function (g) { return g.temFoto && (!fotos[g.id] || fotos[g.id].v !== g.fotoV); });
-  var semFoto = db.gcs.filter(function (g) { return !g.temFoto && fotos[g.id]; });
-  semFoto.forEach(function (g) { delete fotos[g.id]; });
+  var falta = db.gcs.filter(function (g) {
+    return (g.temFoto && (!fotos[g.id] || fotos[g.id].v !== g.fotoV)) || (g.temIcone && (!fotos[g.id + '#ic'] || fotos[g.id + '#ic'].v !== g.iconeV));
+  });
+  var semFoto = db.gcs.filter(function (g) { return (!g.temFoto && fotos[g.id]) || (!g.temIcone && fotos[g.id + '#ic']); });
+  semFoto.forEach(function (g) { if (!g.temFoto) delete fotos[g.id]; if (!g.temIcone) delete fotos[g.id + '#ic']; });
   var p = Promise.resolve();
   falta.forEach(function (g) {
     p = p.then(function () {
-      return chamar('foto', { gc: g.id }).then(function (r) { fotos[g.id] = { v: r.fotoV, data: r.foto }; salvarFotos(); })
+      return chamar('foto', { gc: g.id }).then(function (r) {
+        if (r.foto) fotos[g.id] = { v: r.fotoV, data: r.foto }; else delete fotos[g.id];
+        if (r.icone) fotos[g.id + '#ic'] = { v: r.iconeV, data: r.icone }; else delete fotos[g.id + '#ic'];
+        salvarFotos();
+      })
         .catch(function () {});
     });
   });
@@ -788,8 +798,8 @@ function render() {
   guardarRascunhos();
   validarContexto();
   var g = cfg.modo === 'gc' ? gcPor(cfg.gcAtual) : null;
-  $('h-img').src = g ? fotoGC(g.id) : LOGO;
-  $('h-tit').textContent = cfg.modo === 'lv' ? igrNome() : cfg.aba === 'config' ? 'Configurações' : cfg.aba === 'cultos' ? 'Cultos e eventos' : cfg.aba === 'membros' ? 'Cadastro de pessoas' : cfg.aba === 'cursos' ? 'Cursos e reuniões' : cfg.modo === 'ger' ? '2Gather' : (g ? g.nome : 'Meu GC');
+  $('h-img').src = g ? iconeGC(g.id) : LOGO;
+  $('h-tit').textContent = cfg.modo === 'lv' ? igrNome() : cfg.aba === 'config' ? 'Configurações' : cfg.aba === 'cultos' ? 'Cultos e eventos' : cfg.aba === 'membros' ? 'Cadastro de pessoas' : cfg.aba === 'cursos' ? 'Cursos e reuniões' : cfg.modo === 'ger' ? igrNome() : (g ? g.nome : 'Meu GC');
   $('h-papel').textContent = PAPEL_NOME[papel()] || '';
   $('b-voltar-ger').classList.toggle('hide', !(cfg.modo === 'gc' && ehGestor()));
   var abas = abasAtuais();
@@ -810,7 +820,7 @@ function render() {
     $('main').innerHTML = '<div class="empty">' + (db.gcs.length ? 'Você ainda não está vinculado a um GC. Fale com a liderança.' : 'Carregando dados do GC...') + '</div>';
   } else $('main').innerHTML = f ? f() : '';
   if (cfg.aba === 'usuarios') carregarUsuarios();
-  if (cfg.aba !== 'config') { cfgDraft = null; logoNovo = null; }
+  if (cfg.aba !== 'config') { cfgDraft = null; logoNovo = null; iconeNovo = null; }
   if (cfg.aba !== 'painel' && cfg.aba !== 'bi') mapaGcs = null;
   if (cfg.aba === 'lv') setTimeout(lvGeoFila, 0);
   setTimeout(desenharMapa, 0);
@@ -975,7 +985,7 @@ function rGCs() {
 }
 
 /* formulário de GC (novo / editar) */
-var gcForm = null, fotoNova = null;
+var gcForm = null, fotoNova = null, iconeGCNovo = null;
 function rNovoGC() {
   if (!gcForm || gcForm.id) { gcForm = { cidade: 'Matão/SP', status: 'Ativo', frequencia: 'Semanal', supervisorId: papel() === 'supervisor' ? eu().id : '' }; fotoNova = null; }
   return '<div class="card"><h3>Cadastrar novo GC</h3>' + formGC(gcForm) + '<div style="height:16px"></div><button class="btn pr" data-a="salvarGC">Salvar GC</button></div>';
@@ -998,6 +1008,7 @@ function formGC(g, restrito) {
   var foto = fotoNova ? fotoNova : (g.id && fotos[g.id] ? fotos[g.id].data : '');
   return '<label>Foto do GC</label><div class="fotoprev" data-a="escolherFoto" id="g-fotoprev" style="' + (foto ? 'background-image:url(\'' + foto + '\');border:none;color:transparent' : '') + '">Toque para escolher uma foto</div>' +
     (foto ? '<div style="text-align:right;margin-top:6px"><span class="pill p-cinza" data-a="removerFoto" style="cursor:pointer">remover foto</span></div>' : '') +
+    blocoIconeGC(g) +
     '<label>Nome do GC *</label><input id="g-nome" value="' + esc(g.nome) + '" placeholder="Ex.: GC Jardim Paraíso">' +
     (restrito ? '<div class="g2"><div><label>Status</label><input value="' + esc(g.status || 'Ativo') + '" disabled></div>'
               : '<div class="g2"><div><label>Status</label><select id="g-status">' + opts([['Ativo', 'Ativo'], ['Inativo', 'Inativo'], ['Multiplicado', 'Multiplicado']], g.status || 'Ativo') + '</select></div>') +
@@ -1070,13 +1081,17 @@ function salvarGC(fecharModal) {
   else for (var k in g) if (k !== 'temFoto' && k !== 'foto' && k !== 'fotoV' && k !== '_restrito') envio[k] = g[k];
   if (fotoNova === '__remover__') envio.foto = '__remover__';
   else if (fotoNova) envio.foto = fotoNova;
+  if (iconeGCNovo) envio.icone = iconeGCNovo;
+  delete envio.temIcone; delete envio.iconeV;
   carregando(true, 'Salvando GC...');
   chamar('salvarGC', { gc: envio }, function (i, n) { $('carregando-txt').textContent = 'Enviando foto ' + i + '/' + n + '...'; })
     .then(function (r) {
       var novo = !g.id;
       if (fotoNova && fotoNova !== '__remover__') fotos[r.gc.id] = { v: r.gc.fotoV, data: fotoNova };
       if (fotoNova === '__remover__') delete fotos[r.gc.id];
-      salvarFotos();
+      if (iconeGCNovo && iconeGCNovo !== '__remover__') fotos[r.gc.id + '#ic'] = { v: r.gc.iconeV, data: iconeGCNovo };
+      if (iconeGCNovo === '__remover__') delete fotos[r.gc.id + '#ic'];
+      salvarFotos(); iconeGCNovo = null;
       db.gcs = db.gcs.filter(function (x) { return x.id !== r.gc.id; }).concat([r.gc]); salvarDB();
       gcForm = null; fotoNova = null;
       if (fecharModal) fechar();
@@ -1090,7 +1105,7 @@ function salvarGC(fecharModal) {
 function editarGC(id) {
   var g = gcPor(id); if (!g || !podeEditarGC(g)) return;
   var restrito = !ehGestor();
-  gcForm = {}; for (var k in g) gcForm[k] = g[k]; gcForm._restrito = restrito; fotoNova = null;
+  gcForm = {}; for (var k in g) gcForm[k] = g[k]; gcForm._restrito = restrito; fotoNova = null; iconeGCNovo = null;
   abrirModal('<h2>' + (restrito ? 'Dados do meu GC' : 'Editar GC') + '</h2>' + formGC(gcForm, restrito) +
     '<div style="height:16px"></div><button class="btn pr" data-a="salvarGCmodal">Salvar alterações</button><div class="gap"></div>' +
     '<button class="btn gh" data-a="fechar">Cancelar</button><div class="gap"></div>' +
@@ -1102,10 +1117,48 @@ function excluirGC(id) {
   if (!confirm('Excluir o GC "' + g.nome + '"? Prefira marcar como Inativo se quiser manter o histórico no Painel.')) return;
   gcForm = {}; for (var k in g) gcForm[k] = g[k];
   carregando(true, 'Excluindo...');
-  var envio = {}; for (var k2 in g) if (k2 !== 'temFoto') envio[k2] = g[k2]; envio.deleted = true;
+  var envio = {}; for (var k2 in g) if (k2 !== 'temFoto' && k2 !== 'temIcone') envio[k2] = g[k2]; envio.deleted = true;
   chamar('salvarGC', { gc: envio }).then(function (r) {
     db.gcs = db.gcs.filter(function (x) { return x.id !== id; }).concat([r.gc]); salvarDB(); fechar(); toast('GC excluído'); render();
   }).catch(function (e) { toast(e.message, 4500); }).then(function () { carregando(false); });
+}
+
+/* ícone: recorta o centro em quadrado e reduz (PNG; JPEG se ficar grande) */
+function processarIcone(file, lado, pronto) {
+  if (!file) return;
+  var fr = new FileReader();
+  fr.onload = function () {
+    var img = new Image();
+    img.onload = function () {
+      var m = Math.min(img.width, img.height), sx = (img.width - m) / 2, sy = (img.height - m) / 2, url = '', l = lado;
+      for (var t = 0; t < 5; t++) {
+        var cv = document.createElement('canvas'); cv.width = l; cv.height = l;
+        cv.getContext('2d').drawImage(img, sx, sy, m, m, 0, 0, l, l);
+        url = cv.toDataURL('image/png');
+        if (url.length > 45000) url = cv.toDataURL('image/jpeg', 0.85);
+        if (url.length < 45000) break;
+        l = Math.round(l * 0.8);
+      }
+      if (url.length >= 45000) return toast('Não foi possível reduzir esta imagem. Tente outra.');
+      pronto(url);
+    };
+    img.onerror = function () { toast('Arquivo de imagem inválido.'); };
+    img.src = fr.result;
+  };
+  fr.readAsDataURL(file);
+}
+function blocoIconeGC(g) {
+  var ic = iconeGCNovo === '__remover__' ? '' : (iconeGCNovo || (g.id && fotos[g.id + '#ic'] ? fotos[g.id + '#ic'].data : ''));
+  return '<label>Ícone do GC <span style="font-weight:500;color:#aaa">(opcional)</span></label>' +
+    '<div style="display:flex;gap:12px;align-items:center"><div class="fotoprev" data-a="escolherIconeGC" id="g-iconeprev" style="height:72px;width:72px;flex:0 0 72px;border-radius:18px;background-size:cover;font-size:10px;padding:4px;' +
+    (ic ? 'background-image:url(\'' + ic + '\');border:none;color:transparent' : '') + '">Escolher</div>' +
+    '<div style="font-size:11px;color:#999;line-height:1.45">Aparece na barra superior quando alguém está neste GC. Sem ícone, usa a foto do GC ou o ícone da igreja.' +
+    '<div id="g-iconerem" class="' + (ic ? '' : 'hide') + '" style="margin-top:6px"><span class="pill p-cinza" data-a="removerIconeGC" style="cursor:pointer">remover ícone</span></div></div></div>';
+}
+function pintarIconeGC(url) {
+  var p = $('g-iconeprev'); if (!p) return;
+  p.style.backgroundImage = url ? "url('" + url + "')" : ''; p.style.border = url ? 'none' : ''; p.style.color = url ? 'transparent' : '';
+  var r = $('g-iconerem'); if (r) r.classList.toggle('hide', !url);
 }
 
 /* foto: reduz no aparelho antes de enviar */
@@ -1636,7 +1689,7 @@ function rMaisGC() {
     (podeEditarGC(g) ? '<div class="gap"></div><button class="btn gh sm" data-a="editarGC" data-v="' + esc(id) + '">Editar dados do GC</button>' : '') + '</div></div>';
   if (!ehGestor() && GCS().length > 1) {
     h += '<div class="sec">Meus GCs</div><div class="card">' + GCS().map(function (x) {
-      return '<div class="row cl" data-a="trocarGC" data-v="' + esc(x.id) + '"><img class="av" src="' + fotoGC(x.id) + '"><div class="info"><div class="nm">' + esc(x.nome) + '</div></div>' +
+      return '<div class="row cl" data-a="trocarGC" data-v="' + esc(x.id) + '"><img class="av" src="' + iconeGC(x.id) + '"><div class="info"><div class="nm">' + esc(x.nome) + '</div></div>' +
         (x.id === id ? '<span class="pill p-dour">atual</span>' : '<span class="pill p-cinza">abrir</span>') + '</div>'; }).join('') + '</div>';
   }
   var es = encOrd(id).slice().reverse().slice(0, 15);
@@ -2335,30 +2388,35 @@ var PERM_PADRAO_C = {
 /* ── logo e dados da igreja (cache local) ── */
 var K_IGR = 'gcbv5_igr', igr = lerJSON(K_IGR, { config: {}, logo: '', logoV: '' });
 function salvarIgr() { lsSet(K_IGR, JSON.stringify(igr)); }
-function igrNome() { return (igr.config && igr.config.nome) || 'Viver Church'; }
+function igrNome() { return (igr.config && igr.config.nome) || '2Gather'; }
 (function () {
   var imgs = document.querySelectorAll('img.lg-g');
   for (var i = 0; i < imgs.length; i++) imgs[i].setAttribute('data-orig', imgs[i].getAttribute('src'));
 })();
 function aplicarLogo() {
-  LOGO = igr.logo || LOGO_PADRAO;
+  LOGO = igr.icone || igr.logo || LOGO_PADRAO;
   var imgs = document.querySelectorAll('img.lg-g');
+  var loginImg = igr.logo || (MODO_PWA ? (igr.icone || ICONE_2G) : '');
   for (var i = 0; i < imgs.length; i++) {
-    imgs[i].src = igr.logo || imgs[i].getAttribute('data-orig');
-    imgs[i].classList.toggle('lg-custom', !!igr.logo);
+    imgs[i].src = loginImg || imgs[i].getAttribute('data-orig');
+    imgs[i].classList.toggle('lg-custom', !!loginImg);
   }
-  var sub = document.querySelector('.sub-lg');
-  if (sub) sub.textContent = igr.config && igr.config.nome ? igr.config.nome.toUpperCase() : '2GATHER';
-  if (!MODO_PWA) { var links = document.querySelectorAll('link[rel="icon"],link[rel="apple-touch-icon"]'); for (var j = 0; j < links.length; j++) links[j].href = LOGO; }
-  document.title = igrNome() + ' · 2Gather';
+  var temNome = !!(igr.config && igr.config.nome);
+  var subs = document.querySelectorAll('.sub-lg');
+  for (var k = 0; k < subs.length; k++) subs[k].textContent = temNome ? igr.config.nome.toUpperCase() : '2GATHER';
+  if (!$('h-img').getAttribute('src') || cfg.modo !== 'gc') $('h-img').src = LOGO;
+  // ícone da aba do navegador: o da igreja (o ícone do app instalado continua o do 2Gather)
+  var links = document.querySelectorAll('link[rel="icon"]' + (MODO_PWA ? '' : ',link[rel="apple-touch-icon"]'));
+  for (var j = 0; j < links.length; j++) links[j].href = igr.icone || igr.logo ? LOGO : (MODO_PWA ? 'icons/favicon-32.png' : LOGO);
+  document.title = temNome ? igrNome() : '2Gather';
 }
 function atualizarConfig(c) {
   if (!c) return Promise.resolve(false);
   igr.config = c; salvarIgr();
-  if ((c.logoV || '') === (igr.logoV || '')) { aplicarLogo(); return Promise.resolve(false); }
-  if (!c.logoV) { igr.logo = ''; igr.logoV = ''; salvarIgr(); aplicarLogo(); return Promise.resolve(true); }
+  if ((c.logoV || '') === (igr.logoV || '') && (c.iconeV || '') === (igr.iconeV || '')) { aplicarLogo(); return Promise.resolve(false); }
+  if (!c.logoV && !c.iconeV) { igr.logo = ''; igr.logoV = ''; igr.icone = ''; igr.iconeV = ''; salvarIgr(); aplicarLogo(); return Promise.resolve(true); }
   return chamarBruto({ acao: 'logo' }).then(function (r) {
-    if (r && r.ok) { igr.logo = r.logo || ''; igr.logoV = r.logoV || ''; salvarIgr(); aplicarLogo(); return true; }
+    if (r && r.ok) { igr.logo = r.logo || ''; igr.logoV = r.logoV || ''; igr.icone = r.icone || ''; igr.iconeV = r.iconeV || ''; salvarIgr(); aplicarLogo(); return true; }
     return false;
   }).catch(function () { return false; });
 }
@@ -2602,7 +2660,7 @@ function evSemana() {
 }
 
 /* ── configurações da igreja ── */
-var cfgDraft = null, logoNovo = null;
+var cfgDraft = null, logoNovo = null, iconeNovo = null;
 function mascaraCnpj(t) {
   var d = soDigitos(t).slice(0, 14), r = d;
   if (d.length > 12) r = d.slice(0, 2) + '.' + d.slice(2, 5) + '.' + d.slice(5, 8) + '/' + d.slice(8, 12) + '-' + d.slice(12);
@@ -2640,13 +2698,19 @@ function rConfig() {
       if (cfg.aba === 'config') render();
     }).catch(function () { if (cfgDraft) cfgDraft.politica = ''; });
   }
-  var c = cfgDraft, logo = logoNovo === '__remover__' ? '' : (logoNovo || igr.logo);
+  var c = cfgDraft, logo = logoNovo === '__remover__' ? '' : (logoNovo || igr.logo), icone = iconeNovo === '__remover__' ? '' : (iconeNovo || igr.icone);
   return '<button class="btn gh sm" data-a="aba" data-v="conta" style="margin-bottom:12px">‹ Voltar</button>' +
     '<div class="card"><h3>Dados da igreja</h3>' +
-    '<label>Logo da igreja</label><div class="fotoprev" data-a="escolherLogo" id="cf-logoprev" style="height:130px;background-size:contain;background-color:#111;' +
-      (logo ? 'background-image:url(\'' + logo + '\');border:none;color:transparent' : '') + '">Toque para escolher o logo</div>' +
-    (logo ? '<div style="text-align:right;margin-top:6px"><span class="pill p-cinza" data-a="removerLogo" style="cursor:pointer">usar logo padrão</span></div>' : '') +
-    '<div style="font-size:11px;color:#999;margin-top:4px">O logo aparece no login, no topo do app e nos GCs sem foto, em todos os aparelhos.</div>' +
+    '<div class="g2" style="align-items:start">' +
+    '<div><label>Logo (tela de login)</label><div class="fotoprev" data-a="escolherLogo" id="cf-logoprev" style="height:120px;background-size:contain;background-color:#111;' +
+      (logo ? 'background-image:url(\'' + logo + '\');border:none;color:transparent' : '') + '">Toque para escolher</div>' +
+      (logo ? '<div style="text-align:right;margin-top:6px"><span class="pill p-cinza" data-a="removerLogo" style="cursor:pointer">remover</span></div>' : '') +
+      '<div style="font-size:10.5px;color:#999;margin-top:4px;line-height:1.4">PNG, de preferência com fundo transparente. Formato livre (horizontal ou quadrado).</div></div>' +
+    '<div><label>Ícone (barra e telas internas)</label><div class="fotoprev" data-a="escolherIcone" id="cf-iconeprev" style="height:120px;width:120px;margin:0 auto;border-radius:24px;background-size:cover;background-color:#111;' +
+      (icone ? 'background-image:url(\'' + icone + '\');border:none;color:transparent' : '') + '">Toque para escolher</div>' +
+      (icone ? '<div style="text-align:right;margin-top:6px"><span class="pill p-cinza" data-a="removerIcone" style="cursor:pointer">remover</span></div>' : '') +
+      '<div style="font-size:10.5px;color:#999;margin-top:4px;line-height:1.4">Imagem quadrada (é recortada no centro). Aparece na barra superior, nos GCs sem foto e na aba do navegador.</div></div></div>' +
+    '<div style="font-size:11px;color:#888;margin-top:8px;line-height:1.5">Depois de salvar, o nome e as imagens da igreja passam a aparecer para todos. Sem ícone, o app usa o logo; sem os dois, usa o 2Gather.</div>' +
     '<label>Nome da igreja</label><input id="cf-nome" value="' + esc(c.nome) + '" placeholder="Ex.: Viver Church Matão">' +
     '<div class="g2"><div><label>CNPJ</label><input id="cf-cnpj" inputmode="numeric" value="' + esc(c.cnpj) + '" placeholder="00.000.000/0000-00"></div>' +
     '<div><label>Data de fundação</label><input id="cf-fund" type="date" value="' + esc(c.fundacao) + '"></div></div>' +
@@ -2697,8 +2761,10 @@ function cfSalvar() {
   var c = lerCfgForm();
   c.cultos = c.cultos.filter(function (x) { return x.horario || x.nome; });
   if (logoNovo) c.logo = logoNovo;
+  if (iconeNovo) c.icone = iconeNovo;
   delete c.politicaModelo; delete c._polCarregando;
-  var srcFav = logoNovo === '__remover__' ? '' : (logoNovo || igr.logo);
+  var icF = iconeNovo === '__remover__' ? '' : (iconeNovo || igr.icone), lgF = logoNovo === '__remover__' ? '' : (logoNovo || igr.logo);
+  var srcFav = (iconeNovo || logoNovo) ? (icF || lgF) : '';      // ícone da aba só é regerado quando alguma imagem muda
   if (srcFav && !c._favOk) {
     return gerarFavicon(srcFav).then(function (f) { c.favicon = f; c._favOk = 1; enviarCfg(c); }).catch(function () { c._favOk = 1; enviarCfg(c); });
   }
@@ -2724,7 +2790,8 @@ function enviarCfg(c) {
   chamar('salvarConfig', { config: c }, function (i, n) { $('carregando-txt').textContent = 'Enviando logo ' + i + '/' + n + '...'; }).then(function (r) {
     igr.config = r.config;
     if (logoNovo === '__remover__') { igr.logo = ''; igr.logoV = ''; } else if (logoNovo) { igr.logo = logoNovo; igr.logoV = r.config.logoV; }
-    salvarIgr(); aplicarLogo(); logoNovo = null; cfgDraft = null;
+    if (iconeNovo === '__remover__') { igr.icone = ''; igr.iconeV = ''; } else if (iconeNovo) { igr.icone = iconeNovo; igr.iconeV = r.config.iconeV; }
+    salvarIgr(); aplicarLogo(); logoNovo = null; iconeNovo = null; cfgDraft = null;
     toast(r.config.politicaV !== verAntes ? 'Configurações salvas ✓ — nova versão da política: todos aceitarão no próximo acesso' : 'Configurações salvas ✓', 4500); render();
     if (r.config.politicaV !== verAntes) { cfg.usuario.consent = false; salvarCfg(); setTimeout(verificarConsentimento, 600); }
   }).catch(function (e) { toast(e.message, 4500); }).then(function () { carregando(false); });
@@ -4116,6 +4183,10 @@ var ACOES = {
     evExcluir: evExcluir, evValores: evValores, evSalvarValores: evSalvarValores, evRecados: evRecados, evSalvarRecados: evSalvarRecados,
     evFicha: evFicha, evSemana: evSemana, escolherLogo: function () { $('logo-input').click(); },
     removerLogo: function () { cfgDraft = lerCfgForm(); logoNovo = '__remover__'; render(); },
+    escolherIcone: function () { $('icone-input').click(); },
+    removerIcone: function () { cfgDraft = lerCfgForm(); iconeNovo = '__remover__'; render(); },
+    escolherIconeGC: function () { $('iconegc-input').click(); },
+    removerIconeGC: function () { iconeGCNovo = '__remover__'; pintarIconeGC(''); },
     cfAddCulto: function () { cfgDraft = lerCfgForm(); cfgDraft.cultos.push({ dia: '0', horario: '19:00', nome: '' }); render(); },
     cfRemBairro: function (v) { cfgDraft = lerCfgForm(); cfgDraft.bairros.splice(+v, 1); render(); },
     cfAddBairros: cfAddBairros, cfImportBairros: cfImportBairros,
@@ -4174,6 +4245,8 @@ document.addEventListener('change', function (ev) {
   if (id === 'v-real') { var ew = $('lv-estavawrap'); if (ew) ew.classList.toggle('hide', ev.target.value !== 'Sim'); }
   if (id === 'f-tipo' && !editP && $('f-status')) $('f-status').value = ev.target.value === 'Visitante' ? 'Em visita' : 'Ativo';
   if (id === 'foto-input') { processarFoto(ev.target.files[0]); ev.target.value = ''; }
+  if (id === 'icone-input') { processarIcone(ev.target.files[0], 256, function (u) { cfgDraft = lerCfgForm(); iconeNovo = u; render(); }); ev.target.value = ''; }
+  if (id === 'iconegc-input') { processarIcone(ev.target.files[0], 192, function (u) { iconeGCNovo = u; pintarIconeGC(u); }); ev.target.value = ''; }
   if (lvModoCad === 'membro' && ['v-sexo', 'v-nasc', 'v-bairro', 'v-cidade'].indexOf(id) >= 0) lvAtualizarGC();
   if (id === 'v-gc') lvGCManual = true;
   if (id === 'f-canal' || id === 'v-canal') { var cwr = $(id.charAt(0) + '-canalwrap'); if (cwr) cwr.classList.toggle('hide', ev.target.value !== 'Outros'); }
