@@ -4,6 +4,6 @@
    origens: endereços autorizados a abrir o app. */
 window.APP_CONFIG = {
   apiUrl: 'https://script.google.com/macros/s/AKfycbxKyZ1pzhXbWCK-6vtO2av2ip08yxSY8QbyYWfrTyvpRzoU52Rqj1z9jZ1o3o4xKaJYPA/exec',
-  appUrl: 'https://2gather.pages.dev',
-  origens: ['https://2gather.pages.dev']
+  appUrl: 'https://2gather-e1f.pages.dev',
+  origens: ['https://2gather-e1f.pages.dev']
 };
