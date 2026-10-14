@@ -20,8 +20,8 @@ var ICONE_2G = 'icons/icon-192.png';
 // padrão antes da 1ª configuração: no app instalado (PWA) é o 2Gather; na página antiga, o logo embutido
 var LOGO_PADRAO = (window.APP_CONFIG && window.APP_CONFIG.apiUrl) ? ICONE_2G : document.getElementById('h-img').getAttribute('src');
 var LOGO = LOGO_PADRAO;        // ícone usado na barra superior e nas telas internas
-var VERSAO_APP = 27;
-var SERVIDOR_ESPERADO = 24;      // versão do Código.gs que acompanha este app
+var VERSAO_APP = 29;
+var SERVIDOR_ESPERADO = 26;      // versão do Código.gs que acompanha este app
 var EXIGE_HOSPEDADO = true;      // segurança: o app só funciona pelo endereço oficial (dados nunca trafegam pela URL)
 
 /* ───────── armazenamento ───────── */
@@ -189,6 +189,7 @@ function chamar(acao, dados, progresso) {
   return chamarBruto(req, progresso).then(function (r) {
     if (!r) throw new Error('Resposta vazia do servidor.');
     if (r.sessao === false) { sessaoExpirada(); throw new Error(r.erro); }
+    if (r.trocarSenha && cfg.usuario) { cfg.usuario.trocarSenha = true; verificarSenhaTemp(); }
     if (!r.ok) throw new Error(r.erro || 'Falha no servidor.');
     return r;
   });
@@ -587,12 +588,19 @@ function sincronizar(avisar) {
   if (sincronizando) return Promise.resolve();
   sincronizando = true; pintarStatus('Sincronizando...');
   var env = pendentesLocais();
+  if (!env.pessoas.length && !env.encontros.length && cfg.hashSync && db.pessoas) env.hash = cfg.hashSync;
   var mapP = {}, mapE = {};
   env.pessoas.forEach(function (p) { mapP[p.id] = p.updatedAt; });
   env.encontros.forEach(function (e) { mapE[chaveE(e)] = e.updatedAt; });
   return chamar('sync', { dados: env }, function (i, n) { pintarStatus('Enviando ' + i + '/' + n + '...'); })
     .then(function (r) {
+      if (r.usuario && cfg.usuario && r.usuario.id === cfg.usuario.id) { cfg.usuario = r.usuario; setTimeout(verificarSenhaTemp, 200); }
+      if (r.semMudanca) {                                    // nada mudou no servidor: não reprocessa nem redesenha
+        cfg.ultima = agora(); salvarCfg(); if (avisar) toast('Sincronizado ✓');
+        return;
+      }
       var d = r.dados;
+      cfg.hashSync = r.hash || '';
       // preserva o que foi alterado durante o envio
       var locaisP = db.pessoas.filter(function (p) { return p._pend && mapP[p.id] !== p.updatedAt; });
       var locaisE = db.encontros.filter(function (e) { return e._pend && mapE[chaveE(e)] !== e.updatedAt; });
@@ -602,7 +610,7 @@ function sincronizar(avisar) {
       locaisE.forEach(function (l) { ne = ne.filter(function (e) { return chaveE(e) !== chaveE(l); }); ne.push(l); });
       db.pessoas = np; db.encontros = ne; db.gcs = d.gcs || [];
       db.equipe = d.equipe || []; db.pendentes = d.pendentes || 0; db.alertas = d.alertas || []; db.eventos = d.eventos || [];
-        db.reunioes = d.reunioes || []; db.aulas = d.aulas || []; db.jovens = d.jovens || null; db.waApi = !!d.waApi;
+        db.reunioes = d.reunioes || []; db.aulas = d.aulas || []; db.jovens = d.jovens || null; db.waApi = !!d.waApi; db.equipeGC = d.equipeGC || [];
       atualizarConfig(d.config).then(function (mudou) { if (mudou) render(); });
       if (r.usuario && cfg.usuario && r.usuario.id === cfg.usuario.id) { cfg.usuario = r.usuario; setTimeout(verificarConsentimento, 300); }
       cfg.ultima = agora(); salvarCfg(); salvarDB();
@@ -625,18 +633,14 @@ function buscarFotos() {
   });
   var semFoto = db.gcs.filter(function (g) { return (!g.temFoto && fotos[g.id]) || (!g.temIcone && fotos[g.id + '#ic']); });
   semFoto.forEach(function (g) { if (!g.temFoto) delete fotos[g.id]; if (!g.temIcone) delete fotos[g.id + '#ic']; });
-  var p = Promise.resolve();
-  falta.forEach(function (g) {
-    p = p.then(function () {
-      return chamar('foto', { gc: g.id }).then(function (r) {
-        if (r.foto) fotos[g.id] = { v: r.fotoV, data: r.foto }; else delete fotos[g.id];
-        if (r.icone) fotos[g.id + '#ic'] = { v: r.iconeV, data: r.icone }; else delete fotos[g.id + '#ic'];
-        salvarFotos();
-      })
-        .catch(function () {});
+  if (!falta.length) { if (semFoto.length) { salvarFotos(); render(); } return Promise.resolve(); }
+  return chamar('fotos', { gcs: falta.map(function (g) { return g.id; }) }).then(function (r) {   // todas numa chamada só
+    (r.itens || []).forEach(function (x) {
+      if (x.foto) fotos[x.gc] = { v: x.fotoV, data: x.foto }; else delete fotos[x.gc];
+      if (x.icone) fotos[x.gc + '#ic'] = { v: x.iconeV, data: x.icone }; else delete fotos[x.gc + '#ic'];
     });
-  });
-  return p.then(function () { if (falta.length || semFoto.length) { salvarFotos(); render(); } });
+    salvarFotos(); render();
+  }).catch(function () {});
 }
 function sincAuto() { clearTimeout(timerSync); timerSync = setTimeout(function () { sincronizar(false); }, 2500); }
 function pintarStatus(txt) {
@@ -663,7 +667,8 @@ function entrar() {
     .then(function (r) {
       var trocou = cfg.usuario && cfg.usuario.id !== r.usuario.id;
       if (trocou) { db = { pessoas: [], encontros: [], gcs: [], equipe: [], pendentes: 0 }; fotos = {}; salvarDB(); salvarFotos(); }
-      cfg.token = r.token; cfg.usuario = r.usuario; cfg.ultima = '';
+      cfg.token = r.token; cfg.usuario = r.usuario; cfg.ultima = ''; cfg.hashSync = '';
+      setTimeout(verificarSenhaTemp, 250);
       setTimeout(verificarConsentimento, 300);
       cfg.modo = ehGestor() ? 'ger' : 'gc'; cfg.gcAtual = ''; cfg.aba = '';
       salvarCfg(); $('l-senha').value = '';
@@ -689,6 +694,7 @@ function cadastrar() {
   if (!/^[a-z0-9._-]{3,30}$/.test(u)) return erroEm('c-erro', 'Usuário: de 3 a 30 caracteres, sem espaços ou acentos (letras, números, ponto, hífen).');
   if ($('c-senha').value.length < 6) return erroEm('c-erro', 'A senha precisa ter pelo menos 6 caracteres.');
   if ($('c-senha').value !== $('c-senha2').value) return erroEm('c-erro', 'As senhas não conferem.');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(($('c-email').value || '').trim())) return erroEm('c-erro', 'Informe um e-mail válido — ele é usado para recuperar a senha.');
   if (!$('c-aceite').checked) return erroEm('c-erro', 'Para se cadastrar, leia e aceite a Política de Privacidade.');
   erroEm('c-erro', ''); $('b-cadastrar').disabled = true; carregando(true, 'Enviando cadastro...');
   chamar('cadastro', { nome: v('c-nome'), usuario: u, fone: v('c-fone'), email: v('c-email'), h: hashSenha(u, $('c-senha').value),
@@ -742,7 +748,7 @@ var ABAS_GER = [
 var ABAS_GC = [
   { id: 'painel', nome: 'Painel', ic: '<path d="M3 13h8V3H3zM13 21h8V11h-8zM3 21h8v-6H3zM13 9h8V3h-8z"/>' },
   { id: 'pessoas', nome: 'Pessoas', ic: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>' },
-  { id: 'chamada', nome: 'Chamada', ic: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>' },
+  { id: 'chamada', nome: 'Encontros', ic: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>' },
   { id: 'lar', nome: 'Lar de Vida', ic: IC_LAR },
   { id: 'alertas', nome: 'Alertas', ic: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/>' },
   { id: 'mais', nome: 'Mais', ic: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>' }
@@ -886,8 +892,46 @@ function barraPeriodo() {
     '<div style="font-size:11.5px;color:#777;margin-top:6px">Período: <b style="color:#222">' + esc(P.rot) + '</b> · comparando com ' + esc(P.antRot) + '</div></div>';
 }
 
+/* ── módulos (atalhos) ── */
+var IC_MIN = '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>';
+var IC_FIN = '<path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>';
+var IC_MEM = '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>';
+var IC_ENC = '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>';
+var IC_GC = '<path d="M3 10l9-7 9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M9 21V13h6v8"/>';
+var IC_CULTO = '<path d="M12 2v5M9.5 4.5h5"/><path d="M4 21V11l8-4 8 4v10"/><path d="M10 21v-5h4v5"/>';
+function modulosDisponiveis() {
+  var m = [], ger = cfg.modo === 'ger';
+  if (ger) m.push({ id: 'gcs', nome: 'GCs', ic: IC_GC, cor: '#2f6fd6' });
+  else if (cfg.modo === 'gc') m.push({ id: 'chamada', nome: 'Encontros', ic: IC_ENC, cor: '#2f6fd6' });
+  if (ger && pode('lvDirecionar')) m.push({ id: 'lv', nome: 'Lar de Vida', ic: IC_LAR, cor: '#1f9d63' });
+  else if (cfg.modo === 'gc') m.push({ id: 'lar', nome: 'Lar de Vida', ic: IC_LAR, cor: '#1f9d63' });
+  if (ger && temCultos()) m.push({ id: 'cultos', nome: 'Cultos', ic: IC_CULTO, cor: '#7a4fd6' });
+  if (pode('consulta') && cfg.modo !== 'gc') m.push({ id: 'membros', nome: 'Membros', ic: IC_MEM, cor: '#d6572f' });
+  else if (cfg.modo === 'gc') m.push({ id: 'pessoas', nome: 'Pessoas', ic: IC_MEM, cor: '#d6572f' });
+  if (ger && pode('relFin')) m.push({ id: 'financeiro', nome: 'Financeiro', ic: IC_FIN, cor: '#c99a1a' });
+  if (ger && temCursos()) m.push({ id: 'cursos', nome: 'Cursos', ic: IC_CURSO, cor: '#0f8a8a' });
+  m.push({ id: 'ministerios', nome: 'Ministérios', ic: IC_MIN, cor: '#9aa0a6', breve: true });
+  return m;
+}
+function blocoModulos() {
+  return '<div class="mods">' + modulosDisponiveis().map(function (x) {
+    return '<button class="mod' + (x.breve ? ' breve' : '') + '" data-a="modulo" data-v="' + x.id + '">' +
+      '<span class="mi" style="background:' + x.cor + '1a;color:' + x.cor + '"><svg viewBox="0 0 24 24">' + x.ic + '</svg></span>' +
+      '<span class="mn">' + x.nome + '</span>' + (x.breve ? '<span class="mb">em breve</span>' : '') + '</button>';
+  }).join('') + '</div>';
+}
+function abrirModulo(id) {
+  if (id === 'ministerios') {
+    return abrirModal('<h2>Ministérios</h2><div class="aviso" style="margin-top:8px"><b>Em construção.</b> Este módulo vai reunir os ministérios da igreja ' +
+      '(louvor, infantil, mídia, recepção, intercessão…), com equipes, escalas e avisos — no mesmo modelo da escala dos encontros do GC.</div>' +
+      '<div class="gap"></div><button class="btn pr" data-a="fechar">Entendi</button>');
+  }
+  if (id === 'financeiro') { filtroCulto = 'fin'; return irAba('cultos'); }
+  irAba(id);
+}
+
 function rBI() {
-  var gcs = GCSativos(), h = barraPeriodo() + blocoAlertas(gcs.map(function (g) { return g.id; }), true) + blocoCursosHoje();
+  var gcs = GCSativos(), h = blocoModulos() + barraPeriodo() + blocoAlertas(gcs.map(function (g) { return g.id; }), true) + blocoCursosHoje();
   if (ehAdmin()) h += avisoServidor();
   if (ehAdmin() && db.pendentes) h += '<div class="aviso r" data-a="aba" data-v="usuarios" style="cursor:pointer"><b>' + db.pendentes +
     ' cadastro(s) aguardando sua validação.</b> Toque para revisar.</div>';
@@ -1406,6 +1450,7 @@ function gcA() { return cfg.gcAtual; }
 function rPainel() {
   var id = gcA(), m = metricas(id), g = gcPor(id), h = '';
   h += blocoAlertas([id], false);
+  h += blocoMinhasEscalas();
   h += blocoCursosHoje();
   h += blocoEncontroHoje(g);
   h += blocoAgendados(id, false);
@@ -1552,16 +1597,39 @@ function promoverVisitantes(gcId) {
   if (promovidos.length) toast(promovidos.join(', ') + ' completou ' + VISITAS_PARA_ATIVO + ' visitas e agora está Ativo ✓', 4500);
   return promovidos;
 }
-function dataChamada() { return cfg.dataChamada && cfg.dataChamadaGC === gcA() ? cfg.dataChamada : ultimoDiaEncontro(gcPor(gcA())); }
+function dataChamada() {
+  if (cfg.dataChamada && cfg.dataChamadaGC === gcA()) return cfg.dataChamada;
+  var hj = hoje(), l = encOrd(gcA());
+  if (achaEnc(gcA(), hj)) return hj;
+  var prox = l.filter(function (e) { return e.data > hj; })[0], ult = l.filter(function (e) { return e.data < hj; }).slice(-1)[0];
+  return prox ? prox.data : ult ? ult.data : hj;
+}
 function rChamada() {
   var id = gcA(), d = dataChamada(), e = achaEnc(id, d);
+  var topo = blocoMinhasEscalas() + listaEncontros(id, d);
+  if (!e) {
+    return topo + '<div class="card"><h3>' + (d === hoje() ? 'Nenhum encontro criado para hoje' : 'Nenhum encontro em ' + brCompleto(d)) + '</h3>' +
+      '<div style="font-size:13px;color:#666;line-height:1.55">A chamada fica vinculada ao encontro criado pelo líder do GC e abre só no dia e no horário do encontro.</div>' +
+      (pode('gcEvento') ? '<div class="gap"></div><button class="btn pr" data-a="encEditar" data-v="' + esc(d) + '">Criar encontro em ' + br(d) + '</button>' : '') +
+      '<input type="hidden" id="ch-data" value="' + d + '"></div>';
+  }
+  topo += cartaoEncontro(e);
+  if (!podeChamada(e)) {
+    return topo + '<div class="card" style="border-left:5px solid var(--vermelho)"><h3>Chamada fechada</h3><div style="font-size:13px;color:#666;line-height:1.55">' +
+      (e.data > hoje() ? 'Este encontro ainda não aconteceu. A chamada abre ' + textoJanelaGC(e) + '.'
+        : e.data === hoje() ? 'A chamada abre ' + textoJanelaGC(e) + '.' : 'O horário da chamada deste encontro já terminou. Só o líder pode lançar presenças de encontros passados.') +
+      '</div><input type="hidden" id="ch-data" value="' + d + '"></div>';
+  }
+  return topo + corpoChamada(id, d, e);
+}
+function corpoChamada(id, d, e) {
   var dr = chDraft && chDraft.gc === id && chDraft.data === d ? chDraft : null;
   var tema = dr ? dr.tema : (e ? e.tema : ''), preg = dr ? dr.preg : (e ? e.anfitriao : '');
   var diz = dr ? dr.diz : campoMoeda(e && e.dizimo), ofe = dr ? dr.ofe : campoMoeda(e && e.oferta);
   var rec = dr ? dr.rec : (e ? e.recados || '' : '');
   var roE = pode('gcEvento') ? '' : ' disabled';
   var l = listaChamada(id, d, e);
-  var h = '<div class="card"><label style="margin-top:0">Data do encontro</label><input type="date" id="ch-data" value="' + d + '">' +
+  var h = '<div class="sec">Chamada de ' + br(d) + '</div><div class="card"><input type="hidden" id="ch-data" value="' + d + '">' +
     '<label>Tema / estudo</label><input id="ch-tema" value="' + esc(tema) + '" placeholder="Ex.: Mateus 5"' + roE + '>' +
     '<label>Pregador</label><input id="ch-preg" value="' + esc(preg) + '" placeholder="Quem ministrou a palavra"' + roE + '>' +
     (pode('gcEvento')
@@ -1573,7 +1641,6 @@ function rChamada() {
       ? '<label>Recados</label><textarea id="ch-rec" rows="3" placeholder="Avisos para o GC: próximos encontros, eventos, pedidos de oração...">' + esc(rec) + '</textarea>'
       : (rec ? '<div style="background:var(--cc);border-radius:10px;padding:9px 10px;font-size:12.5px;margin-top:10px;white-space:pre-line"><b>Recados:</b> ' + esc(rec) + '</div>' : '')) +
     '</div>';
-  h = blocoAgendados(id, true) + h;
   h += '<div class="sec">Marque a presença · ' + (e ? presentes(e) : 0) + ' presente(s)</div><div class="card">';
   h += l.length ? l.map(function (p) {
     var m = (e && e.presencas[p.id]) || '';
@@ -1589,7 +1656,7 @@ function rChamada() {
 }
 function encontroAtual(criar) {
   var id = gcA(), d = $('ch-data') ? $('ch-data').value || hoje() : dataChamada(), e = achaEnc(id, d);
-  if (!e && criar) { e = { data: d, gcId: id, tema: '', anfitriao: '', presencas: {}, lista: { add: [], rem: [] }, deleted: false }; db.encontros.push(e); }
+  if (!e && criar && pode('gcEvento')) { e = { data: d, gcId: id, tema: '', anfitriao: '', presencas: {}, lista: { add: [], rem: [] }, deleted: false }; db.encontros.push(e); }
   return e;
 }
 function marcar(pid, m, btn) {
@@ -1678,7 +1745,7 @@ function rAlertas() {
     '<div class="sec">Aniversariantes do mês</div><div class="card">' + (an.length ? an.map(function (p) { return linhaContato(p, 'aniversario', encs); }).join('') : '<div class="empty">Nenhum aniversariante neste mês.</div>') + '</div>';
 }
 function rMaisGC() {
-  var id = gcA(), g = gcPor(id) || {}, h = '';
+  var id = gcA(), g = gcPor(id) || {}, h = blocoModulos();
   h += '<div class="gccard"><div class="ft" style="background-image:url(\'' + fotoGC(id) + '\')"></div><div class="bd"><h4>' + esc(g.nome) + '</h4>' +
     '<div class="ln"><b>Líder:</b> ' + esc(g.liderNome || '—') + (g.coLider ? ' · Co-líder: ' + esc(g.coLider) : '') + '</div>' +
     (g.anfitriao ? '<div class="ln"><b>Anfitrião:</b> ' + esc(g.anfitriao) + '</div>' : '') +
@@ -2799,20 +2866,16 @@ function enviarCfg(c) {
 
 /* ── encontro do GC (criado sozinho no dia; o líder completa os dados) ── */
 function hojeEhEncontro(g) { return !!g && g.diaSemana !== '' && g.diaSemana != null && +g.diaSemana === new Date().getDay(); }
-function diaEncontroHoje(gcId) { return hojeEhEncontro(gcPor(gcId)) || !!achaEnc(gcId, hoje()); }
-function garantirEncontroHoje(g) {
-  if (!g || !pode('gc') || !hojeEhEncontro(g)) return achaEnc(g ? g.id : '', hoje());
-  var e = achaEnc(g.id, hoje());
-  if (!e) {
-    e = { data: hoje(), gcId: g.id, tema: '', anfitriao: '', presencas: {}, lista: { add: [], rem: [] }, horario: g.horario || '', recados: '', auto: '1',
-          deleted: false, updatedAt: agora(), _pend: true };
-    db.encontros.push(e); salvarDB(); sincAuto();
-  }
-  return e;
-}
+function diaEncontroHoje(gcId) { return encAbertoGC(achaEnc(gcId, hoje())); }
+function garantirEncontroHoje(g) { return g ? achaEnc(g.id, hoje()) : null; }
 function blocoEncontroHoje(g) {
   var e = garantirEncontroHoje(g);
-  if (!e) return '';
+  if (!e) {
+    if (g && pode('gcEvento') && hojeEhEncontro(g))
+      return '<div class="card" style="border-left:5px solid var(--amarelo)"><b>Hoje é dia de encontro.</b><div style="font-size:12.5px;color:#666;margin-top:4px;line-height:1.5">Crie o encontro (tema, escala) para liberar a chamada aos discípulos.</div>' +
+        '<div class="gap"></div><button class="btn pr sm" data-a="encEditar" data-v="' + esc(hoje()) + '">Criar encontro de hoje</button></div>';
+    return '';
+  }
   var falta = [];
   if (!e.anfitriao) falta.push('pregador'); if (!e.tema) falta.push('tema');
   return '<div class="card" style="border-left:5px solid var(--dourado)"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">' +
@@ -2822,8 +2885,9 @@ function blocoEncontroHoje(g) {
     '<span class="pill ' + (falta.length ? 'p-amarelo' : 'p-verde') + '">' + (falta.length ? 'falta ' + falta.join(' e ') : 'dados completos') + '</span></div>' +
     (e.recados ? '<div style="background:var(--cc);border-radius:10px;padding:9px 10px;font-size:12.5px;margin-top:8px;white-space:pre-line"><b>Recados:</b> ' + esc(e.recados) + '</div>' : '') +
     '<div style="display:flex;gap:7px;margin-top:10px;flex-wrap:wrap">' +
-    (pode('gcEvento') ? '<button class="btn pr sm" data-a="encEditar" data-v="' + esc(e.data) + '">Completar dados do encontro</button>' : '') +
-    '<button class="btn gh sm" data-a="encChamada" data-v="' + esc(e.data) + '">Fazer chamada</button></div></div>';
+    (pode('gcEvento') ? '<button class="btn pr sm" data-a="encEditar" data-v="' + esc(e.data) + '">Editar encontro e escala</button>' : '') +
+    (podeChamada(e) ? '<button class="btn gh sm" data-a="encChamada" data-v="' + esc(e.data) + '">Fazer chamada</button>'
+      : '<span class="pill p-cinza">chamada ' + textoJanelaGC(e) + '</span>') + '</div></div>';
 }
 function encEditar(data) {
   var g = gcPor(gcA()), e = achaEnc(gcA(), data);
@@ -2832,7 +2896,7 @@ function encEditar(data) {
     '<div class="g2"><div><label>Horário</label><input id="en-hora" type="time" value="' + esc(e.horario) + '"></div>' +
     '<div><label>Pregador</label><input id="en-preg" value="' + esc(e.anfitriao) + '"></div></div>' +
     '<label>Tema / estudo</label><input id="en-tema" value="' + esc(e.tema) + '">' +
-    '<label>Recados</label><textarea id="en-rec" rows="3">' + esc(e.recados) + '</textarea>' +
+    '<label>Recados</label><textarea id="en-rec" rows="3">' + esc(e.recados) + '</textarea>' + escalaCampos(e, gcA()) +
     (data > hoje() ? '<input type="hidden" id="en-diz" value=""><input type="hidden" id="en-ofe" value="">'
       : '<div class="g2"><div><label>Dízimos (R$)</label><input id="en-diz" inputmode="decimal" value="' + esc(campoMoeda(e.dizimo)) + '" placeholder="0,00"></div>' +
         '<div><label>Ofertas (R$)</label><input id="en-ofe" inputmode="decimal" value="' + esc(campoMoeda(e.oferta)) + '" placeholder="0,00"></div></div>') +
@@ -2841,10 +2905,15 @@ function encEditar(data) {
 }
 function encSalvar(data) {
   var e = achaEnc(gcA(), data); if (!e) return;
+  var escNova = lerEscala(), novos = novosNaEscala(e.escala, escNova);
+  e.escala = escNova;
   e.horario = $('en-hora').value; e.anfitriao = $('en-preg').value.trim(); e.tema = $('en-tema').value.trim(); e.recados = $('en-rec').value.trim();
+  if (!e.anfitriao && escNova.pregador) e.anfitriao = nomeEquipe(gcA(), escNova.pregador);
   e.dizimo = valor($('en-diz').value) ? String(valor($('en-diz').value)) : ''; e.oferta = valor($('en-ofe').value) ? String(valor($('en-ofe').value)) : '';
   e.updatedAt = agora(); e._pend = true; chDraft = null;
-  salvarDB(); fechar(); render(); sincronizar(false); toast('Dados do encontro salvos ✓');
+  cfg.dataChamada = data; cfg.dataChamadaGC = gcA(); salvarCfg();
+  salvarDB(); fechar(); render(); sincronizar(false); toast('Encontro salvo ✓');
+  if (novos.length) setTimeout(function () { avisarEscalaModal(data, novos); }, 350);
 }
 
 /* ── visão geral da igreja (painel do pastor) ── */
@@ -3913,6 +3982,167 @@ function msgFeito(id) {
     .catch(function (er) { toast(er.message, 4500); }).then(function () { carregando(false); });
 }
 
+/* ═══════════════════ v28: ENCONTROS DO GC (chamada vinculada ao encontro), ESCALA, RECUPERAR ACESSO ═══════════════════ */
+var FUNCOES_GC = [['louvor', 'Louvor'], ['dizimos', 'Dízimos/Ofertas'], ['dinamica', 'Dinâmicas'], ['recados', 'Recados'], ['pregador', 'Pregador'], ['oracao', 'Oração Final']];
+function nomeFuncao(f) { for (var i = 0; i < FUNCOES_GC.length; i++) if (FUNCOES_GC[i][0] === f) return FUNCOES_GC[i][1]; return f; }
+function agoraMin() { var d = new Date(); return d.getHours() * 60 + d.getMinutes(); }
+/** Janela da chamada do GC: no dia do encontro, 1h antes do horário até 4h depois (sem horário: o dia todo). */
+function encAbertoGC(e) {
+  if (!e || e.deleted || e.data !== hoje()) return false;
+  var ini = minStr(e.horario); if (ini === null) return true;
+  var m = agoraMin(); return m >= ini - 60 && m <= ini + 240;
+}
+function textoJanelaGC(e) {
+  var ini = minStr(e && e.horario);
+  return ini === null ? 'durante todo o dia do encontro' : 'das ' + hhmm(ini - 60) + ' às ' + hhmm(ini + 240) + ' do dia ' + br(e.data);
+}
+/** Quem cuida do encontro (líder) lança em qualquer data até hoje; os demais só dentro da janela do encontro. */
+function podeChamada(e) {
+  if (!e || e.deleted) return false;
+  if (pode('gcEvento')) return e.data <= hoje();
+  return encAbertoGC(e);
+}
+/* ── equipe do GC (líder + discípulos) para a escala ── */
+function equipeDoGC(gcId) {
+  var l = (db.equipeGC || []).filter(function (x) { return x.gcId === gcId; });
+  if (l.length) return l;
+  var g = gcPor(gcId), out = [];
+  if (g && g.liderId) out.push({ id: g.liderId, nome: g.liderNome || 'Líder', fone: '', funcao: 'Líder' });
+  discipulosDoGC(g).forEach(function (d) { if (d.id !== (g && g.liderId)) out.push({ id: d.id, nome: d.nome, fone: '', funcao: 'Discípulo' }); });
+  return out;
+}
+function nomeEquipe(gcId, uid) { var x = equipeDoGC(gcId).filter(function (p) { return p.id === uid; })[0]; return x ? x.nome : ''; }
+function escalaCampos(e, gcId) {
+  var eq = equipeDoGC(gcId), es = (e && e.escala) || {};
+  var op = [['', '— ninguém —']].concat(eq.map(function (p) { return [p.id, p.nome + (p.funcao === 'Líder' ? ' (líder)' : '')]; }));
+  return '<div class="sec" style="margin-left:0">Escala do encontro</div>' +
+    '<div style="font-size:11.5px;color:#888;margin:-2px 0 4px;line-height:1.45">Quem for escalado recebe o aviso no painel do app' + (db.waApi ? ' e no WhatsApp' : '') + '.</div>' +
+    '<div class="g2">' + FUNCOES_GC.map(function (f) {
+      return '<div><label>' + f[1] + '</label><select class="es-sel" data-f="' + f[0] + '">' + opts(op, es[f[0]] || '') + '</select></div>';
+    }).join('') + '</div>' +
+    (eq.length ? '' : '<div style="font-size:11.5px;color:#a87700;margin-top:6px">Nenhum discípulo vinculado a este GC ainda (cadastre em Editar GC).</div>');
+}
+function lerEscala() {
+  var o = {}, sels = document.querySelectorAll('.es-sel');
+  for (var i = 0; i < sels.length; i++) if (sels[i].value) o[sels[i].getAttribute('data-f')] = sels[i].value;
+  return o;
+}
+function novosNaEscala(antes, depois) {
+  antes = antes || {}; var out = [];
+  FUNCOES_GC.forEach(function (f) { if (depois[f[0]] && depois[f[0]] !== antes[f[0]]) out.push({ funcao: f[0], uid: depois[f[0]] }); });
+  return out;
+}
+function textoEscala(e, funcao, nome) {
+  var d = parseData(e.data);
+  return 'Olá, ' + pri(nome) + '! Você está na escala de *' + nomeFuncao(funcao) + '* no encontro do ' + gcNome(e.gcId) + ' — ' +
+    DIAS[d.getDay()].toLowerCase() + ', ' + br(e.data) + (e.horario ? ' às ' + e.horario : '') + (e.tema ? '. Tema: ' + e.tema : '') + '. Contamos com você! 🙏';
+}
+/** Envio assistido: abre o WhatsApp de cada escalado com a mensagem pronta (com a API oficial, o servidor envia sozinho). */
+function avisarEscalaModal(data, lista) {
+  var e = achaEnc(gcA(), data); if (!e) return;
+  lista = lista || FUNCOES_GC.filter(function (f) { return e.escala && e.escala[f[0]]; }).map(function (f) { return { funcao: f[0], uid: e.escala[f[0]] }; });
+  if (!lista.length) return toast('Ninguém escalado neste encontro.');
+  var eq = equipeDoGC(e.gcId);
+  abrirModal('<h2>Avisar a escala</h2><div style="font-size:12.5px;color:#666;line-height:1.5;margin:4px 0 10px">' +
+    (db.waApi ? 'A API do WhatsApp está ativa: o aviso já foi enviado automaticamente. Use os botões abaixo só se quiser reforçar.' :
+      'O aviso já aparece no painel de cada pessoa. Toque em <b>Enviar</b> para mandar também pelo WhatsApp.') + '</div>' +
+    '<div class="card" style="box-shadow:none;border:1px solid #eee">' + lista.map(function (x) {
+      var p = eq.filter(function (q) { return q.id === x.uid; })[0] || { nome: 'Pessoa', fone: '' }, f = fone(p.fone);
+      var w = f ? 'https://wa.me/' + (f.length <= 11 ? '55' : '') + f + '?text=' + encodeURIComponent(textoEscala(e, x.funcao, p.nome)) : '';
+      return '<div class="row"><div class="av">' + ini(p.nome) + '</div><div class="info"><div class="nm">' + esc(p.nome) + '</div><div class="sb">' + nomeFuncao(x.funcao) + '</div></div>' +
+        (w ? '<a class="wa" target="_blank" rel="noopener" href="' + w + '" data-a="waFeito">Enviar</a>' : '<span class="pill p-cinza">sem nº</span>') + '</div>';
+    }).join('') + '</div><div class="gap"></div><button class="btn gh" data-a="fechar">Concluir</button>');
+}
+/* ── aba Encontros ── */
+function statusEnc(e) {
+  if (marcados(e)) return ['p-verde', 'chamada feita · ' + presentes(e)];
+  if (e.data > hoje()) return ['p-cinza', 'agendado'];
+  if (encAbertoGC(e)) return ['p-dour', 'chamada aberta'];
+  if (e.data === hoje()) return ['p-amarelo', 'hoje · abre ' + (minStr(e.horario) === null ? 'o dia todo' : hhmm(minStr(e.horario) - 60))];
+  return ['p-vermelho', 'sem chamada'];
+}
+function listaEncontros(id, sel) {
+  var hj = hoje(), todos = encOrd(id);
+  var prox = todos.filter(function (e) { return e.data >= hj; }).slice(0, 6);
+  var pass = todos.filter(function (e) { return e.data < hj; }).slice(-5).reverse();
+  var linha = function (e) {
+    var d = parseData(e.data), st = statusEnc(e), on = e.data === sel;
+    return '<div class="row cl" data-a="encSel" data-v="' + esc(e.data) + '" style="' + (on ? 'background:#fff8e6;border-radius:10px;padding-left:6px;padding-right:6px' : '') + '">' +
+      '<div class="av" style="flex-direction:column;font-size:10.5px;line-height:1.1"><b style="font-size:14px">' + e.data.slice(8, 10) + '</b>' + MESES[d.getMonth()] + '</div>' +
+      '<div class="info"><div class="nm">' + DIAS[d.getDay()] + (e.horario ? ' · ' + esc(e.horario) : '') + (e.tema ? ' — ' + esc(e.tema) : '') + '</div>' +
+      '<div class="sb">' + (e.anfitriao ? 'Pregador: ' + esc(e.anfitriao) : 'pregador a definir') + '</div></div>' +
+      '<span class="pill ' + st[0] + '">' + st[1] + '</span></div>';
+  };
+  var h = '<div class="sec" style="margin-top:0">Encontros</div><div class="card">' +
+    (prox.length ? prox.map(linha).join('') : '<div class="empty" style="padding:10px">Nenhum encontro de hoje em diante.' + (pode('gcEvento') ? '' : ' O líder cria os encontros.') + '</div>') +
+    (pass.length ? '<div style="font-size:10.5px;color:#999;font-weight:800;letter-spacing:.6px;margin:10px 0 2px">ANTERIORES</div>' + pass.map(linha).join('') : '') +
+    (pode('gcEvento') ? '<div class="g2" style="margin-top:10px"><button class="btn gh" data-a="encAgendar">+ Novo encontro</button>' +
+      '<div><input type="date" id="ch-outra" max="' + hj + '" title="Encontro de outra data"></div></div>' +
+      '<div style="font-size:10.5px;color:#999;margin-top:4px">Use a data para abrir ou lançar um encontro passado.</div>' : '') + '</div>';
+  return h;
+}
+function cartaoEncontro(e) {
+  var es = e.escala || {}, temEsc = FUNCOES_GC.some(function (f) { return es[f[0]]; });
+  return '<div class="card" style="border-left:5px solid var(--dourado)">' +
+    '<div style="font-size:11px;color:#888;font-weight:800;letter-spacing:.6px">' + DIAS[parseData(e.data).getDay()].toUpperCase() + ', ' + brCompleto(e.data) + (e.horario ? ' · ' + esc(e.horario) : '') + '</div>' +
+    '<div style="font-size:13px;color:#444;margin-top:6px;line-height:1.6"><b>Tema:</b> ' + esc(e.tema || '—') + '<br><b>Pregador:</b> ' + esc(e.anfitriao || '—') + '</div>' +
+    (temEsc ? '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px">' + FUNCOES_GC.filter(function (f) { return es[f[0]]; }).map(function (f) {
+      var meu = es[f[0]] === eu().id;
+      return '<span style="background:' + (meu ? '#fff1c7' : 'var(--cc)') + ';border-radius:8px;padding:4px 8px;font-size:11.5px"><b>' + f[1] + ':</b> ' + esc(nomeEquipe(e.gcId, es[f[0]]) || '—') + '</span>';
+    }).join('') + '</div>' : '<div style="font-size:11.5px;color:#999;margin-top:6px">Escala ainda não definida.</div>') +
+    (e.recados ? '<div style="background:var(--cc);border-radius:10px;padding:9px 10px;font-size:12.5px;margin-top:8px;white-space:pre-line"><b>Recados:</b> ' + esc(e.recados) + '</div>' : '') +
+    (pode('gcEvento') ? '<div style="display:flex;gap:7px;margin-top:10px;flex-wrap:wrap"><button class="btn pr sm" data-a="encEditar" data-v="' + esc(e.data) + '">Editar encontro e escala</button>' +
+      (temEsc ? '<button class="btn gh sm" data-a="avisarEscala" data-v="' + esc(e.data) + '">Avisar escala no WhatsApp</button>' : '') + '</div>' : '') + '</div>';
+}
+function blocoMinhasEscalas() {
+  var me = eu().id, hj = hoje(), l = [];
+  ENC().forEach(function (e) {
+    if (e.data < hj || !e.escala) return;
+    FUNCOES_GC.forEach(function (f) { if (e.escala[f[0]] === me) l.push({ e: e, f: f[1] }); });
+  });
+  if (!l.length) return '';
+  l.sort(function (a, b) { return a.e.data < b.e.data ? -1 : 1; });
+  return '<div class="card" style="border-left:5px solid var(--dourado);background:#fffaf0"><h3 style="margin-bottom:4px">Minhas escalas</h3>' + l.slice(0, 6).map(function (x) {
+    return '<div class="row" style="padding:7px 0"><div class="info"><div class="nm">' + esc(x.f) + ' · ' + esc(gcNome(x.e.gcId)) + '</div>' +
+      '<div class="sb">' + DIAS[parseData(x.e.data).getDay()] + ', ' + br(x.e.data) + (x.e.horario ? ' às ' + esc(x.e.horario) : '') + (x.e.tema ? ' · ' + esc(x.e.tema) : '') + '</div></div>' +
+      (x.e.data === hj ? '<span class="pill p-dour">hoje</span>' : '') + '</div>';
+  }).join('') + '</div>';
+}
+/* ── recuperar acesso ── */
+function abrirRecuperar() {
+  abrirModal('<h2>Esqueci a senha ou o usuário</h2><div style="font-size:12.5px;color:#666;line-height:1.5;margin:4px 0 6px">Informe o <b>e-mail</b> do seu cadastro (ou o seu usuário). ' +
+    'Vamos enviar seu usuário e uma <b>senha temporária</b>, válida por 24 horas. Ao entrar, o app pede para você criar uma senha nova.</div>' +
+    '<label>E-mail ou usuário</label><input id="rc-chave" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="nome@email.com">' +
+    '<div style="height:14px"></div><button class="btn pr" data-a="recEnviar">Enviar</button><div class="gap"></div><button class="btn gh" data-a="fechar">Voltar</button>' +
+    '<div style="font-size:11px;color:#999;margin-top:10px;line-height:1.45">Sem e-mail no cadastro? Peça à liderança para corrigir seus dados ou redefinir sua senha.</div>');
+}
+function recEnviar() {
+  var c = ($('rc-chave').value || '').trim();
+  if (c.length < 3) return toast('Informe o e-mail ou o usuário.');
+  carregando(true, 'Enviando...');
+  chamarBruto({ acao: 'recuperar', chave: c }).then(function (r) {
+    if (!r || !r.ok) throw new Error((r && r.erro) || 'Não foi possível enviar agora.');
+    abrirModal('<h2>Verifique seu e-mail</h2><div class="ok-box">' + esc(r.msg) + '</div><div class="gap"></div><button class="btn pr" data-a="fechar">Entendi</button>');
+  }).catch(function (e) { toast(e.message, 5000); }).then(function () { carregando(false); });
+}
+var senhaObrig = false;
+function verificarSenhaTemp() {
+  if (!cfg.token || !cfg.usuario || !cfg.usuario.trocarSenha || senhaObrig) return;
+  senhaObrig = true;
+  abrirModal('<h2>Crie sua nova senha</h2><div class="aviso" style="margin-top:6px">Você entrou com uma <b>senha temporária</b>. Para continuar, defina uma senha nova (mínimo 6 caracteres).</div>' +
+    '<label>Nova senha</label><input id="ns-n" type="password" autocomplete="new-password"><label>Confirmar nova senha</label><input id="ns-c" type="password" autocomplete="new-password">' +
+    '<div style="height:14px"></div><button class="btn pr" data-a="salvarSenhaNova">Salvar e continuar</button><div class="gap"></div><button class="btn gh" data-a="sairSenhaTemp">Sair</button>');
+}
+function salvarSenhaNova() {
+  var n = $('ns-n').value, c = $('ns-c').value, us = eu().usuario;
+  if (n.length < 6) return toast('A senha precisa ter pelo menos 6 caracteres.');
+  if (n !== c) return toast('As senhas não conferem.');
+  carregando(true, 'Salvando...');
+  chamar('trocarSenha', { atual: '', nova: hashSenha(us, n) }).then(function () {
+    senhaObrig = false; cfg.usuario.trocarSenha = false; salvarCfg(); fechar(); toast('Senha criada ✓ Bem-vindo(a)!'); sincronizar(false);
+  }).catch(function (e) { toast(e.message, 4500); }).then(function () { carregando(false); });
+}
+
 /* ── encontros agendados (futuros) ── */
 function agendados(gcId) {
   var hj = hoje();
@@ -3932,30 +4162,34 @@ function blocoAgendados(gcId, naChamada) {
       (gere ? '<span class="pill p-cinza">editar</span>' : '') + '</div>';
   }).join('') : '<div class="empty" style="padding:12px">Nenhum encontro agendado.</div>';
   if (naChamada && gere) h += '<button class="btn gh" data-a="encAgendar" style="margin-top:8px">+ Agendar encontro</button>';
-  else if (!naChamada && l.length > 3) h += '<div style="font-size:11.5px;color:#888;margin-top:6px">+ ' + (l.length - 3) + ' na aba Chamada</div>';
+  else if (!naChamada && l.length > 3) h += '<div style="font-size:11.5px;color:#888;margin-top:6px">+ ' + (l.length - 3) + ' na aba Encontros</div>';
   return h + '</div>';
 }
 function encAgendar() {
-  var g = gcPor(gcA()), prox = proximoEncontro(g), d = prox && prox > hoje() ? prox : '';
+  var g = gcPor(gcA()), prox = proximoEncontro(g), d = prox && prox >= hoje() && !achaEnc(gcA(), prox) ? prox : '';
   if (!d) { var x = parseData(hoje()); x.setDate(x.getDate() + 7); d = isoData(x); }
   while (achaEnc(gcA(), d)) { var y = parseData(d); y.setDate(y.getDate() + 7); d = isoData(y); }
-  abrirModal('<h2>Agendar encontro</h2><div class="sb" style="font-size:12.5px;color:#888">' + esc(gcNome(gcA())) + '</div>' +
+  abrirModal('<h2>Novo encontro</h2><div class="sb" style="font-size:12.5px;color:#888">' + esc(gcNome(gcA())) + '</div>' +
     '<div class="g2"><div><label>Data *</label><input id="ag-data" type="date" min="' + hoje() + '" value="' + d + '"></div>' +
     '<div><label>Horário</label><input id="ag-hora" type="time" value="' + esc((g && g.horario) || '') + '"></div></div>' +
     '<label>Pregador</label><input id="ag-preg" placeholder="Quem vai ministrar">' +
     '<label>Tema / estudo</label><input id="ag-tema" placeholder="Ex.: Mateus 5">' +
-    '<label>Recados</label><textarea id="ag-rec" rows="3" placeholder="Ex.: trazer lanche, encontro na casa da família Souza"></textarea>' +
-    '<div style="font-size:11px;color:#999;margin-top:6px">No dia, o encontro aparece no Painel já preenchido e a chamada é feita nele.</div>' +
+    '<label>Recados</label><textarea id="ag-rec" rows="3" placeholder="Ex.: trazer lanche, encontro na casa da família Souza"></textarea>' + escalaCampos({}, gcA()) +
+    '<div style="font-size:11px;color:#999;margin-top:6px">A chamada deste encontro abre no dia, 1h antes do horário até 4h depois.</div>' +
     '<div style="height:16px"></div><button class="btn pr" data-a="encSalvarAgenda">Agendar</button><div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>');
 }
 function encSalvarAgenda() {
   var d = $('ag-data').value;
   if (!d) return toast('Informe a data.');
-  if (d < hoje()) return toast('Para datas passadas, use a chamada daquele dia.');
+  if (d < hoje()) return toast('Para datas passadas, escolha a data em “Encontros” e toque em Criar encontro.');
   if (achaEnc(gcA(), d)) return toast('Já existe encontro nesta data. Toque nele na lista para editar.');
-  db.encontros.push({ data: d, gcId: gcA(), horario: $('ag-hora').value, anfitriao: $('ag-preg').value.trim(), tema: $('ag-tema').value.trim(),
+  var escA = lerEscala(), pregA = $('ag-preg').value.trim() || (escA.pregador ? nomeEquipe(gcA(), escA.pregador) : '');
+  db.encontros.push({ data: d, gcId: gcA(), horario: $('ag-hora').value, anfitriao: pregA, tema: $('ag-tema').value.trim(), escala: escA,
     recados: $('ag-rec').value.trim(), presencas: {}, lista: { add: [], rem: [] }, dizimo: '', oferta: '', deleted: false, updatedAt: agora(), _pend: true });
-  salvarDB(); fechar(); render(); sincronizar(false); toast('Encontro de ' + br(d) + ' agendado ✓');
+  cfg.dataChamada = d; cfg.dataChamadaGC = gcA(); salvarCfg();
+  salvarDB(); fechar(); render(); sincronizar(false); toast('Encontro de ' + br(d) + ' criado ✓');
+  var novA = novosNaEscala({}, escA);
+  if (novA.length) setTimeout(function () { avisarEscalaModal(d, novA); }, 350);
 }
 function encCancelar(data) {
   var e = achaEnc(gcA(), data); if (!e) return;
@@ -4164,7 +4398,10 @@ var ACOES = {
   trocarSenha: trocarSenha, confirmarSenha: confirmarSenha, sair: function () { sair(true); },
   sincronizar: function () { sincronizar(true); }, servidor: servidor, salvarServidor: function () { salvarServidor(); },
   padraoServidor: function () { salvarServidor(URL_PADRAO); },
-  novaPessoa: function () { abrirPessoa(null); }, abrirPessoa: function (v) { abrirPessoa(v); }, salvarPessoa: function () { salvarPessoa(); },
+  novaPessoa: function () { abrirPessoa(null); }, abrirPessoa: function (v) { abrirPessoa(v); }, salvarPessoa: function () { salvarPessoa(); }, modulo: abrirModulo,
+    encSel: function (v) { chDraft = null; cfg.dataChamada = v; cfg.dataChamadaGC = gcA(); salvarCfg(); render(); },
+    avisarEscala: function (v) { avisarEscalaModal(v); }, recEnviar: recEnviar, salvarSenhaNova: salvarSenhaNova,
+    sairSenhaTemp: function () { senhaObrig = false; fechar(); sair(false); },
     evEscolherImg: function () { $('msg-input').click(); }, evRemImg: function () { msgImgNova = '__remover__'; pintarImgMsg(''); },
     evMensagem: evMensagem, msgApi: msgApi, msgCompartilhar: msgCompartilhar, msgIndividual: msgIndividual, msgFeito: msgFeito, excluirPessoa: excluirPessoa,
   salvarChamada: salvarChamada, remChamada: remChamada, addChamada: abrirAddChamada,
@@ -4239,6 +4476,7 @@ document.addEventListener('input', function (ev) {
 });
 document.addEventListener('change', function (ev) {
   var id = ev.target.id;
+  if (id === 'ch-outra' && ev.target.value) { chDraft = null; cfg.dataChamada = ev.target.value; cfg.dataChamadaGC = gcA(); salvarCfg(); render(); }
   if (id === 'ch-data') { chDraft = null; cfg.dataChamada = ev.target.value; cfg.dataChamadaGC = gcA(); salvarCfg(); render(); }
   if (id === 'g-lider') { var u = (db.equipe || []).filter(function (x) { return x.id === ev.target.value; })[0]; $('g-lidernome').value = u ? u.nome : ''; }
   if (id === 'f-freqig' || id === 'v-freqig') { var qi = $(id.charAt(0) + '-igrejawrap'); if (qi) qi.classList.toggle('hide', ev.target.value !== 'Sim'); }
@@ -4285,7 +4523,8 @@ document.addEventListener('change', function (ev) {
     }
   }
 });
-$('modal').addEventListener('click', function (ev) { if (ev.target === this && !consentAberto) fechar(); });
+$('modal').addEventListener('click', function (ev) { if (ev.target === this && !consentAberto && !senhaObrig) fechar(); });
+if ($('b-esqueci')) $('b-esqueci').addEventListener('click', abrirRecuperar);
 $('b-entrar').addEventListener('click', entrar);
 $('l-senha').addEventListener('keydown', function (e) { if (e.key === 'Enter') entrar(); });
 $('b-ir-cadastro').addEventListener('click', abrirCadastro);
@@ -4313,7 +4552,7 @@ if (EXIGE_HOSPEDADO && !MODO_SCRIPT && !pwaOrigemOk()) {
 aplicarLogo();
 chamarBruto({ acao: 'ping' }).then(function (r) { if (r && r.ok) { servidorV = +r.versao || 0; if (cfg.token && servidorV < SERVIDOR_ESPERADO) render(); } }).catch(function () {});
 chamarBruto({ acao: 'configPublica' }).then(function (r) { if (r && r.ok) return atualizarConfig(r.config); }).then(function (m) { avisoNovoEndereco(); if (m && cfg.token) render(); }).catch(function () {});
-if (cfg.token && cfg.usuario) { iniciarApp(); sincronizar(false); }
+if (cfg.token && cfg.usuario) { iniciarApp(); sincronizar(false); setTimeout(verificarSenhaTemp, 400); }
 else mostrarTela('s-login');
 
 window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }, sincronizar: sincronizar, metricas: metricas, pendentes: pendentesLocais };

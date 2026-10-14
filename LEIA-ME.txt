@@ -1,0 +1,2 @@
+2Gather v29 — no GitHub substitua só: app.js, index.html, sw.js
+(Add file → Upload files → Commit). Não mexa em config.js, _headers, manifest, icons/ e lib/.

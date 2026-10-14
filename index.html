@@ -55,6 +55,14 @@ main{padding:14px 14px 96px}
 .card{background:#fff;border-radius:16px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.07)}
 .sec{font-size:11px;font-weight:800;letter-spacing:1.3px;color:var(--cinza);margin:18px 4px 8px;text-transform:uppercase}
 .kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.mods{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:2px 0 14px}
+.mod{background:#fff;border:none;border-radius:16px;padding:12px 4px 10px;display:flex;flex-direction:column;align-items:center;gap:6px;box-shadow:0 1px 3px rgba(0,0,0,.07);position:relative;cursor:pointer;font-family:inherit}
+.mod:active{transform:scale(.96)}
+.mod .mi{width:42px;height:42px;border-radius:13px;display:flex;align-items:center;justify-content:center}
+.mod .mi svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.mod .mn{font-size:11px;font-weight:700;color:#333;text-align:center;line-height:1.15}
+.mod.breve{opacity:.75}
+.mod .mb{position:absolute;top:5px;right:5px;font-size:8px;font-weight:800;color:#fff;background:#9aa0a6;border-radius:99px;padding:2px 5px;text-transform:uppercase}
 .kpi{background:#fff;border-radius:16px;padding:13px;border-left:5px solid var(--dourado);box-shadow:0 1px 3px rgba(0,0,0,.07)}
 .kpi .v{font-size:25px;font-weight:800;line-height:1.05}
 .kpi .l{font-size:11px;color:var(--cinza);margin-top:4px;font-weight:600;line-height:1.3}
@@ -179,6 +187,7 @@ nav .bdg{position:absolute;top:4px;left:50%;margin-left:6px;background:var(--ver
     <button class="btn pr" id="b-entrar">Entrar</button>
     <div id="l-erro" class="erro-box hide"></div>
   </div>
+  <div class="lnk2" id="b-esqueci" style="margin-top:4px">Esqueci a senha ou o usuário</div>
   <div class="lnk" id="b-ir-cadastro">Ainda não tenho cadastro</div>
   <div class="lnk2" id="b-politica">Política de privacidade</div>
 </section>
@@ -194,7 +203,7 @@ nav .bdg{position:absolute;top:4px;left:50%;margin-left:6px;background:var(--ver
     <input id="c-usuario" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="ex.: maria.silva">
     <div class="g2">
       <div><label>WhatsApp</label><input id="c-fone" type="tel" inputmode="numeric" placeholder="16991234567"></div>
-      <div><label>E-mail</label><input id="c-email" type="email" autocapitalize="none"></div>
+      <div><label>E-mail *</label><input id="c-email" type="email" autocapitalize="none"></div>
     </div>
     <div class="g2">
       <div><label>Senha *</label><input id="c-senha" type="password" autocomplete="new-password"></div>
