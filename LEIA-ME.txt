@@ -1,6 +1,4 @@
-2Gather v32 — etapa 3 do novo layout + adaptação a celular, tablet e computador
+2Gather v33 — etapa 4: Relatórios, Financeiro consolidado, Início enxuto, avisos privados e computador mais próximo do celular
 
-No GitHub (gestao-igrejas), substitua SÓ: app.js, index.html, sw.js
-(Add file → Upload files → Commit). Não mexa em config.js, _headers, manifest, icons/ e lib/.
-
-Servidor: continua o Codigo_v27 (sem mudança no Apps Script).
+1) GitHub (gestao-igrejas): substitua SÓ app.js, index.html, sw.js (Add file → Upload files → Commit).
+2) Apps Script: cole o Codigo_v28.txt no Código.gs → Implantar → Gerenciar implantações → lápis → Nova versão.

@@ -20,8 +20,8 @@ var ICONE_2G = 'icons/icon-192.png';
 // padrão antes da 1ª configuração: no app instalado (PWA) é o 2Gather; na página antiga, o logo embutido
 var LOGO_PADRAO = (window.APP_CONFIG && window.APP_CONFIG.apiUrl) ? ICONE_2G : document.getElementById('h-img').getAttribute('src');
 var LOGO = LOGO_PADRAO;        // ícone usado na barra superior e nas telas internas
-var VERSAO_APP = 32;
-var SERVIDOR_ESPERADO = 27;      // versão do Código.gs que acompanha este app
+var VERSAO_APP = 33;
+var SERVIDOR_ESPERADO = 28;      // versão do Código.gs que acompanha este app
 var EXIGE_HOSPEDADO = true;      // segurança: o app só funciona pelo endereço oficial (dados nunca trafegam pela URL)
 
 /* ───────── armazenamento ───────── */
@@ -877,7 +877,8 @@ function render() {
   validarContexto();
   var g = cfg.modo === 'gc' ? gcPor(cfg.gcAtual) : null;
   $('h-img').src = g ? iconeGC(g.id) : LOGO;
-  $('h-tit').textContent = cfg.modo === 'lv' ? igrNome() : cfg.aba === 'config' ? 'Configurações' : cfg.aba === 'cultos' ? 'Cultos e eventos' : cfg.aba === 'membros' ? 'Cadastro de pessoas' : cfg.aba === 'cursos' ? 'Cursos e reuniões' : cfg.modo === 'ger' ? igrNome() : (g ? g.nome : 'Meu GC');
+  var TIT = { relatorios: 'Relatórios', financeiro: 'Financeiro', usuarios: 'Usuários e acessos', avisos: 'Avisos', gcs: 'GCs' };
+  $('h-tit').textContent = TIT[cfg.aba] ? TIT[cfg.aba] : cfg.modo === 'lv' ? igrNome() : cfg.aba === 'config' ? 'Configurações' : cfg.aba === 'cultos' ? 'Cultos e eventos' : cfg.aba === 'membros' ? 'Cadastro de pessoas' : cfg.aba === 'cursos' ? 'Cursos e reuniões' : cfg.modo === 'ger' ? igrNome() : (g ? g.nome : 'Meu GC');
   $('h-papel').textContent = PAPEL_NOME[papel()] || '';
   var raizes = abasAtuais().map(function (a) { return a.id; }), naRaiz = raizes.indexOf(cfg.aba) >= 0 && !cursoAberto;
   $('b-voltar').classList.toggle('hide', naRaiz && !(cfg.modo === 'gc' && ehGestor() && cfg.aba === 'painel'));
@@ -892,7 +893,7 @@ function render() {
   var f = {
     bi: rBI, gcs: rGCs, novo: rNovoGC, usuarios: rUsuarios, conta: rConta,
     painel: rPainel, pessoas: rPessoas, chamada: rChamada, alertas: rAlertas, mais: rMaisGC,
-    lv: rLVGer, lar: rLar, avisos: rAvisos, lvnovo: rLVNovo, lvmeus: rLVMeus, cultos: rCultos, config: rConfig, membros: rConsulta, cursos: rCursos
+    lv: rLVGer, lar: rLar, avisos: rAvisos, relatorios: rRelatorios, financeiro: rFinanceiro, lvnovo: rLVNovo, lvmeus: rLVMeus, cultos: rCultos, config: rConfig, membros: rConsulta, cursos: rCursos
   }[cfg.aba];
   if (cfg.modo === 'gc' && !g) {
     $('main').innerHTML = '<div class="empty">' + (db.gcs.length ? 'Você ainda não está vinculado a um GC. Fale com a liderança.' : 'Carregando dados do GC...') + '</div>';
@@ -966,7 +967,7 @@ function barraPeriodo() {
 
 /* ── central de avisos (gerenciador) ── */
 function badgeAvisos() {
-  return alertasNaoLidos(GCSativos().map(function (g) { return g.id; }).concat([''])).length + (ehAdmin() ? (db.pendentes || 0) : 0) + (pode('lvDirecionar') ? lvFila().length : 0);
+  return alertasNaoLidos(null).length + (ehAdmin() ? (db.pendentes || 0) : 0) + (pode('lvDirecionar') ? lvFila().length : 0);
 }
 function rAvisos() {
   var ids = GCSativos().map(function (g) { return g.id; }), h = '', n = 0;
@@ -974,7 +975,7 @@ function rAvisos() {
   if (pode('lvDirecionar') && lvFila().length) { n++; h += '<div class="aviso" data-a="aba" data-v="lv" style="cursor:pointer"><b>' + lvFila().length + ' visitante(s) da igreja sem GC.</b> Toque para direcionar.</div>'; }
   var atr = PES().filter(lvAtrasada).length;
   if (atr) { n++; h += '<div class="aviso r" data-a="aba" data-v="lv" style="cursor:pointer"><b>' + atr + ' visita(s) do Lar de Vida atrasada(s).</b></div>'; }
-  var al = blocoAlertas(ids.concat(['']), true); if (al) n++;
+  var al = blocoAlertas(null, true); if (al) n++;
   h += blocoMinhasEscalas() + al;
   return n ? h : h + '<div class="card"><div class="empty">Nenhum aviso agora. 🙌</div></div>';
 }
@@ -995,9 +996,9 @@ function modulosDisponiveis() {
   if (ger && temCultos()) m.push({ id: 'cultos', nome: 'Cultos', ic: IC_CULTO, cor: '#7a4fd6' });
   if (pode('consulta') && cfg.modo !== 'gc') m.push({ id: 'membros', nome: 'Membros', ic: IC_MEM, cor: '#d6572f' });
   else if (cfg.modo === 'gc') m.push({ id: 'pessoas', nome: 'Pessoas', ic: IC_MEM, cor: '#d6572f' });
-  if (ger && pode('relFin')) m.push({ id: 'financeiro', nome: 'Financeiro', ic: IC_FIN, cor: '#c99a1a' });
+  if (ger && podeFin()) m.push({ id: 'financeiro', nome: 'Financeiro', ic: IC_FIN, cor: '#c99a1a' });
   if (ger && temCursos()) m.push({ id: 'cursos', nome: 'Cursos', ic: IC_CURSO, cor: '#0f8a8a' });
-  if (ger && ehAdmin()) m.push({ id: 'usuarios', nome: 'Usuários', ic: IC_PERFIL, cor: '#5E6470', n: db.pendentes || 0 });
+  if (ger) m.push({ id: 'relatorios', nome: 'Relatórios', ic: IC_REL, cor: '#5E6470' });
   m.push({ id: 'ministerios', nome: 'Ministérios', ic: IC_MIN, cor: '#9aa0a6', breve: true });
   m.forEach(function (x) {
     if (x.id === 'lv') x.n = lvFila().length;
@@ -1018,78 +1019,15 @@ function abrirModulo(id) {
       '(louvor, infantil, mídia, recepção, intercessão…), com equipes, escalas e avisos — no mesmo modelo da escala dos encontros do GC.</div>' +
       '<div class="gap"></div><button class="btn pr" data-a="fechar">Entendi</button>');
   }
-  if (id === 'financeiro') { filtroCulto = 'fin'; if (cfg.aba === 'cultos') return render(); return irAba('cultos'); }
+
   irAba(id);
 }
 
 function rBI() {
-  var gcs = GCSativos(), h = inicioGestor() + '<div class="sec">Indicadores</div>' + barraPeriodo();
-
-  var visaoPastor = pode('relFin') || pode('usuarios');
-  h += blocoOrganograma();
-  if (visaoPastor) h += blocoVisaoIgreja(gcs);
-  var ms = gcs.map(function (g) { return { g: g, m: metricas(g.id) }; });
-  var tot = { ativos: 0, media: 0, tp: 0, tm: 0, alertas: 0, novos: 0, vcom: 0, vret: 0, vis: 0 };
-  ms.forEach(function (x) {
-    tot.ativos += x.m.ativos; tot.media += x.m.media; tot.tp += x.m.tp; tot.tm += x.m.tm; tot.alertas += x.m.alertas;
-    tot.novos += x.m.novos; tot.vcom += x.m.vcom; tot.vret += x.m.vret; tot.vis += x.m.visitantes;
-  });
-  h += '<div class="kpis">' +
-    kpi(gcs.length, 'GCs ativos', 'dk') + kpi(tot.ativos, 'Pessoas ativas na rede') +
-    kpi(num1(tot.media), 'Presentes por semana (média)') + kpi(tot.tm ? pct(tot.tp / tot.tm) : '—', '% de presença da rede') +
-    kpi(tot.vcom ? pct(tot.vret / tot.vcom) : '—', 'Retorno do visitante') + kpi(tot.novos, 'Novos no mês') +
-    kpi(tot.vis, 'Visitantes ativos') + kpi(tot.alertas, 'Pessoas com 2+ faltas', 'al') + '</div>';
-
-  if (!visaoPastor) h += graficoGCSemanas(gcs.map(function (g) { return g.id; }), 'Presença nos GCs — últimas 8 semanas');
-
-  // comparativo
-  h += '<div class="sec">Comparativo por GC</div><div class="card" style="padding:8px 10px;overflow-x:auto">';
-  if (!ms.length) h += '<div class="empty">Nenhum GC cadastrado.</div>';
-  else {
-    h += '<table class="tbl"><tr><th>GC</th><th style="text-align:right">Ativos</th><th style="text-align:right">Média</th><th style="text-align:right">Pres.</th><th style="text-align:right">Alertas</th><th style="text-align:right">Última</th></tr>';
-    ms.sort(function (a, b) { return b.m.ativos - a.m.ativos; }).forEach(function (x) {
-      var atraso = x.m.diasSem === null || x.m.diasSem > 10;
-      h += '<tr class="cl" data-a="abrirGC" data-v="' + esc(x.g.id) + '"><td><b>' + esc(x.g.nome) + '</b><div style="font-size:10.5px;color:#999">' + esc(x.g.liderNome || 'sem líder') + '</div></td>' +
-        '<td class="n">' + x.m.ativos + '</td><td class="n">' + num1(x.m.media) + '</td><td class="n">' + (x.m.pres === null ? '—' : pct(x.m.pres)) + '</td>' +
-        '<td class="n" style="color:' + (x.m.alertas ? 'var(--vermelho)' : '#999') + '">' + x.m.alertas + '</td>' +
-        '<td class="n" style="color:' + (atraso ? 'var(--vermelho)' : '#555') + '">' + (x.m.ultimo ? br(x.m.ultimo) : '—') + '</td></tr>';
-    });
-    h += '</table><div style="font-size:10.5px;color:#999;margin-top:8px;line-height:1.5">Média = presentes nas últimas 4 chamadas · Pres. = presença nas últimas 8 · Última em vermelho = mais de 10 dias sem chamada. Toque num GC para abrir.</div>';
-  }
-  h += '</div>';
-
-  // pendências
-  var semChamada = ms.filter(function (x) { return x.m.diasSem === null || x.m.diasSem > 10; });
-  var semLider = gcs.filter(function (g) { return !g.liderNome; });
-  if (semChamada.length || semLider.length) {
-    h += '<div class="sec">Pontos de atenção</div><div class="card">';
-    semChamada.forEach(function (x) { h += '<div class="row cl" data-a="abrirGC" data-v="' + esc(x.g.id) + '"><span class="dot" style="background:var(--vermelho)"></span><div class="info"><div class="nm">' + esc(x.g.nome) + '</div><div class="sb">' + (x.m.ultimo ? 'Sem chamada há ' + x.m.diasSem + ' dias' : 'Nenhuma chamada lançada') + '</div></div></div>'; });
-    semLider.forEach(function (g) { h += '<div class="row cl" data-a="editarGC" data-v="' + esc(g.id) + '"><span class="dot" style="background:var(--amarelo)"></span><div class="info"><div class="nm">' + esc(g.nome) + '</div><div class="sb">Sem líder definido no cadastro</div></div></div>'; });
-    h += '</div>';
-  }
-
-  if (pode('relFin')) {
-  h += blocoFinanceiro(gcs.map(function (g) { return g.id; }), 'Dízimos e ofertas — rede');
-  var Pf = periodoBI(), mesAt = Pf.rot;
-  var finPer = function (gid) { var t = 0; ENC(gid).forEach(function (e) { if (Pf.noPer(e.data)) t += valor(e.dizimo) + valor(e.oferta); }); return { tot: t }; };
-  var finGC = gcs.map(function (g) { return { g: g, f: finPer(g.id) }; }).sort(function (a, b) { return b.f.tot - a.f.tot; });
-  var totF = finGC.reduce(function (s2, x) { return s2 + x.f.tot; }, 0);
-  h += '<div class="sec">Dízimos e ofertas por GC — ' + esc(mesAt) + '</div><div class="card">' +
-    (totF ? finGC.map(function (x) {
-      return '<div class="fun"><div class="t"><span>' + esc(x.g.nome) + '</span><span>' + moeda(x.f.tot) + '</span></div><div class="bar"><i style="width:' + (x.f.tot / totF * 100) + '%"></i></div></div>';
-    }).join('') : '<div class="empty">Nenhum valor lançado neste mês.</div>') + '</div>';
-
-  }
-  // jornada e canais consolidados
-  var pes = PES().filter(function (p) { return gcPor(p.gcId) && !gcPor(p.gcId).deleted; }), t = pes.length || 1;
-  h += '<div class="sec">Jornada do Membro — rede</div><div class="card">' +
-    ETAPAS.map(function (e) { return barra(e, pes.filter(function (p) { return p.jornada === e; }).length, t); }).join('') + '</div>';
-  h += blocoLVResumo(gcs.map(function (g) { return g.id; }), false);
-  if (!visaoPastor) h += blocoMapa(gcs.map(function (g) { return g.id; }), 'Mapa de calor — rede');
-  h += '<div class="sec">Pessoas por GC</div><div class="card">' +
-    ms.map(function (x) { return barra(esc(x.g.nome), x.m.ativos, tot.ativos || 1); }).join('') + '</div>';
-  var cl = (function () { var m = {}; pes.forEach(function (p) { if (p.canal) m[p.canal] = (m[p.canal] || 0) + 1; }); return Object.keys(m).map(function (k) { return [k, m[k]]; }); })().sort(function (a, b) { return b[1] - a[1]; });
-  h += '<div class="sec">Como conheceram / receberam o convite</div><div class="card">' + (cl.length ? cl.map(function (x) { return barra(x[0], x[1], t); }).join('') : '<div class="empty">Sem dados ainda.</div>') + '</div>';
+  var gcs = GCSativos(), ids = gcs.map(function (g) { return g.id; }), h = inicioGestor();
+  if (pode('relFin') || pode('usuarios')) h += '<div class="sec">Visão geral da igreja</div>' + barraPeriodo() + blocoVisaoIgreja(gcs, true);
+  else h += graficoGCSemanas(ids, 'Presença nos GCs — últimas 8 semanas');
+  h += '<div class="gap"></div><button class="btn gh" data-a="aba" data-v="relatorios">Ver todos os relatórios e indicadores</button>';
   return h;
 }
 
@@ -1491,6 +1429,8 @@ function blocoConta() {
   return '<div class="card"><div class="row" style="padding-top:0"><div class="av">' + ini(u.nome) + '</div><div class="info"><div class="nm">' + esc(u.nome) + '</div>' +
     '<div class="sb">@' + esc(u.usuario) + ' · ' + esc(PAPEL_NOME[u.papel] || '') + (u.gcId ? ' · ' + esc(gcNome(u.gcId)) : '') + '</div></div></div>' +
     (pode('config') ? '<button class="btn pr" data-a="aba" data-v="config">Configurações da igreja</button><div class="gap"></div>' : '') +
+    (ehAdmin() ? '<button class="btn gh" data-a="aba" data-v="usuarios">Usuários e acessos' + (db.pendentes ? ' · <b style="color:var(--vermelho)">' + db.pendentes + ' aguardando</b>' : '') + '</button><div class="gap"></div>' : '') +
+    (podeFin() && cfg.modo !== 'ger' ? '<button class="btn gh" data-a="aba" data-v="financeiro">Consolidado financeiro</button><div class="gap"></div>' : '') +
     (temCultos() && cfg.modo === 'gc' ? '<button class="btn gh" data-a="aba" data-v="cultos">Cultos e eventos</button><div class="gap"></div>' : '') +
     (temCursos() && cfg.modo !== 'ger' ? '<button class="btn gh" data-a="aba" data-v="cursos">Cursos e reuniões</button><div class="gap"></div>' : '') +
     (pode('consulta') && cfg.modo === 'gc' ? '<button class="btn gh" data-a="aba" data-v="membros">Consultar cadastro de pessoas</button><div class="gap"></div>' : '') +
@@ -2641,7 +2581,8 @@ function modoVisitante() { return !pode('gc') && !pode('rede') && !pode('lvDirec
 function temCultos() { return pode('eventos') || pode('financeiro') || pode('recados') || pode('relFin'); }
 function abasExtras() {
   var x = [];
-  if (cfg.modo === 'ger') { x.push('gcs', 'avisos'); if (pode('lvDirecionar')) x.push('lv'); if (ehAdmin()) x.push('usuarios'); }
+  if (cfg.modo === 'ger') { x.push('gcs', 'avisos', 'relatorios'); if (pode('lvDirecionar')) x.push('lv'); if (ehAdmin()) x.push('usuarios'); }
+  if (podeFin()) x.push('financeiro');
   if (cfg.modo === 'gc') x.push('lar');
   if (cfg.modo === 'lv' && pode('visitantes')) x.push('lvnovo', 'lvmeus');
   if (pode('rede')) x.push('novo');
@@ -3067,7 +3008,7 @@ function encSalvar(data) {
 }
 
 /* ── visão geral da igreja (painel do pastor) ── */
-function blocoVisaoIgreja(gcs) {
+function blocoVisaoIgreja(gcs, enxuto) {
   var ids = gcs.map(function (g) { return g.id; }), at = function (p) { return p.status === 'Ativo' || p.status === 'Em visita'; };
   var todas = PES().filter(at);
   var nosGC = todas.filter(function (p) { return p.gcId && ids.indexOf(p.gcId) >= 0; }), semGC = todas.filter(function (p) { return !p.gcId; });
@@ -3093,7 +3034,7 @@ function blocoVisaoIgreja(gcs) {
     return '<br><span style="font-size:10.5px;color:' + (d >= 0 ? 'var(--verde)' : 'var(--vermelho)') + '">' + (d >= 0 ? '▲ ' : '▼ ') + Math.abs(d) + '% vs ' + esc(P.antRot) +
       ' (' + (din ? moedaCurta(b) : b) + ')</span>';
   };
-  var h = '<div class="sec">Visão geral da igreja</div><div class="kpis">' +
+  var h = (enxuto ? '' : '<div class="sec">Visão geral da igreja</div>') + '<div class="kpis">' +
     kpi(membrosAtivos, 'Membros ativos cadastrados' + (novosMem ? '<br><span style="font-size:10.5px;color:#bbb">' + novosMem + ' com 1ª participação no período</span>' : ''), 'dk') +
     kpi(vMes, 'Visitantes da igreja — ' + esc(P.rot) + comp(vMes, vAnt, false)) +
     kpi(nosGC.length, 'Pessoas em GCs') +
@@ -3107,8 +3048,8 @@ function blocoVisaoIgreja(gcs) {
   // presença separada: GCs e cultos/eventos
   h += graficoGCSemanas(ids, 'Presença nos GCs — ' + P.rot, P);
   h += graficoCultos('Presença nos cultos e eventos — ' + P.rot, P);
-  // GCs: membros e visitantes
-  h += '<div class="sec">GCs — membros e visitantes</div><div class="card" style="padding:8px 10px;overflow-x:auto"><table class="tbl"><tr><th>GC</th>' +
+  // GCs: membros e visitantes (só em Relatórios)
+  if (!enxuto) h += '<div class="sec">GCs — membros e visitantes</div><div class="card" style="padding:8px 10px;overflow-x:auto"><table class="tbl"><tr><th>GC</th>' +
     '<th style="text-align:right">Membros</th><th style="text-align:right">Visitantes</th><th style="text-align:right">Lar de Vida</th></tr>' +
     gcs.map(function (g) {
       var ps = PES(g.id).filter(at), m2 = ps.filter(ehMembro).length;
@@ -3118,7 +3059,8 @@ function blocoVisaoIgreja(gcs) {
         '<td class="n">' + x.m + '</td><td class="n">' + x.v + '</td><td class="n">' + x.lv + '</td></tr>';
     }).join('') + '<tr><td><b>Total</b></td><td class="n">' + nosGC.filter(ehMembro).length + '</td><td class="n">' + nosGC.filter(function (p) { return !ehMembro(p); }).length +
     '</td><td class="n">' + nosGC.filter(function (p) { return p.lvStatus === 'acompanhando'; }).length + '</td></tr></table></div>';
-  // Lar de Vida
+  // Lar de Vida (só em Relatórios)
+  if (!enxuto) {
   var visitas = 0, visMes = 0, emCasa = 0, ac = 0, enc = 0, fic = 0;
   PES().forEach(function (p) {
     lvVis(p).forEach(function (v) { if (v.realizada === 'Sim') { visitas++; if (P.noPer(v.data)) { visMes++; if (v.estava === 'Sim') emCasa++; } } });
@@ -3130,6 +3072,7 @@ function blocoVisaoIgreja(gcs) {
     '<div><b>' + ac + '</b><span>casas ativas</span></div><div><b>' + (enc ? pct(fic / enc) : '—') + '</b><span>conversão</span></div></div>' +
     barra('Acompanhamentos encerrados no período', enc, Math.max(enc, 1)) + barra('Viraram membros (ficaram)', fic, Math.max(enc, 1), 'var(--verde)') +
     '<div style="font-size:11px;color:#999">Conversão = ficaram ÷ acompanhamentos encerrados no período. Casas ativas = hoje. ' + emCasa + ' visita(s) do período com a pessoa em casa.</div></div>';
+  }
   // arrecadação cultos + GCs
   if (pode('relFin')) {
     var meses = mesesDoPeriodo(P, 6), por = meses.map(function (m) {
@@ -3155,7 +3098,8 @@ function blocoVisaoIgreja(gcs) {
       }).join('') + '</div><div class="leg" style="margin-top:22px"><span><i class="dot" style="background:var(--dourado)"></i>Cultos</span><span><i class="dot" style="background:#111"></i>GCs</span>' +
       (atual.pm ? '<span>Média de presentes nos cultos do período: <b>' + Math.round(atual.pm) + '</b></span>' : '') + '</div></div>';
   }
-  h += blocoMapa(ids, 'Distribuição geográfica — pessoas e GCs', { semGC: true, gcs: true });
+  if (!enxuto) h += blocoMapa(ids, 'Distribuição geográfica — pessoas e GCs', { semGC: true, gcs: true });
+  else if (pode('relFin')) h += '<div class="gap"></div><button class="btn gh" data-a="aba" data-v="financeiro">Abrir o consolidado financeiro</button>';
   return h;
 }
 
@@ -4403,7 +4347,7 @@ function inicioGestor() {
   var visMes = PES().filter(function (p) { return p.status !== 'Inativo' && p.prim && p.prim.slice(0, 7) === hoje().slice(0, 7) && (p.status === 'Em visita' || p.origem); }).length;
   var emGC = PES().filter(function (p) { return p.gcId && ids.indexOf(p.gcId) >= 0 && (p.status === 'Ativo' || p.status === 'Em visita'); }).length;
   var atrasadas = PES().filter(lvAtrasada).length;
-  h += '<div class="stats">' + statCard('Membros ativos', ativos) + statCard('Visitantes no mês', visMes) +
+  if (!(pode('relFin') || pode('usuarios'))) h += '<div class="stats">' + statCard('Membros ativos', ativos) + statCard('Visitantes no mês', visMes) +
     statCard('Pessoas em GCs', emGC, gcs.length + ' GC(s) ativos') +
     statCard('Lar de Vida', PES().filter(function (p) { return p.lvStatus === 'acompanhando'; }).length, atrasadas ? atrasadas + ' visita(s) atrasada(s)' : 'casas em acompanhamento', atrasadas ? 'dn' : '') + '</div>';
   h += '<div class="sec">Módulos</div>' + blocoModulos();
@@ -4416,7 +4360,7 @@ function inicioGestor() {
   if (meus > 0) at.push(linhaAtencao(meus, 'var(--pri)', ehDecisor() ? 'Visitantes sem GC' : 'Visitantes encaminhados a você', 'direcionar ao GC', 'direcionar', 'p-dour', 'aba', 'lv'));
   if (atrasadas) at.push(linhaAtencao(atrasadas, 'var(--amarelo)', 'Visitas do Lar de Vida atrasadas', 'mais de 7 dias sem visita', 'atrasado', 'p-amarelo', 'aba', 'lv'));
   if (ehAdmin() && db.pendentes) at.push(linhaAtencao(db.pendentes, '#14161A', 'Cadastros aguardando aprovação', 'novos usuários', 'aprovar', 'p-cinza', 'aba', 'usuarios'));
-  var alN = alertasNaoLidos(ids.concat([''])).length;
+  var alN = alertasNaoLidos(null).length;
   if (alN) at.push(linhaAtencao(alN, 'var(--azul)', 'Avisos não lidos', 'escalas, transferências e visitas', 'ver', 'p-dour', 'nav', 'avisos'));
   var semCh = gcs.filter(function (g) { var u = encOrd(g.id).filter(function (e) { return e.data < hoje() && e.data >= isoData(new Date(Date.now() - 8 * 864e5)); }); return u.length && !u.some(marcados); }).length;
   if (semCh) at.push(linhaAtencao(semCh, '#9AA1AC', 'GCs sem chamada na última semana', 'encontro criado sem presença lançada', '', '', 'aba', 'gcs'));
@@ -4538,6 +4482,129 @@ function inicioVoluntario() {
       }).join('') + '</div>';
   }
   return h + '<div id="ini-form"></div>';
+}
+
+/* ═══════════════════ v33: RELATÓRIOS E FINANCEIRO ═══════════════════ */
+var IC_REL = '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>';
+function podeFin() { return pode('relFin') || pode('financeiro'); }
+/** Página de relatórios: todos os indicadores consolidados (o Início fica enxuto). */
+function rRelatorios() {
+  var gcs = GCSativos(), ids = gcs.map(function (g) { return g.id; }), visaoPastor = pode('relFin') || pode('usuarios');
+  var h = '<div class="ini-ola" style="font-size:22px">Relatórios</div><div class="ini-sub">Indicadores da igreja, dos GCs e do Lar de Vida no período escolhido.</div>' + barraPeriodo();
+  h += blocoOrganograma();
+  if (visaoPastor) h += blocoVisaoIgreja(gcs, false);
+  else h += graficoGCSemanas(ids, 'Presença nos GCs — últimas 8 semanas');
+  var ms = gcs.map(function (g) { return { g: g, m: metricas(g.id) }; });
+  var tot = { ativos: 0, media: 0, tp: 0, tm: 0, alertas: 0, novos: 0, vcom: 0, vret: 0, vis: 0 };
+  ms.forEach(function (x) {
+    tot.ativos += x.m.ativos; tot.media += x.m.media; tot.tp += x.m.tp; tot.tm += x.m.tm; tot.alertas += x.m.alertas;
+    tot.novos += x.m.novos; tot.vcom += x.m.vcom; tot.vret += x.m.vret; tot.vis += x.m.visitantes;
+  });
+  h += '<div class="sec">Rede de GCs</div><div class="kpis">' +
+    kpi(gcs.length, 'GCs ativos', 'dk') + kpi(tot.ativos, 'Pessoas ativas na rede') +
+    kpi(num1(tot.media), 'Presentes por semana (média)') + kpi(tot.tm ? pct(tot.tp / tot.tm) : '—', '% de presença da rede') +
+    kpi(tot.vcom ? pct(tot.vret / tot.vcom) : '—', 'Retorno do visitante') + kpi(tot.novos, 'Novos no mês') +
+    kpi(tot.vis, 'Visitantes ativos') + kpi(tot.alertas, 'Pessoas com 2+ faltas', 'al') + '</div>';
+  h += '<div class="sec">Comparativo por GC</div><div class="card" style="padding:8px 10px;overflow-x:auto">';
+  if (!ms.length) h += '<div class="empty">Nenhum GC cadastrado.</div>';
+  else {
+    h += '<table class="tbl"><tr><th>GC</th><th style="text-align:right">Ativos</th><th style="text-align:right">Média</th><th style="text-align:right">Pres.</th><th style="text-align:right">Alertas</th><th style="text-align:right">Última</th></tr>';
+    ms.slice().sort(function (a, b) { return b.m.ativos - a.m.ativos; }).forEach(function (x) {
+      var atraso = x.m.diasSem === null || x.m.diasSem > 10;
+      h += '<tr class="cl" data-a="abrirGC" data-v="' + esc(x.g.id) + '"><td><b>' + esc(x.g.nome) + '</b><div style="font-size:10.5px;color:#999">' + esc(x.g.liderNome || 'sem líder') + '</div></td>' +
+        '<td class="n">' + x.m.ativos + '</td><td class="n">' + num1(x.m.media) + '</td><td class="n">' + (x.m.pres === null ? '—' : pct(x.m.pres)) + '</td>' +
+        '<td class="n" style="color:' + (x.m.alertas ? 'var(--vermelho)' : '#999') + '">' + x.m.alertas + '</td>' +
+        '<td class="n" style="color:' + (atraso ? 'var(--vermelho)' : '#555') + '">' + (x.m.ultimo ? br(x.m.ultimo) : '—') + '</td></tr>';
+    });
+    h += '</table><div style="font-size:10.5px;color:#999;margin-top:8px;line-height:1.5">Média = presentes nas últimas 4 chamadas · Pres. = presença nas últimas 8 · Última em vermelho = mais de 10 dias sem chamada.</div>';
+  }
+  h += '</div>';
+  var semChamada = ms.filter(function (x) { return x.m.diasSem === null || x.m.diasSem > 10; }), semLider = gcs.filter(function (g) { return !g.liderNome; });
+  if (semChamada.length || semLider.length) {
+    h += '<div class="sec">Pontos de atenção</div><div class="card" style="padding:4px 16px">' +
+      semChamada.map(function (x) { return linhaAtencao('!', 'var(--vermelho)', esc(x.g.nome), 'sem chamada há mais de 10 dias', '', '', 'abrirGC', x.g.id); }).join('') +
+      semLider.map(function (g) { return linhaAtencao('!', 'var(--amarelo)', esc(g.nome), 'GC sem líder definido', '', '', 'editarGC', g.id); }).join('') + '</div>';
+  }
+  var pes = PES().filter(function (p) { return gcPor(p.gcId) && !gcPor(p.gcId).deleted; }), t = pes.length || 1;
+  h += '<div class="sec">Jornada do Membro — rede</div><div class="card">' +
+    ETAPAS.map(function (e) { return barra(e, pes.filter(function (p) { return p.jornada === e; }).length, t); }).join('') + '</div>';
+  h += blocoLVResumo(ids, false);
+  h += '<div class="sec">Pessoas por GC</div><div class="card">' + ms.map(function (x) { return barra(esc(x.g.nome), x.m.ativos, tot.ativos || 1); }).join('') + '</div>';
+  var cl = (function () { var m = {}; PES().forEach(function (p) { if (p.canal) m[p.canal] = (m[p.canal] || 0) + 1; }); return Object.keys(m).map(function (k) { return [k, m[k]]; }); })().sort(function (a, b) { return b[1] - a[1]; });
+  var tc = cl.reduce(function (s2, x) { return s2 + x[1]; }, 0) || 1;
+  h += '<div class="sec">Como conheceram / receberam o convite</div><div class="card">' + (cl.length ? cl.map(function (x) { return barra(esc(x[0]), x[1], tc); }).join('') : '<div class="empty">Sem dados ainda.</div>') + '</div>';
+  if (!visaoPastor) h += blocoMapa(ids, 'Mapa de calor — rede');
+  if (podeFin()) h += '<div class="gap"></div><button class="btn gh" data-a="aba" data-v="financeiro">Abrir o consolidado financeiro</button>';
+  return h;
+}
+
+/** Consolidado financeiro: só valores e gráficos (cultos/eventos + GCs). */
+function somaFin(ids, f) {
+  var r = { diz: 0, ofe: 0, out: 0, cul: 0, gc: 0, nCul: 0, porTipo: {}, porGC: {} };
+  EVS().forEach(function (e) {
+    if (!f(e.data)) return;
+    var d = valor(e.dizimo), o = valor(e.oferta), x = valor(e.outras), tt = d + o + x;
+    r.diz += d; r.ofe += o; r.out += x; r.cul += tt; if (tt) r.nCul++;
+    var tp = e.tipo || 'Culto'; r.porTipo[tp] = (r.porTipo[tp] || 0) + tt;
+  });
+  ENC().forEach(function (e) {
+    if (ids.indexOf(e.gcId) < 0 || !f(e.data)) return;
+    var d = valor(e.dizimo), o = valor(e.oferta);
+    r.diz += d; r.ofe += o; r.gc += d + o; r.porGC[e.gcId] = (r.porGC[e.gcId] || 0) + d + o;
+  });
+  r.t = r.cul + r.gc;
+  return r;
+}
+function varPct(a, b) {
+  if (!b) return '';
+  var d = Math.round((a - b) / b * 100);
+  return (d >= 0 ? '▲ ' : '▼ ') + Math.abs(d) + '%';
+}
+function rFinanceiro() {
+  if (!podeFin()) return '<div class="card"><div class="empty">Sem acesso ao financeiro.</div></div>';
+  var P = periodoBI(), gcs = GCSativos(), ids = gcs.map(function (g) { return g.id; });
+  var a = somaFin(ids, P.noPer), b = somaFin(ids, P.noAnt);
+  var ateAno = P.ate < hoje() ? P.ate : hoje(), ano = ateAno.slice(0, 4);
+  var acum = somaFin(ids, function (d) { d = String(d || ''); return d.slice(0, 4) === ano && d <= ateAno; });
+  var h = '<div class="ini-ola" style="font-size:22px">Financeiro</div><div class="ini-sub">Entradas consolidadas de cultos, eventos e GCs.</div>' + barraPeriodo();
+  var vp = varPct(a.t, b.t);
+  h += '<div class="hero"><small>TOTAL DE ENTRADAS · ' + esc(String(P.rot).toUpperCase()) + '</small><div class="big">' + moeda(a.t) + '</div>' +
+    '<div class="mt">' + (vp ? vp + ' vs ' + esc(P.antRot) + ' (' + moeda(b.t) + ')' : 'sem lançamentos no período anterior') + ' · acumulado ' + ano + ': ' + moeda(acum.t) + '</div></div>';
+  h += '<div class="stats">' +
+    statCard('Dízimos', moeda(a.diz), varPct(a.diz, b.diz) || '—', a.diz >= b.diz ? 'up' : 'dn') +
+    statCard('Ofertas', moeda(a.ofe), varPct(a.ofe, b.ofe) || '—', a.ofe >= b.ofe ? 'up' : 'dn') +
+    statCard('Outras entradas', moeda(a.out), varPct(a.out, b.out) || '—', a.out >= b.out ? 'up' : 'dn') +
+    statCard('Média por culto', a.nCul ? moeda(a.cul / a.nCul) : '—', a.nCul + ' culto(s) com lançamento') + '</div>';
+  // origem
+  var tt = a.t || 1;
+  h += '<div class="sec">Origem das entradas</div><div class="card">' +
+    barra('Cultos e eventos · ' + moeda(a.cul), a.cul, tt, 'var(--pri)') + barra('GCs · ' + moeda(a.gc), a.gc, tt, 'var(--tx)') +
+    '<div style="height:6px"></div>' + barra('Dízimos · ' + moeda(a.diz), a.diz, tt, 'var(--verde)') + barra('Ofertas · ' + moeda(a.ofe), a.ofe, tt, 'var(--amarelo)') +
+    (a.out ? barra('Outras · ' + moeda(a.out), a.out, tt, '#7C5CFA') : '') + '</div>';
+  // 12 meses
+  var meses = mesesAtras(12, ateAno), por = meses.map(function (m) { return somaFin(ids, function (d) { return String(d || '').slice(0, 7) === m; }); });
+  var mx = 1; por.forEach(function (x) { if (x.t > mx) mx = x.t; });
+  var melhor = por.reduce(function (bi, x, i) { return x.t > por[bi].t ? i : bi; }, 0);
+  h += '<div class="sec">Últimos 12 meses</div><div class="card"><div class="fin12">' + por.map(function (x, i) {
+    var pc = x.t ? x.cul / x.t * 100 : 0;
+    return '<div class="col' + (meses[i] === ateAno.slice(0, 7) ? ' on' : '') + '" title="' + nomeMes(meses[i]) + ': ' + moeda(x.t) + '"><b>' + (x.t ? moedaCurta(x.t).replace('R$ ', '') : '') + '</b>' +
+      '<div class="bx" style="height:' + Math.max(2, x.t / mx * 100) + '%"><i style="height:' + (100 - pc) + '%"></i></div><u>' + MESES[+meses[i].slice(5, 7) - 1] + '</u></div>';
+  }).join('') + '</div><div class="leg"><span><i class="dot" style="background:var(--pri)"></i>Cultos e eventos</span><span><i class="dot" style="background:var(--tx)"></i>GCs</span>' +
+    (por[melhor].t ? '<span>Maior mês: <b>' + nomeMes(meses[melhor]) + '</b> · ' + moeda(por[melhor].t) + '</span>' : '') + '</div></div>';
+  // por GC
+  var rk = gcs.map(function (g) { return { g: g, v: a.porGC[g.id] || 0 }; }).sort(function (x, y) { return y.v - x.v; });
+  var tg = a.gc || 1;
+  h += '<div class="sec">Por GC · ' + esc(P.rot) + '</div><div class="card">' + (a.gc ? rk.map(function (x) { return barra(esc(x.g.nome) + ' · ' + moeda(x.v), x.v, tg, 'var(--tx)'); }).join('')
+    : '<div class="empty">Nenhum valor lançado nos GCs no período.</div>') + '</div>';
+  // por tipo
+  var tps = Object.keys(a.porTipo).filter(function (k) { return a.porTipo[k]; }).sort(function (x, y) { return a.porTipo[y] - a.porTipo[x]; });
+  h += '<div class="sec">Por tipo de culto/evento · ' + esc(P.rot) + '</div><div class="card">' + (tps.length ? tps.map(function (k) { return barra(esc(k) + ' · ' + moeda(a.porTipo[k]), a.porTipo[k], a.cul || 1, 'var(--pri)'); }).join('')
+    : '<div class="empty">Nenhum valor lançado nos cultos no período.</div>') + '</div>';
+  // tabela mensal
+  h += '<div class="sec">Resumo mensal</div><div class="card" style="padding:8px 10px;overflow-x:auto"><table class="tbl"><tr><th>Mês</th><th style="text-align:right">Cultos</th><th style="text-align:right">GCs</th><th style="text-align:right">Total</th></tr>' +
+    meses.slice().reverse().map(function (m, i) { var x = por[meses.length - 1 - i]; return '<tr><td><b>' + nomeMes(m) + '</b></td><td class="n">' + moeda(x.cul) + '</td><td class="n">' + moeda(x.gc) + '</td><td class="n"><b>' + moeda(x.t) + '</b></td></tr>'; }).join('') +
+    '</table></div><div class="meta">Valores lançados nos cultos/eventos (dízimos, ofertas e outras entradas) e nos encontros dos GCs.</div>';
+  return h;
 }
 
 /* ── encontros agendados (futuros) ── */
