@@ -20,7 +20,7 @@ var ICONE_2G = 'icons/icon-192.png';
 // padrão antes da 1ª configuração: no app instalado (PWA) é o 2Gather; na página antiga, o logo embutido
 var LOGO_PADRAO = (window.APP_CONFIG && window.APP_CONFIG.apiUrl) ? ICONE_2G : document.getElementById('h-img').getAttribute('src');
 var LOGO = LOGO_PADRAO;        // ícone usado na barra superior e nas telas internas
-var VERSAO_APP = 30;
+var VERSAO_APP = 31;
 var SERVIDOR_ESPERADO = 27;      // versão do Código.gs que acompanha este app
 var EXIGE_HOSPEDADO = true;      // segurança: o app só funciona pelo endereço oficial (dados nunca trafegam pela URL)
 
@@ -1023,8 +1023,7 @@ function abrirModulo(id) {
 }
 
 function rBI() {
-  var gcs = GCSativos(), h = blocoModulos() + barraPeriodo() + blocoAlertas(gcs.map(function (g) { return g.id; }), true) + blocoCursosHoje();
-  if (ehAdmin()) h += avisoServidor();
+  var gcs = GCSativos(), h = inicioGestor() + '<div class="sec">Indicadores</div>' + barraPeriodo();
 
   var visaoPastor = pode('relFin') || pode('usuarios');
   h += blocoOrganograma();
@@ -1539,12 +1538,11 @@ function salvarServidor(url) {
 /* ═══════════════════ VISÃO DO GC ═══════════════════ */
 function gcA() { return cfg.gcAtual; }
 function rPainel() {
-  var id = gcA(), m = metricas(id), g = gcPor(id), h = blocoModulos();
-  h += blocoAlertas([id], false);
-  h += blocoMinhasEscalas();
-  h += blocoCursosHoje();
-  h += blocoEncontroHoje(g);
-  h += blocoAgendados(id, false);
+  var id = gcA(), m = metricas(id), g = gcPor(id), h = '';
+  if (!g) return '<div class="empty">GC não encontrado.</div>';
+  if (!pode('gcEvento') && !pode('lvLiberar')) return inicioDiscipulo(g) + blocoCursosHoje();     // discípulo: início enxuto
+  h += inicioLider(g) + blocoCursosHoje();
+  h += '<div class="sec">Indicadores do GC</div>';
   if (pode('lvLiberar')) h += blocoOrganograma();
   if (podeEditarGC(g)) h += '<button class="btn gh" data-a="editarGC" data-v="' + esc(id) + '" style="margin-bottom:12px">Editar dados do GC</button>';
   var prox = proximoEncontro(g);
@@ -2483,7 +2481,8 @@ function lvAtualizarGC() {
   buscarGeo(itens).then(function (mudou) { if (mudou && $('v-gcwrap')) $('v-gcwrap').innerHTML = gcSelectHtml(); });
 }
 function rLVNovo() {
-var h = '<div class="tabs">' + [['visitante', 'Visitante do culto'], ['membro', 'Membro sem GC']].map(function (x) {
+var topo = lvModoCad === 'visitante' && pode('visitantes') ? inicioVoluntario() : '';
+var h = topo + '<div class="tabs" id="lv-tabs">' + [['visitante', 'Visitante do culto'], ['membro', 'Membro sem GC']].map(function (x) {
   return '<button data-a="lvModo" data-v="' + x[0] + '" class="' + (lvModoCad === x[0] ? 'on' : '') + '">' + x[1] + '</button>'; }).join('') + '</div>';
 if (lvModoCad === 'membro') {
   setTimeout(lvAtualizarGC, 0);
@@ -4256,6 +4255,230 @@ function salvarSenhaNova() {
   }).catch(function (e) { toast(e.message, 4500); }).then(function () { carregando(false); });
 }
 
+/* ═══════════════════ v31: INÍCIO PERSONALIZADO POR PERFIL ═══════════════════ */
+function saudacao() {
+  var h = new Date().getHours(), s = h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
+  var n = pri(eu().nome || ''), pap = papel() === 'pastor' ? 'Pr. ' : '';
+  return s + (n ? ', ' + pap + n : '');
+}
+function dataLonga(iso) {
+  var d = parseData(iso || hoje());
+  return DIAS[d.getDay()] + ', ' + d.getDate() + ' de ' + ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'][d.getMonth()];
+}
+function topoInicio(sub) {
+  return '<div class="ini-ola">' + esc(saudacao()) + '</div><div class="ini-sub">' + sub + '</div>';
+}
+/** Cartão escuro em destaque: o que importa agora. botoes = [[texto, acao, valor, claro?]] */
+function heroCard(peq, grande, linha, botoes) {
+  return '<div class="hero"><small>' + peq + '</small><div class="big">' + grande + '</div>' + (linha ? '<div class="mt">' + linha + '</div>' : '') +
+    (botoes && botoes.length ? '<div class="acts">' + botoes.map(function (b) {
+      return '<button class="hbtn' + (b[3] ? ' w' : '') + '" data-a="' + b[1] + '"' + (b[2] != null ? ' data-v="' + esc(b[2]) + '"' : '') + '>' + b[0] + '</button>';
+    }).join('') + '</div>' : '') + '</div>';
+}
+function statCard(rot, val, det, cls) {
+  return '<div class="st"><small>' + rot + '</small><b>' + val + '</b>' + (det ? '<div class="d ' + (cls || '') + '">' + det + '</div>' : '') + '</div>';
+}
+/** Linha de lista com número/ícone colorido. */
+function linhaAtencao(n, cor, titulo, sub, chip, chipCls, acao, valor) {
+  return '<div class="row' + (acao ? ' cl' : '') + '"' + (acao ? ' data-a="' + acao + '"' + (valor != null ? ' data-v="' + esc(valor) + '"' : '') : '') + '>' +
+    '<div class="av" style="background:' + cor + ';color:#fff">' + n + '</div><div class="info"><div class="nm">' + titulo + '</div><div class="sb">' + sub + '</div></div>' +
+    (chip ? '<span class="pill ' + chipCls + '">' + chip + '</span>' : '') + '</div>';
+}
+function proximoCulto() {
+  var hj = hoje(), agoraM = new Date().getHours() * 60 + new Date().getMinutes();
+  return EVS().filter(function (e) {
+    if (e.data < hj) return false;
+    if (e.data > hj) return true;
+    var f = minStr(e.fim) !== null ? minStr(e.fim) : (minStr(e.inicio) !== null ? minStr(e.inicio) + 120 : 1440);
+    return f >= agoraM;
+  }).sort(function (a, b) { return (a.data + (a.inicio || '')) < (b.data + (b.inicio || '')) ? -1 : 1; })[0] || null;
+}
+function quandoTxt(iso, hora) {
+  var hj = hoje(), am = parseData(hj); am.setDate(am.getDate() + 1);
+  return (iso === hj ? 'Hoje' : iso === isoData(am) ? 'Amanhã' : DIAS[parseData(iso).getDay()] + ' · ' + br(iso)) + (hora ? ' · ' + esc(hora) : '');
+}
+function proximoEncGC(gcId) { var hj = hoje(); return encOrd(gcId).filter(function (e) { return e.data >= hj; })[0] || null; }
+function minhasEscalas() {
+  var me = eu().id, hj = hoje(), l = [];
+  ENC().forEach(function (e) {
+    if (e.data < hj || !e.escala) return;
+    FUNCOES_GC.forEach(function (f) { if (e.escala[f[0]] === me) l.push({ e: e, f: f[1] }); });
+  });
+  return l.sort(function (a, b) { return a.e.data < b.e.data ? -1 : 1; });
+}
+function gradeEscala(e) {
+  var es = (e && e.escala) || {};
+  return '<div class="esc">' + FUNCOES_GC.map(function (f) {
+    var uid = es[f[0]], nm = uid ? nomeEquipe(e.gcId, uid) : '', meu = uid && uid === eu().id;
+    return '<div class="' + (meu ? 'me' : '') + '"><small>' + f[1].toUpperCase() + '</small><b' + (nm ? '' : ' style="color:var(--tx3)"') + '>' +
+      (nm ? esc(meu ? pri(nm) + ' (você)' : nm) : 'a definir') + '</b></div>';
+  }).join('') + '</div>';
+}
+function aniversarioEm(p, dias) {
+  if (!p.nasc || p.nasc.length < 10) return null;
+  var hj = parseData(hoje());
+  for (var i = 0; i <= dias; i++) {
+    var d = new Date(hj); d.setDate(d.getDate() + i);
+    if (pad(d.getMonth() + 1) === p.nasc.slice(5, 7) && pad(d.getDate()) === p.nasc.slice(8, 10)) return i;
+  }
+  return null;
+}
+
+/* ── PASTOR / MASTER / SUPERVISOR ── */
+function inicioGestor() {
+  var gcs = GCSativos(), ids = gcs.map(function (g) { return g.id; }), cu = proximoCulto(), h = '';
+  h += topoInicio(dataLonga() + (cu && cu.data === hoje() ? ' · ' + esc(cu.titulo) + (cu.inicio ? ' às ' + esc(cu.inicio) : '') : ''));
+  if (cu) {
+    var aberto = eventoAbertoAgora();
+    h += heroCard(cu.data === hoje() ? 'HOJE' : 'PRÓXIMO CULTO', esc(cu.titulo), quandoTxt(cu.data, cu.inicio) +
+      (cu.liberado ? ' · ' + (aberto && aberto.id === cu.id ? 'cadastro de visitantes aberto' : textoJanela(cu)) : ''),
+      [['Ver culto', 'aba', 'cultos', true]].concat(pode('eventos') && (cu.msgTexto || cu.temImg) ? [['Mensagem', 'evMensagem', cu.id]] : []));
+  } else if (pode('eventos')) {
+    h += heroCard('AGENDA', 'Nenhum culto agendado', 'Crie os cultos da semana para liberar o cadastro de visitantes.', [['Abrir cultos', 'aba', 'cultos', true]]);
+  }
+  // números
+  var P = typeof periodoBI === 'function' ? periodoBI() : null;
+  var ativos = PES().filter(function (p) { return p.status === 'Ativo'; }).length;
+  var visMes = PES().filter(function (p) { return p.status !== 'Inativo' && p.prim && p.prim.slice(0, 7) === hoje().slice(0, 7) && (p.status === 'Em visita' || p.origem); }).length;
+  var emGC = PES().filter(function (p) { return p.gcId && ids.indexOf(p.gcId) >= 0 && (p.status === 'Ativo' || p.status === 'Em visita'); }).length;
+  var atrasadas = PES().filter(lvAtrasada).length;
+  h += '<div class="stats">' + statCard('Membros ativos', ativos) + statCard('Visitantes no mês', visMes) +
+    statCard('Pessoas em GCs', emGC, gcs.length + ' GC(s) ativos') +
+    statCard('Lar de Vida', PES().filter(function (p) { return p.lvStatus === 'acompanhando'; }).length, atrasadas ? atrasadas + ' visita(s) atrasada(s)' : 'casas em acompanhamento', atrasadas ? 'dn' : '') + '</div>';
+  h += '<div class="sec">Módulos</div>' + blocoModulos();
+  // atenção
+  var at = [];
+  var fila = pode('lvDirecionar') ? lvFila() : [];
+  var doPastor = fila.filter(function (p) { return p.supRespId === '__pastor__'; }).length;
+  if (ehDecisor() && doPastor) at.push(linhaAtencao(doPastor, 'var(--vermelho)', 'Visitantes na fila do pastor', 'sem GC compatível ou devolvidos', 'decidir', 'p-vermelho', 'aba', 'lv'));
+  var meus = fila.length - (ehDecisor() ? doPastor : 0);
+  if (meus > 0) at.push(linhaAtencao(meus, 'var(--pri)', ehDecisor() ? 'Visitantes sem GC' : 'Visitantes encaminhados a você', 'direcionar ao GC', 'direcionar', 'p-dour', 'aba', 'lv'));
+  if (atrasadas) at.push(linhaAtencao(atrasadas, 'var(--amarelo)', 'Visitas do Lar de Vida atrasadas', 'mais de 7 dias sem visita', 'atrasado', 'p-amarelo', 'aba', 'lv'));
+  if (ehAdmin() && db.pendentes) at.push(linhaAtencao(db.pendentes, '#14161A', 'Cadastros aguardando aprovação', 'novos usuários', 'aprovar', 'p-cinza', 'aba', 'usuarios'));
+  var alN = alertasNaoLidos(ids.concat([''])).length;
+  if (alN) at.push(linhaAtencao(alN, 'var(--azul)', 'Avisos não lidos', 'escalas, transferências e visitas', 'ver', 'p-dour', 'nav', 'avisos'));
+  var semCh = gcs.filter(function (g) { var u = encOrd(g.id).filter(function (e) { return e.data < hoje() && e.data >= isoData(new Date(Date.now() - 8 * 864e5)); }); return u.length && !u.some(marcados); }).length;
+  if (semCh) at.push(linhaAtencao(semCh, '#9AA1AC', 'GCs sem chamada na última semana', 'encontro criado sem presença lançada', '', '', 'aba', 'gcs'));
+  h += '<div class="sec">Precisa da sua atenção</div>' + (at.length ? '<div class="card" style="padding:4px 16px">' + at.join('') + '</div>'
+    : '<div class="card"><div class="empty" style="padding:6px">Tudo em dia por aqui. 🙌</div></div>');
+  var esc1 = minhasEscalas();
+  if (esc1.length) h += blocoMinhasEscalas();
+  h += blocoCursosHoje();
+  if (ehAdmin()) h += avisoServidor();
+  return h;
+}
+
+/* ── LÍDER ── */
+function inicioLider(g) {
+  var id = g.id, e = achaEnc(id, hoje()) || proximoEncGC(id), h = '', pes = PES(id), encs = encOrd(id);
+  h += topoInicio(e ? (e.data === hoje() ? 'Hoje tem encontro' : 'Próximo encontro: ' + quandoTxt(e.data).toLowerCase()) : esc(g.nome));
+  if (e) {
+    var bts = [];
+    if (podeChamada(e)) bts.push(['Fazer chamada', 'encChamada', e.data, true]);
+    bts.push(['Editar encontro e escala', 'encEditar', e.data, !podeChamada(e)]);
+    h += heroCard(quandoTxt(e.data, e.horario).toUpperCase(), esc(e.tema || 'Encontro do ' + g.nome),
+      ((e.anfitriao || (e.escala && e.escala.pregador && nomeEquipe(id, e.escala.pregador))) ? 'Pregador: ' + esc(e.anfitriao || nomeEquipe(id, e.escala.pregador)) : 'pregador a definir') + (podeChamada(e) ? ' · chamada aberta' : ''), bts);
+    h += '<div class="sec sec-l"><span>Escala do encontro</span>' + (FUNCOES_GC.some(function (f) { return e.escala && e.escala[f[0]]; }) ? '<a data-a="avisarEscala" data-v="' + esc(e.data) + '">Avisar no WhatsApp</a>' : '') + '</div>' +
+      '<div class="card">' + gradeEscala(e) + '</div>';
+  } else {
+    h += heroCard('ENCONTROS', 'Nenhum encontro criado', 'Crie o próximo encontro para liberar a chamada e montar a escala.', [['Criar encontro', 'encAgendar', null, true]]);
+  }
+  var m = metricas(id);
+  h += '<div class="stats">' + statCard('Pessoas ativas', m.ativos, m.novos ? '▲ ' + m.novos + ' no mês' : '', 'up') +
+    statCard('Presença média', m.pres === null ? '—' : pct(m.pres), num1(m.media) + ' por encontro') + '</div>';
+  // cuidar esta semana
+  var c = [];
+  pes.filter(function (p) { return statusDe(p, encs).s === 'contatar'; }).slice(0, 4).forEach(function (p) {
+    c.push(linhaAtencao(ini(p.nome), '#F06A3A', esc(p.nome), statusDe(p, encs).faltas + ' faltas seguidas', 'contatar', 'p-vermelho', 'abrirPessoa', p.id));
+  });
+  pes.filter(function (p) { return p.status === 'Em visita'; }).slice(0, 3).forEach(function (p) {
+    c.push(linhaAtencao(ini(p.nome), '#7C5CFA', esc(p.nome), (visitasDe(p) ? 'visitante · ' + visitasDe(p) + ' presença(s)' : 'visitante novo'), 'visitante', 'p-amarelo', 'abrirPessoa', p.id));
+  });
+  pes.filter(function (p) { return p.status === 'Ativo' && aniversarioEm(p, 7) !== null; }).sort(function (a, b) { return aniversarioEm(a, 7) - aniversarioEm(b, 7); }).slice(0, 3).forEach(function (p) {
+    var d = aniversarioEm(p, 7);
+    c.push(linhaAtencao(ini(p.nome), '#16A36A', esc(p.nome), 'aniversário ' + (d === 0 ? 'hoje 🎂' : d === 1 ? 'amanhã 🎂' : 'em ' + d + ' dias'), 'parabenizar', 'p-verde', 'abrirPessoa', p.id));
+  });
+  var lib = pes.filter(function (p) { return p.lvStatus === 'pendente'; });
+  if (pode('lvLiberar') && lib.length) c.unshift(linhaAtencao(lib.length, 'var(--verde)', 'Lar de Vida para liberar', lib.slice(0, 2).map(function (p) { return esc(nomeChamado(p)); }).join(', ') + (lib.length > 2 ? '…' : ''), 'liberar', 'p-dour', 'aba', 'lar'));
+  var atr = pes.filter(lvAtrasada).length;
+  if (atr) c.unshift(linhaAtencao(atr, 'var(--amarelo)', 'Visitas atrasadas no Lar de Vida', 'discípulos com prazo vencido', 'ver', 'p-amarelo', 'aba', 'lar'));
+  h += '<div class="sec">Cuidar esta semana</div>' + (c.length ? '<div class="card" style="padding:4px 16px">' + c.join('') + '</div>'
+    : '<div class="card"><div class="empty" style="padding:6px">Ninguém precisando de atenção especial agora. 🙌</div></div>');
+  h += blocoMinhasEscalas() + blocoAlertas([id], false);
+  h += '<div class="sec">Módulos</div>' + blocoModulos();
+  return h;
+}
+
+/* ── DISCÍPULO ── */
+function inicioDiscipulo(g) {
+  var id = g.id, esc1 = minhasEscalas(), casas = lvCasasDe(eu().id), h = '';
+  var prox = esc1[0], e = achaEnc(id, hoje()) || proximoEncGC(id);
+  var partes = []; if (esc1.length) partes.push(esc1.length + ' escala' + (esc1.length > 1 ? 's' : ''));
+  if (casas.length) partes.push(casas.length + ' casa' + (casas.length > 1 ? 's' : '') + ' no Lar de Vida');
+  h += topoInicio(partes.length ? 'Você tem ' + partes.join(' e ') : esc(g.nome));
+  if (prox) {
+    h += heroCard('SUA ESCALA · ' + quandoTxt(prox.e.data, prox.e.horario).toUpperCase(), esc(prox.f),
+      'Encontro do ' + esc(gcNome(prox.e.gcId)) + (prox.e.tema ? ' · ' + esc(prox.e.tema) : ''),
+      [[podeChamada(prox.e) ? 'Fazer chamada' : 'Ver encontro', 'encChamada', prox.e.data, true]]);
+  } else if (e) {
+    h += heroCard('PRÓXIMO ENCONTRO · ' + quandoTxt(e.data, e.horario).toUpperCase(), esc(e.tema || 'Encontro do ' + g.nome),
+      e.anfitriao ? 'Pregador: ' + esc(e.anfitriao) : '', [[podeChamada(e) ? 'Fazer chamada' : 'Ver encontro', 'encChamada', e.data, true]]);
+  }
+  if (casas.length) {
+    h += '<div class="sec sec-l"><span>Minhas casas · Lar de Vida</span><a data-a="aba" data-v="lar">Ver todas</a></div>';
+    casas.slice().sort(function (a, b) { return String(lvPrazo(a)).localeCompare(String(lvPrazo(b))); }).slice(0, 3).forEach(function (p) {
+      var n = lvVis(p).length, end = separarBairroCidade(p.bairro, p.cidade);
+      h += '<div class="card"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div style="min-width:0"><b style="font-size:15px">' + esc(p.nome) + '</b>' +
+        '<div style="font-size:12.5px;color:var(--tx2)">' + esc([p.endereco, end.bairro].filter(Boolean).join(' · ') || 'endereço não informado') + '</div></div>' + lvPrazoPill(p) + '</div>' +
+        lvDots(p) + '<div style="display:flex;gap:8px;margin-top:6px">' +
+        (n < LV_SEMANAS ? '<button class="btn sm" style="flex:1" data-a="lvRegistrar" data-v="' + esc(p.id) + '">Registrar visita ' + (n + 1) + '</button>' : '<button class="btn vd sm" style="flex:1" data-a="lvEncerrar" data-v="' + esc(p.id) + '">Encerrar acompanhamento</button>') +
+        (fone(p.fone) ? '<a class="btn gh sm" style="text-decoration:none;text-align:center" target="_blank" rel="noopener" href="https://wa.me/' + (fone(p.fone).length <= 11 ? '55' : '') + fone(p.fone) + '">WhatsApp</a>' : '') + '</div></div>';
+    });
+  }
+  // meu GC
+  var me = PES(id).filter(function (p) { return normalizar(p.nome) === normalizar(eu().nome); })[0], st = me ? statsDe(me) : null;
+  var g2 = gcPor(id), px = proximoEncontro(g2);
+  h += '<div class="sec">Meu GC</div><div class="stats">' +
+    statCard('Minha presença', st && st.mar ? pct(st.pct) : '—', st && st.mar ? 'nos encontros lançados' : 'sem chamadas ainda', 'up') +
+    statCard('Próximo encontro', e ? (e.data === hoje() ? 'Hoje' : DIAS[parseData(e.data).getDay()].slice(0, 3) + ' ' + br(e.data)) : (px ? br(px) : '—'),
+      e && e.horario ? 'às ' + esc(e.horario) + (g2 && g2.endereco ? ' · ' + esc(g2.endereco) : '') : (g2 && g2.endereco ? esc(g2.endereco) : '')) + '</div>';
+  if (e && !podeChamada(e)) {
+    h += '<div class="card" style="display:flex;gap:12px;align-items:center"><div class="hvolta" style="box-shadow:none;background:var(--bg)"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>' +
+      '<div><b style="font-size:14px">Chamada fechada</b><div style="font-size:12.5px;color:var(--tx2)">Abre ' + textoJanelaGC(e) + '</div></div></div>';
+  }
+  h += blocoAlertas([id], false);
+  h += '<div class="sec">Atalhos</div>' + blocoModulos();
+  return h;
+}
+
+/* ── VOLUNTÁRIO (recepção do culto) ── */
+function inicioVoluntario() {
+  var ev = eventoAbertoAgora(), st = situacaoCadastro(), hj = hoje(), h = '';
+  var meusHoje = PES().filter(function (p) { return p.criadoPor === eu().id && (p.prim === hj || (Array.isArray(p.visitasIgrejaDatas) && p.visitasIgrejaDatas.some(function (v) { return v.d === hj; }))); });
+  var doCulto = ev ? PES().filter(function (p) { return p.eventoId === ev.id || (Array.isArray(p.visitasIgrejaDatas) && p.visitasIgrejaDatas.some(function (v) { return v.ev === ev.id; })); }) : meusHoje;
+  h += '<div class="ini-ola">Bom culto' + (pri(eu().nome) ? ', ' + esc(pri(eu().nome)) : '') + '!</div>';
+  h += '<div class="ini-sub">' + (ev ? esc(ev.titulo) + ' · ' + (ev.inicio ? 'hoje ' + esc(ev.inicio) + ' · ' : '') + textoJanela(ev) : st.s === 'aberto' ? 'Cadastro aberto' : 'Nenhum culto com cadastro aberto agora') + '</div>';
+  if (st.s === 'aberto' || !modoVisitante()) {
+    h += '<div class="big-cta" data-a="lvIrForm"><div class="bi"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></div>' +
+      '<div><b>Cadastrar visitante</b><span>toque para começar · leva 1 minuto</span></div></div>';
+  }
+  h += '<div class="count"><div><b>' + doCulto.length + '</b><small>visitantes ' + (ev ? 'neste culto' : 'hoje') + '</small></div>' +
+    '<div><b>' + doCulto.filter(function (p) { return p.aceitaVisita === 'Sim'; }).length + '</b><small>aceitam visita</small></div>' +
+    '<div><b>' + doCulto.filter(function (p) { return +p.visitasIgreja >= 2; }).length + '</b><small>voltaram</small></div></div>';
+  h += '<div class="card cl" data-a="lvModo" data-v="membro" style="display:flex;gap:12px;align-items:center;cursor:pointer"><div class="mod" style="pointer-events:none"><span class="mi" style="width:44px;height:44px;color:var(--pri)"><svg viewBox="0 0 24 24">' + IC_PESSOAS + '</svg></span></div>' +
+    '<div style="flex:1"><b style="font-size:14px">Membro sem GC</b><div style="font-size:12.5px;color:var(--tx2)">já frequenta a igreja e quer entrar num GC</div></div><span style="color:var(--tx3);font-size:18px">›</span></div>';
+  if (meusHoje.length) {
+    h += '<div class="sec sec-l"><span>Cadastrados hoje</span><a data-a="nav" data-v="lvmeus">Ver todos</a></div><div class="card" style="padding:4px 16px">' +
+      meusHoje.slice(0, 6).map(function (p) {
+        var vol = +p.visitasIgreja >= 2;
+        return '<div class="row"><div class="av">' + ini(p.nome) + '</div><div class="info"><div class="nm">' + esc(p.nome) + '</div><div class="sb">' +
+          esc(separarBairroCidade(p.bairro, p.cidade).bairro || '—') + (p.aceitaVisita === 'Sim' ? ' · aceita visita' : '') + '</div></div>' +
+          '<span class="pill ' + (vol ? 'p-dour' : 'p-verde') + '">' + (vol ? p.visitasIgreja + 'ª visita' : 'novo') + '</span></div>';
+      }).join('') + '</div>';
+  }
+  return h + '<div id="ini-form"></div>';
+}
+
 /* ── encontros agendados (futuros) ── */
 function agendados(gcId) {
   var hj = hoje();
@@ -4520,6 +4743,7 @@ var ACOES = {
   sincronizar: function () { sincronizar(true); }, servidor: servidor, salvarServidor: function () { salvarServidor(); },
   padraoServidor: function () { salvarServidor(URL_PADRAO); },
   novaPessoa: function () { abrirPessoa(null); }, abrirPessoa: function (v) { abrirPessoa(v); }, salvarPessoa: function () { salvarPessoa(); }, modulo: abrirModulo,
+    lvIrForm: function () { var t = $('lv-tabs'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); setTimeout(function () { if ($('v-nome')) $('v-nome').focus(); }, 350); },
     encSel: function (v) { chDraft = null; cfg.dataChamada = v; cfg.dataChamadaGC = gcA(); salvarCfg(); render(); },
     avisarEscala: function (v) { avisarEscalaModal(v); }, recEnviar: recEnviar, salvarSenhaNova: salvarSenhaNova,
     sairSenhaTemp: function () { senhaObrig = false; fechar(); sair(false); },
