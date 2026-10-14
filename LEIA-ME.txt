@@ -1,2 +1,6 @@
-2Gather v29 — no GitHub substitua só: app.js, index.html, sw.js
+2Gather v30 — novo layout claro (etapa 1)
+
+No GitHub (repositório gestao-igrejas), substitua SÓ: app.js, index.html, sw.js
 (Add file → Upload files → Commit). Não mexa em config.js, _headers, manifest, icons/ e lib/.
+
+No Apps Script: cole o Codigo_v27.txt no Código.gs → Implantar → Gerenciar implantações → lápis → Nova versão.

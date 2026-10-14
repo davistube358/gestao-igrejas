@@ -20,8 +20,8 @@ var ICONE_2G = 'icons/icon-192.png';
 // padrão antes da 1ª configuração: no app instalado (PWA) é o 2Gather; na página antiga, o logo embutido
 var LOGO_PADRAO = (window.APP_CONFIG && window.APP_CONFIG.apiUrl) ? ICONE_2G : document.getElementById('h-img').getAttribute('src');
 var LOGO = LOGO_PADRAO;        // ícone usado na barra superior e nas telas internas
-var VERSAO_APP = 29;
-var SERVIDOR_ESPERADO = 26;      // versão do Código.gs que acompanha este app
+var VERSAO_APP = 30;
+var SERVIDOR_ESPERADO = 27;      // versão do Código.gs que acompanha este app
 var EXIGE_HOSPEDADO = true;      // segurança: o app só funciona pelo endereço oficial (dados nunca trafegam pela URL)
 
 /* ───────── armazenamento ───────── */
@@ -753,19 +753,37 @@ var ABAS_GC = [
   { id: 'alertas', nome: 'Alertas', ic: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/>' },
   { id: 'mais', nome: 'Mais', ic: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>' }
 ];
+var IC_INICIO = '<path d="M3 10l9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>';
+var IC_AGENDA = '<rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/>';
+var IC_PESSOAS = '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>';
+var IC_AVISOS = '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/>';
+var IC_PERFIL = '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>';
+var IC_LISTA = '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>';
+/** Barra inferior: no máximo 5 itens fixos (Início, Agenda, Pessoas, Avisos, Perfil). Os demais módulos ficam em blocos no Início. */
 function abasAtuais() {
   if (cfg.modo === 'lv') {
     var A = [];
-    if (pode('visitantes')) A.push(ABAS_VOL[0], ABAS_VOL[1]);
-    if (temCultos()) A.push(ABA_CULTOS);
-    if (temCursos()) A.push({ id: 'cursos', nome: 'Cursos', ic: IC_CURSO });
-    if (pode('consulta')) A.push({ id: 'membros', nome: 'Pessoas', ic: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><path d="M11 8a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM7.5 15c.8-1.4 2-2 3.5-2s2.7.6 3.5 2"/>' });
-    A.push(ABAS_VOL[2]);
-    return A;
+    if (pode('visitantes')) A.push({ id: 'lvnovo', nome: 'Início', ic: IC_INICIO });
+    if (temCultos()) A.push({ id: 'cultos', nome: 'Agenda', ic: IC_AGENDA });
+    if (pode('visitantes')) A.push({ id: 'lvmeus', nome: 'Cadastros', ic: IC_LISTA });
+    if (pode('consulta')) A.push({ id: 'membros', nome: 'Pessoas', ic: IC_PESSOAS });
+    A.push({ id: 'conta', nome: 'Perfil', ic: IC_PERFIL });
+    return A.slice(0, 5);
   }
-  if (cfg.modo === 'ger') return ABAS_GER.filter(function (a) { return (!a.admin || ehAdmin()) && (!a.perm || a.perm()); });
-  return ABAS_GC;
+  if (cfg.modo === 'ger') {
+    var G = [{ id: 'bi', nome: 'Início', ic: IC_INICIO }];
+    G.push(temCultos() ? { id: 'cultos', nome: 'Agenda', ic: IC_AGENDA } : { id: 'gcs', nome: 'GCs', ic: IC_GC });
+    if (pode('consulta')) G.push({ id: 'membros', nome: 'Pessoas', ic: IC_PESSOAS });
+    else if (temCultos()) G.push({ id: 'gcs', nome: 'GCs', ic: IC_GC });
+    G.push({ id: 'avisos', nome: 'Avisos', ic: IC_AVISOS });
+    G.push({ id: 'conta', nome: 'Perfil', ic: IC_PERFIL });
+    return G;
+  }
+  return [{ id: 'painel', nome: 'Início', ic: IC_INICIO }, { id: 'chamada', nome: 'Encontros', ic: IC_AGENDA },
+          { id: 'pessoas', nome: 'Pessoas', ic: IC_PESSOAS }, { id: 'alertas', nome: 'Avisos', ic: IC_AVISOS },
+          { id: 'mais', nome: 'Perfil', ic: IC_PERFIL }];
 }
+function inicioId() { return cfg.modo === 'lv' ? (pode('visitantes') ? 'lvnovo' : 'conta') : cfg.modo === 'ger' ? 'bi' : 'painel'; }
 function validarContexto() {
   if (!pode('rede') && !pode('gc')) { cfg.modo = 'lv'; }
   else if (pode('rede') && cfg.modo === 'lv') { cfg.modo = 'ger'; }
@@ -784,9 +802,63 @@ function validarContexto() {
   if (ids.indexOf(cfg.aba) < 0) cfg.aba = ids[0];
   salvarCfg();
 }
-function irAba(id) { cfg.aba = id; salvarCfg(); window.scrollTo(0, 0); render(); }
-function abrirGC(id) { cfg.modo = 'gc'; cfg.gcAtual = id; cfg.aba = 'painel'; filtroP = 'todos'; salvarCfg(); window.scrollTo(0, 0); render(); }
-function voltarRede() { cfg.modo = 'ger'; cfg.aba = 'gcs'; salvarCfg(); window.scrollTo(0, 0); render(); }
+/* ── navegação: cada tela aberta entra numa pilha; "Voltar" (seta, botão do celular ou do navegador) volta à anterior ── */
+var navStack = [], histTipos = [], ignorarPop = 0, modalHist = false;
+var HIST_OK = !MODO_SCRIPT && !!(window.history && history.pushState);
+function fotoNav() { return { modo: cfg.modo, gcAtual: cfg.gcAtual, aba: cfg.aba, curso: cursoAberto, y: window.scrollY || 0 }; }
+function empilhar(tipo) {
+  if (!HIST_OK) return;
+  try { history.pushState({ g2: tipo }, ''); histTipos.push(tipo); } catch (e) {}
+}
+/** Avança para uma tela guardando a atual (volta com a seta ou o botão Voltar). */
+function navegar(muda) {
+  navStack.push(fotoNav()); empilhar('nav');
+  muda(); salvarCfg(); window.scrollTo(0, 0); render();
+}
+/** Barra inferior: abre a tela como ponto de partida (zera o caminho anterior). */
+function irRaiz(id) {
+  // mantém o caminho até a entrada no contexto atual (ex.: lista de GCs → GC aberto); descarta o resto
+  var k = navStack.length;
+  while (k > 0 && navStack[k - 1].modo === cfg.modo && navStack[k - 1].gcAtual === cfg.gcAtual) k--;
+  navStack = navStack.slice(0, k); cursoAberto = '';
+  if (id !== inicioId()) {
+    navStack.push({ modo: cfg.modo, gcAtual: cfg.gcAtual, aba: inicioId(), curso: '', y: 0 });   // voltar → Início deste perfil
+    if (HIST_OK) {
+      try {
+        if (histTipos[histTipos.length - 1] === 'raiz') { history.replaceState({ g2: 'raiz' }, ''); navStack.splice(navStack.length - 1, 0); }
+        else { history.pushState({ g2: 'raiz' }, ''); histTipos.push('raiz'); }
+      } catch (e) {}
+    }
+  }
+  cfg.aba = id; salvarCfg(); window.scrollTo(0, 0); render();
+}
+function restaurar(f) {
+  cfg.modo = f.modo; cfg.gcAtual = f.gcAtual; cfg.aba = f.aba; cursoAberto = f.curso || '';
+  salvarCfg(); render(); setTimeout(function () { window.scrollTo(0, f.y || 0); }, 0);
+}
+/** Seta de voltar: usa o histórico do navegador quando existe; senão, volta direto. */
+function voltar() {
+  if ($('modal').classList.contains('on') && !consentAberto && !senhaObrig) { fechar(); return; }
+  if (HIST_OK && histTipos.length) { history.back(); return; }
+  if (navStack.length) { restaurar(navStack.pop()); return; }
+  if (cfg.modo === 'gc' && ehGestor()) { cfg.modo = 'ger'; cfg.aba = 'gcs'; salvarCfg(); render(); return; }
+  if (cfg.aba !== inicioId()) { cfg.aba = inicioId(); salvarCfg(); render(); }
+}
+if (HIST_OK) window.addEventListener('popstate', function () {
+  histTipos.pop();
+  if (ignorarPop) { ignorarPop--; return; }
+  if (!cfg.token) return;
+  if ($('modal').classList.contains('on')) {
+    if (consentAberto || senhaObrig) { empilhar('modal'); return; }       // janela obrigatória: não fecha com o Voltar
+    modalHist = false; fecharModalSo(); return;
+  }
+  if (navStack.length) { restaurar(navStack.pop()); return; }
+  if (cfg.modo === 'gc' && ehGestor()) { cfg.modo = 'ger'; cfg.aba = 'gcs'; salvarCfg(); render(); return; }
+  if (cfg.aba !== inicioId()) { cfg.aba = inicioId(); cursoAberto = ''; salvarCfg(); window.scrollTo(0, 0); render(); }
+});
+function irAba(id) { if (id === cfg.aba) return; navegar(function () { cfg.aba = id; }); }
+function abrirGC(id) { navegar(function () { cfg.modo = 'gc'; cfg.gcAtual = id; cfg.aba = 'painel'; filtroP = 'todos'; }); }
+function voltarRede() { if (navStack.length || histTipos.length) return voltar(); cfg.modo = 'ger'; cfg.aba = 'gcs'; salvarCfg(); window.scrollTo(0, 0); render(); }
 
 function iniciarApp() {
   mostrarTela('s-app'); validarContexto(); render();
@@ -807,26 +879,26 @@ function render() {
   $('h-img').src = g ? iconeGC(g.id) : LOGO;
   $('h-tit').textContent = cfg.modo === 'lv' ? igrNome() : cfg.aba === 'config' ? 'Configurações' : cfg.aba === 'cultos' ? 'Cultos e eventos' : cfg.aba === 'membros' ? 'Cadastro de pessoas' : cfg.aba === 'cursos' ? 'Cursos e reuniões' : cfg.modo === 'ger' ? igrNome() : (g ? g.nome : 'Meu GC');
   $('h-papel').textContent = PAPEL_NOME[papel()] || '';
-  $('b-voltar-ger').classList.toggle('hide', !(cfg.modo === 'gc' && ehGestor()));
-  var abas = abasAtuais();
-  $('nav').classList.toggle('muitas', abas.length > 6);
+  var raizes = abasAtuais().map(function (a) { return a.id; }), naRaiz = raizes.indexOf(cfg.aba) >= 0 && !cursoAberto;
+  $('b-voltar').classList.toggle('hide', naRaiz && !(cfg.modo === 'gc' && ehGestor() && cfg.aba === 'painel'));
+  $('b-voltar-ger').classList.add('hide');
+  var abas = abasAtuais(), abaNav = raizes.indexOf(cfg.aba) >= 0 ? cfg.aba : (navStack.length ? (navStack[0].aba && raizes.indexOf(navStack[0].aba) >= 0 ? navStack[0].aba : inicioId()) : inicioId());
   $('nav').innerHTML = abas.map(function (a) {
-    var nb = a.id === 'usuarios' ? db.pendentes : a.id === 'lv' ? lvFila().length : a.id === 'lar' ? lvBadgeGC() :
-      a.id === 'painel' ? alertasNaoLidos([gcA()]).length : a.id === 'bi' ? alertasNaoLidos(GCSativos().map(function (g) { return g.id; })).length : 0;
+    var nb = a.id === 'avisos' ? badgeAvisos() : a.id === 'alertas' ? alertasNaoLidos([gcA()]).length + lvBadgeGC() : 0;
     var bdg = nb ? '<span class="bdg">' + nb + '</span>' : '';
-    return '<button data-a="aba" data-v="' + a.id + '" class="' + (cfg.aba === a.id ? 'on' : '') + '">' +
+    return '<button data-a="nav" data-v="' + a.id + '" class="' + (abaNav === a.id ? 'on' : '') + '">' +
       '<svg viewBox="0 0 24 24">' + a.ic + '</svg>' + a.nome + bdg + '</button>';
   }).join('');
   var f = {
     bi: rBI, gcs: rGCs, novo: rNovoGC, usuarios: rUsuarios, conta: rConta,
     painel: rPainel, pessoas: rPessoas, chamada: rChamada, alertas: rAlertas, mais: rMaisGC,
-    lv: rLVGer, lar: rLar, lvnovo: rLVNovo, lvmeus: rLVMeus, cultos: rCultos, config: rConfig, membros: rConsulta, cursos: rCursos
+    lv: rLVGer, lar: rLar, avisos: rAvisos, lvnovo: rLVNovo, lvmeus: rLVMeus, cultos: rCultos, config: rConfig, membros: rConsulta, cursos: rCursos
   }[cfg.aba];
   if (cfg.modo === 'gc' && !g) {
     $('main').innerHTML = '<div class="empty">' + (db.gcs.length ? 'Você ainda não está vinculado a um GC. Fale com a liderança.' : 'Carregando dados do GC...') + '</div>';
   } else $('main').innerHTML = f ? f() : '';
   if (cfg.aba === 'usuarios') carregarUsuarios();
-  if (cfg.aba !== 'config') { cfgDraft = null; logoNovo = null; iconeNovo = null; }
+  if (cfg.aba !== 'config') { if (cfgDraft) aplicarCor(igr.config && igr.config.cor); cfgDraft = null; logoNovo = null; iconeNovo = null; }
   if (cfg.aba !== 'painel' && cfg.aba !== 'bi') mapaGcs = null;
   if (cfg.aba === 'lv') setTimeout(lvGeoFila, 0);
   setTimeout(desenharMapa, 0);
@@ -892,6 +964,21 @@ function barraPeriodo() {
     '<div style="font-size:11.5px;color:#777;margin-top:6px">Período: <b style="color:#222">' + esc(P.rot) + '</b> · comparando com ' + esc(P.antRot) + '</div></div>';
 }
 
+/* ── central de avisos (gerenciador) ── */
+function badgeAvisos() {
+  return alertasNaoLidos(GCSativos().map(function (g) { return g.id; }).concat([''])).length + (ehAdmin() ? (db.pendentes || 0) : 0) + (pode('lvDirecionar') ? lvFila().length : 0);
+}
+function rAvisos() {
+  var ids = GCSativos().map(function (g) { return g.id; }), h = '', n = 0;
+  if (ehAdmin() && db.pendentes) { n++; h += '<div class="aviso r" data-a="aba" data-v="usuarios" style="cursor:pointer"><b>' + db.pendentes + ' cadastro(s) aguardando sua validação.</b> Toque para revisar.</div>'; }
+  if (pode('lvDirecionar') && lvFila().length) { n++; h += '<div class="aviso" data-a="aba" data-v="lv" style="cursor:pointer"><b>' + lvFila().length + ' visitante(s) da igreja sem GC.</b> Toque para direcionar.</div>'; }
+  var atr = PES().filter(lvAtrasada).length;
+  if (atr) { n++; h += '<div class="aviso r" data-a="aba" data-v="lv" style="cursor:pointer"><b>' + atr + ' visita(s) do Lar de Vida atrasada(s).</b></div>'; }
+  var al = blocoAlertas(ids.concat(['']), true); if (al) n++;
+  h += blocoMinhasEscalas() + al;
+  return n ? h : h + '<div class="card"><div class="empty">Nenhum aviso agora. 🙌</div></div>';
+}
+
 /* ── módulos (atalhos) ── */
 var IC_MIN = '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>';
 var IC_FIN = '<path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>';
@@ -910,14 +997,19 @@ function modulosDisponiveis() {
   else if (cfg.modo === 'gc') m.push({ id: 'pessoas', nome: 'Pessoas', ic: IC_MEM, cor: '#d6572f' });
   if (ger && pode('relFin')) m.push({ id: 'financeiro', nome: 'Financeiro', ic: IC_FIN, cor: '#c99a1a' });
   if (ger && temCursos()) m.push({ id: 'cursos', nome: 'Cursos', ic: IC_CURSO, cor: '#0f8a8a' });
+  if (ger && ehAdmin()) m.push({ id: 'usuarios', nome: 'Usuários', ic: IC_PERFIL, cor: '#5E6470', n: db.pendentes || 0 });
   m.push({ id: 'ministerios', nome: 'Ministérios', ic: IC_MIN, cor: '#9aa0a6', breve: true });
+  m.forEach(function (x) {
+    if (x.id === 'lv') x.n = lvFila().length;
+    if (x.id === 'lar') x.n = lvBadgeGC();
+  });
   return m;
 }
 function blocoModulos() {
   return '<div class="mods">' + modulosDisponiveis().map(function (x) {
     return '<button class="mod' + (x.breve ? ' breve' : '') + '" data-a="modulo" data-v="' + x.id + '">' +
       '<span class="mi" style="background:' + x.cor + '1a;color:' + x.cor + '"><svg viewBox="0 0 24 24">' + x.ic + '</svg></span>' +
-      '<span class="mn">' + x.nome + '</span>' + (x.breve ? '<span class="mb">em breve</span>' : '') + '</button>';
+      '<span class="mn">' + x.nome + '</span>' + (x.breve ? '<span class="mb">em breve</span>' : x.n ? '<span class="mn-b">' + x.n + '</span>' : '') + '</button>';
   }).join('') + '</div>';
 }
 function abrirModulo(id) {
@@ -926,15 +1018,14 @@ function abrirModulo(id) {
       '(louvor, infantil, mídia, recepção, intercessão…), com equipes, escalas e avisos — no mesmo modelo da escala dos encontros do GC.</div>' +
       '<div class="gap"></div><button class="btn pr" data-a="fechar">Entendi</button>');
   }
-  if (id === 'financeiro') { filtroCulto = 'fin'; return irAba('cultos'); }
+  if (id === 'financeiro') { filtroCulto = 'fin'; if (cfg.aba === 'cultos') return render(); return irAba('cultos'); }
   irAba(id);
 }
 
 function rBI() {
   var gcs = GCSativos(), h = blocoModulos() + barraPeriodo() + blocoAlertas(gcs.map(function (g) { return g.id; }), true) + blocoCursosHoje();
   if (ehAdmin()) h += avisoServidor();
-  if (ehAdmin() && db.pendentes) h += '<div class="aviso r" data-a="aba" data-v="usuarios" style="cursor:pointer"><b>' + db.pendentes +
-    ' cadastro(s) aguardando sua validação.</b> Toque para revisar.</div>';
+
   var visaoPastor = pode('relFin') || pode('usuarios');
   h += blocoOrganograma();
   if (visaoPastor) h += blocoVisaoIgreja(gcs);
@@ -1402,7 +1493,7 @@ function blocoConta() {
     '<div class="sb">@' + esc(u.usuario) + ' · ' + esc(PAPEL_NOME[u.papel] || '') + (u.gcId ? ' · ' + esc(gcNome(u.gcId)) : '') + '</div></div></div>' +
     (pode('config') ? '<button class="btn pr" data-a="aba" data-v="config">Configurações da igreja</button><div class="gap"></div>' : '') +
     (temCultos() && cfg.modo === 'gc' ? '<button class="btn gh" data-a="aba" data-v="cultos">Cultos e eventos</button><div class="gap"></div>' : '') +
-    (temCursos() && cfg.modo === 'gc' ? '<button class="btn gh" data-a="aba" data-v="cursos">Cursos e reuniões</button><div class="gap"></div>' : '') +
+    (temCursos() && cfg.modo !== 'ger' ? '<button class="btn gh" data-a="aba" data-v="cursos">Cursos e reuniões</button><div class="gap"></div>' : '') +
     (pode('consulta') && cfg.modo === 'gc' ? '<button class="btn gh" data-a="aba" data-v="membros">Consultar cadastro de pessoas</button><div class="gap"></div>' : '') +
     (pode('visitantes') && cfg.modo !== 'lv' ? '<button class="btn gh" data-a="aba" data-v="lvnovo">Cadastrar visitante do culto</button><div class="gap"></div>' : '') +
     '<button class="btn gh" data-a="trocarSenha">Trocar minha senha</button><div class="gap"></div>' +
@@ -1448,7 +1539,7 @@ function salvarServidor(url) {
 /* ═══════════════════ VISÃO DO GC ═══════════════════ */
 function gcA() { return cfg.gcAtual; }
 function rPainel() {
-  var id = gcA(), m = metricas(id), g = gcPor(id), h = '';
+  var id = gcA(), m = metricas(id), g = gcPor(id), h = blocoModulos();
   h += blocoAlertas([id], false);
   h += blocoMinhasEscalas();
   h += blocoCursosHoje();
@@ -1733,19 +1824,19 @@ function linhaContato(p, tipo, encs) {
     (l ? '<a class="wa" href="' + l + '" target="_blank" rel="noopener">Enviar</a>' : '<span class="pill p-cinza">sem nº</span>') + '</div>';
 }
 function rAlertas() {
-  var id = gcA(), encs = encOrd(id), pes = PES(id);
+  var id = gcA(), encs = encOrd(id), pes = PES(id), topo = blocoMinhasEscalas() + blocoAlertas([id], false) + blocoLVResumo([id], true);
   var c = pes.filter(function (p) { return statusDe(p, encs).s === 'contatar'; }).sort(function (a, b) { return statusDe(b, encs).faltas - statusDe(a, encs).faltas; });
   var a = pes.filter(function (p) { return statusDe(p, encs).s === 'atencao'; });
   var mes = new Date().getMonth() + 1;
   var an = pes.filter(function (p) { return p.status === 'Ativo' && p.nasc && parseInt(p.nasc.slice(5, 7), 10) === mes; })
     .sort(function (x, y) { return parseInt(x.nasc.slice(8, 10), 10) - parseInt(y.nasc.slice(8, 10), 10); });
-  return '<div class="card" style="border-left:5px solid var(--vermelho)"><h3>Quem precisa de contato</h3><div style="font-size:13px;color:#666;line-height:1.5">Duas ou mais faltas seguidas. Toque em <b>Enviar</b> para abrir o WhatsApp com a mensagem pronta.</div></div>' +
+  return topo + '<div class="card" style="border-left:5px solid var(--vermelho)"><h3>Quem precisa de contato</h3><div style="font-size:13px;color:#666;line-height:1.5">Duas ou mais faltas seguidas. Toque em <b>Enviar</b> para abrir o WhatsApp com a mensagem pronta.</div></div>' +
     '<div class="card">' + (c.length ? c.map(function (p) { return linhaContato(p, 'contatar', encs); }).join('') : '<div class="empty">Ninguém com 2 faltas seguidas. 🙌</div>') + '</div>' +
     '<div class="sec">Atenção — 1 falta</div><div class="card">' + (a.length ? a.map(function (p) { return linhaContato(p, 'atencao', encs); }).join('') : '<div class="empty">Ninguém nesta lista.</div>') + '</div>' +
     '<div class="sec">Aniversariantes do mês</div><div class="card">' + (an.length ? an.map(function (p) { return linhaContato(p, 'aniversario', encs); }).join('') : '<div class="empty">Nenhum aniversariante neste mês.</div>') + '</div>';
 }
 function rMaisGC() {
-  var id = gcA(), g = gcPor(id) || {}, h = blocoModulos();
+  var id = gcA(), g = gcPor(id) || {}, h = '';
   h += '<div class="gccard"><div class="ft" style="background-image:url(\'' + fotoGC(id) + '\')"></div><div class="bd"><h4>' + esc(g.nome) + '</h4>' +
     '<div class="ln"><b>Líder:</b> ' + esc(g.liderNome || '—') + (g.coLider ? ' · Co-líder: ' + esc(g.coLider) : '') + '</div>' +
     (g.anfitriao ? '<div class="ln"><b>Anfitrião:</b> ' + esc(g.anfitriao) + '</div>' : '') +
@@ -2460,7 +2551,21 @@ function igrNome() { return (igr.config && igr.config.nome) || '2Gather'; }
   var imgs = document.querySelectorAll('img.lg-g');
   for (var i = 0; i < imgs.length; i++) imgs[i].setAttribute('data-orig', imgs[i].getAttribute('src'));
 })();
+/** Cor de destaque da igreja (padrão azul). Gera a versão clara para fundos. */
+var COR_PADRAO = '#2F5BEA';
+var CORES_SUGERIDAS = ['#2F5BEA', '#16A36A', '#7C3AED', '#D97706', '#DC2626', '#0F766E', '#DB2777', '#111827'];
+function corClara(hex, a) {
+  var m = String(hex).match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i); if (!m) return '#EAF0FF';
+  var f = function (h) { return Math.round(parseInt(h, 16) * a + 255 * (1 - a)); };
+  return 'rgb(' + f(m[1]) + ',' + f(m[2]) + ',' + f(m[3]) + ')';
+}
+function aplicarCor(cor) {
+  cor = /^#[0-9a-f]{6}$/i.test(String(cor || '')) ? cor : COR_PADRAO;
+  var r = document.documentElement.style;
+  r.setProperty('--pri', cor); r.setProperty('--pri-s', corClara(cor, 0.12)); r.setProperty('--pri-m', corClara(cor, 0.28));
+}
 function aplicarLogo() {
+  aplicarCor(igr.config && igr.config.cor);
   LOGO = igr.icone || igr.logo || LOGO_PADRAO;
   var imgs = document.querySelectorAll('img.lg-g');
   var loginImg = igr.logo || (MODO_PWA ? (igr.icone || ICONE_2G) : '');
@@ -2499,6 +2604,9 @@ function modoVisitante() { return !pode('gc') && !pode('rede') && !pode('lvDirec
 function temCultos() { return pode('eventos') || pode('financeiro') || pode('recados') || pode('relFin'); }
 function abasExtras() {
   var x = [];
+  if (cfg.modo === 'ger') { x.push('gcs', 'avisos'); if (pode('lvDirecionar')) x.push('lv'); if (ehAdmin()) x.push('usuarios'); }
+  if (cfg.modo === 'gc') x.push('lar');
+  if (cfg.modo === 'lv' && pode('visitantes')) x.push('lvnovo', 'lvmeus');
   if (pode('rede')) x.push('novo');
   if (pode('config')) x.push('config');
   if (pode('visitantes')) x.push('lvnovo', 'lvmeus');
@@ -2742,6 +2850,7 @@ function lerCfgForm() {
     endereco: { cep: mascaraCep($('cf-cep').value), rua: $('cf-endereco').value.trim(), numero: $('cf-numero').value.trim(), complemento: $('cf-complemento').value.trim(),
                 bairro: $('cf-bairro').value.trim(), cidade: $('cf-cidade').value.trim() },
     bairros: ((cfgDraft && cfgDraft.bairros) || (igr.config && igr.config.bairros) || []).slice(),
+    cor: $('cf-cor') ? $('cf-cor').value : ((cfgDraft && cfgDraft.cor) || ''),
     encarregado: $('cf-encarregado') ? $('cf-encarregado').value.trim() : ((cfgDraft && cfgDraft.encarregado) || ''),
     politica: $('cf-politica') ? $('cf-politica').value : (cfgDraft ? cfgDraft.politica : undefined),
     politicaModelo: cfgDraft ? cfgDraft.politicaModelo : '' };
@@ -2755,7 +2864,7 @@ function lerCfgForm() {
 function rConfig() {
   if (!pode('config')) return '<div class="empty">Sem permissão.</div>';
   if (!cfgDraft) { var b = igr.config || {}; cfgDraft = { nome: b.nome || '', cnpj: b.cnpj || '', fundacao: b.fundacao || '', pastorPresidente: b.pastorPresidente || '', cultos: (b.cultos || []).slice(),
-    endereco: JSON.parse(JSON.stringify(b.endereco || {})), bairros: (b.bairros || []).slice(), encarregado: b.encarregado || '' }; }
+    endereco: JSON.parse(JSON.stringify(b.endereco || {})), bairros: (b.bairros || []).slice(), encarregado: b.encarregado || '', cor: b.cor || '' }; }
   if (cfgDraft.politica === undefined && !cfgDraft._polCarregando) {
     cfgDraft._polCarregando = true;
     chamarBruto({ acao: 'politica' }).then(function (r) {
@@ -2766,18 +2875,22 @@ function rConfig() {
     }).catch(function () { if (cfgDraft) cfgDraft.politica = ''; });
   }
   var c = cfgDraft, logo = logoNovo === '__remover__' ? '' : (logoNovo || igr.logo), icone = iconeNovo === '__remover__' ? '' : (iconeNovo || igr.icone);
-  return '<button class="btn gh sm" data-a="aba" data-v="conta" style="margin-bottom:12px">‹ Voltar</button>' +
+  return '' +
     '<div class="card"><h3>Dados da igreja</h3>' +
     '<div class="g2" style="align-items:start">' +
-    '<div><label>Logo (tela de login)</label><div class="fotoprev" data-a="escolherLogo" id="cf-logoprev" style="height:120px;background-size:contain;background-color:#111;' +
+    '<div><label>Logo (tela de login)</label><div class="fotoprev" data-a="escolherLogo" id="cf-logoprev" style="height:120px;background-size:contain;background-color:#F0F1F4;' +
       (logo ? 'background-image:url(\'' + logo + '\');border:none;color:transparent' : '') + '">Toque para escolher</div>' +
       (logo ? '<div style="text-align:right;margin-top:6px"><span class="pill p-cinza" data-a="removerLogo" style="cursor:pointer">remover</span></div>' : '') +
       '<div style="font-size:10.5px;color:#999;margin-top:4px;line-height:1.4">PNG, de preferência com fundo transparente. Formato livre (horizontal ou quadrado).</div></div>' +
-    '<div><label>Ícone (barra e telas internas)</label><div class="fotoprev" data-a="escolherIcone" id="cf-iconeprev" style="height:120px;width:120px;margin:0 auto;border-radius:24px;background-size:cover;background-color:#111;' +
+    '<div><label>Ícone (barra e telas internas)</label><div class="fotoprev" data-a="escolherIcone" id="cf-iconeprev" style="height:120px;width:120px;margin:0 auto;border-radius:24px;background-size:cover;background-color:#F0F1F4;' +
       (icone ? 'background-image:url(\'' + icone + '\');border:none;color:transparent' : '') + '">Toque para escolher</div>' +
       (icone ? '<div style="text-align:right;margin-top:6px"><span class="pill p-cinza" data-a="removerIcone" style="cursor:pointer">remover</span></div>' : '') +
       '<div style="font-size:10.5px;color:#999;margin-top:4px;line-height:1.4">Imagem quadrada (é recortada no centro). Aparece na barra superior, nos GCs sem foto e na aba do navegador.</div></div></div>' +
     '<div style="font-size:11px;color:#888;margin-top:8px;line-height:1.5">Depois de salvar, o nome e as imagens da igreja passam a aparecer para todos. Sem ícone, o app usa o logo; sem os dois, usa o 2Gather.</div>' +
+    '<label>Cor da igreja</label><div class="cores">' + CORES_SUGERIDAS.map(function (k) {
+      return '<span data-a="cfCor" data-v="' + k + '" style="background:' + k + '" class="' + (String(c.cor || COR_PADRAO).toUpperCase() === k ? 'on' : '') + '"></span>';
+    }).join('') + '<input type="color" id="cf-cor" value="' + esc(c.cor || COR_PADRAO) + '" title="Outra cor"></div>' +
+    '<div style="font-size:11px;color:#888;margin-top:4px">Cor de destaque de botões, ícones e marcações para todos os usuários. Padrão: azul.</div>' +
     '<label>Nome da igreja</label><input id="cf-nome" value="' + esc(c.nome) + '" placeholder="Ex.: Viver Church Matão">' +
     '<div class="g2"><div><label>CNPJ</label><input id="cf-cnpj" inputmode="numeric" value="' + esc(c.cnpj) + '" placeholder="00.000.000/0000-00"></div>' +
     '<div><label>Data de fundação</label><input id="cf-fund" type="date" value="' + esc(c.fundacao) + '"></div></div>' +
@@ -4383,12 +4496,20 @@ function avisoNovoEndereco() {
 }
 
 /* ───────── modal ───────── */
-function abrirModal(html) { $('modal-sheet').innerHTML = '<div class="grab"></div>' + html; $('modal').classList.add('on'); }
-function fechar() { $('modal').classList.remove('on'); gcForm = cfg.aba === 'novo' ? gcForm : null; }
+function abrirModal(html) {
+  var jaAberto = $('modal').classList.contains('on');
+  $('modal-sheet').innerHTML = '<div class="grab"></div>' + html; $('modal').classList.add('on');
+  if (!jaAberto && HIST_OK && cfg.token) { empilhar('modal'); modalHist = true; }
+}
+function fecharModalSo() { $('modal').classList.remove('on'); gcForm = cfg.aba === 'novo' ? gcForm : null; }
+function fechar() {
+  fecharModalSo();
+  if (modalHist) { modalHist = false; ignorarPop++; try { history.back(); } catch (e) { ignorarPop--; } }
+}
 
 /* ───────── eventos ───────── */
 var ACOES = {
-  aba: function (v) { irAba(v); }, abrirGC: function (v) { abrirGC(v); }, editarGC: function (v) { editarGC(v); },
+  aba: function (v) { irAba(v); }, nav: function (v) { irRaiz(v); }, voltar: voltar, abrirGC: function (v) { abrirGC(v); }, editarGC: function (v) { editarGC(v); },
   excluirGC: function (v) { excluirGC(v); }, salvarGC: function () { salvarGC(false); }, salvarGCmodal: function () { salvarGC(true); },
   escolherFoto: function () { $('foto-input').click(); },
   removerFoto: function () { fotoNova = '__remover__'; var p = $('g-fotoprev'); if (p) { p.style.backgroundImage = ''; p.style.border = ''; p.style.color = ''; } },
@@ -4414,7 +4535,7 @@ var ACOES = {
     gcAbrirExistente: function (v) { gcPendente = null; fechar(); abrirPessoa(v); },
     orgTog: function (v) { if (orgAbertos[v]) delete orgAbertos[v]; else orgAbertos[v] = 1; render(); }, lvDevolver: lvDevolver, lvReencaminhar: lvReencaminhar, lvLiberar: lvLiberar, lvRegistrar: lvRegistrar,
     lvSalvarVisita: lvSalvarVisita, lvEncerrar: lvEncerrar, lvConfirmarEncerrar: lvConfirmarEncerrar, lvTrocar: lvTrocar,
-    lvConfirmarTroca: lvConfirmarTroca, lvHistorico: lvHistorico, lvAbrirGC: function (v) { abrirGC(v); cfg.aba = 'lar'; salvarCfg(); render(); },
+    lvConfirmarTroca: lvConfirmarTroca, lvHistorico: lvHistorico, lvAbrirGC: function (v) { navegar(function () { cfg.modo = 'gc'; cfg.gcAtual = v; cfg.aba = 'lar'; }); },
     lvFiltro: function (v) { lvFiltroSel = v; render(); },
     filtroCulto: function (v) { filtroCulto = v; render(); }, evNovo: evNovo, evEditar: evEditar, evSalvar: evSalvar, evLiberar: evLiberar,
     evExcluir: evExcluir, evValores: evValores, evSalvarValores: evSalvarValores, evRecados: evRecados, evSalvarRecados: evSalvarRecados,
@@ -4426,7 +4547,8 @@ var ACOES = {
     removerIconeGC: function () { iconeGCNovo = '__remover__'; pintarIconeGC(''); },
     cfAddCulto: function () { cfgDraft = lerCfgForm(); cfgDraft.cultos.push({ dia: '0', horario: '19:00', nome: '' }); render(); },
     cfRemBairro: function (v) { cfgDraft = lerCfgForm(); cfgDraft.bairros.splice(+v, 1); render(); },
-    cfAddBairros: cfAddBairros, cfImportBairros: cfImportBairros,
+    cfAddBairros: cfAddBairros,
+    cfCor: function (v) { $('cf-cor').value = v; aplicarCor(v); var sp = document.querySelectorAll('.cores span'); for (var i = 0; i < sp.length; i++) sp[i].classList.toggle('on', sp[i].getAttribute('data-v') === v); }, cfImportBairros: cfImportBairros,
     cfCorrigirBairros: function () {
       var mud = JSON.stringify((lerCfgForm() || {}).bairros || []) !== JSON.stringify((igr.config && igr.config.bairros) || []);
       if (mud) return toast('Salve as configurações antes de corrigir os cadastros.');
@@ -4434,7 +4556,7 @@ var ACOES = {
     },
     filtroM: function (v) { filtroM = v; render(); }, fichaPessoa: fichaPessoa, csvConsulta: csvConsulta,
     cfRemCulto: function (v) { cfgDraft = lerCfgForm(); cfgDraft.cultos.splice(+v, 1); render(); }, cfSalvar: cfSalvar,
-    encEditar: encEditar, encSalvar: encSalvar, encChamada: function (v) { cfg.dataChamada = v; cfg.dataChamadaGC = gcA(); irAba('chamada'); },
+    encEditar: encEditar, encSalvar: encSalvar, encChamada: function (v) { cfg.dataChamada = v; cfg.dataChamadaGC = gcA(); if (cfg.aba === 'chamada') render(); else irAba('chamada'); },
     permPadrao: marcarPadraoPerms,
     sairTodos: sairTodos, encerrarSessoes: encerrarSessoes, auditoria: function () { abrirAuditoria(''); }, audBuscar: function () { abrirAuditoria($('aud-q').value); },
     anonimizar: anonimizar, verPolitica: function () { verPolitica(false); }, aceitarPolitica: aceitarPolitica, recusarPolitica: function () { consentAberto = false; sair(false); },
@@ -4444,7 +4566,7 @@ var ACOES = {
     limparFiltrosM: function () { for (var k in fM) fM[k] = k === 'ordem' ? 'nome' : ''; render(); },
     filtroTipoCulto: function (v) { filtroTipoCulto = v || ''; render(); },
     filtroCurso: function (v) { filtroCurso = v; render(); }, rnNovo: rnNovo, rnEditar: rnEditar, rnSalvar: rnSalvar, rnExcluir: rnExcluir,
-    rnAbrir: function (v) { cursoAberto = v; window.scrollTo(0, 0); render(); }, rnVoltar: function () { cursoAberto = ''; render(); },
+    rnAbrir: function (v) { navegar(function () { cursoAberto = v; }); }, rnVoltar: function () { if (navStack.length) voltar(); else { cursoAberto = ''; render(); } },
     rnPart: rnPart, rnSalvarPart: rnSalvarPart, rnRemPart: rnRemPart, rnConvites: function (v) { rnConvites(v); },
     rnChamada: rnChamada, auTodos: auTodos, auSalvar: auSalvar,
     rnAddLideres: function () { candidatosPart().forEach(function (c) { if (c.origem === 'usuario' && /Líder/.test(c.sub)) partSel[c.chave] = c; }); pintarPart(); }
@@ -4514,6 +4636,7 @@ document.addEventListener('change', function (ev) {
   }
   if (ev.target.classList && ev.target.classList.contains('eu-perm')) pintarTagsPerms();
   if (id === 'eu-papel') marcarPadraoPerms();
+  if (id === 'cf-cor') { aplicarCor(ev.target.value); var spc = document.querySelectorAll('.cores span'); for (var ic = 0; ic < spc.length; ic++) spc[ic].classList.remove('on'); }
   if (id === 'ev-fixo' && ev.target.value !== '') {
     var cf = ((igr.config || {}).cultos || [])[+ev.target.value];
     if (cf) {
@@ -4535,6 +4658,7 @@ $('b-politica').addEventListener('click', function () { verPolitica(false); });
 $('b-politica2').addEventListener('click', function () { verPolitica(false); });
 $('c-vpol').addEventListener('click', function (e) { e.preventDefault(); verPolitica(false); });
 $('b-voltar-ger').addEventListener('click', voltarRede);
+$('b-voltar').addEventListener('click', voltar);
 window.addEventListener('online', function () { if (cfg.token) sincronizar(false); });
 setInterval(function () { if (cfg.token && document.visibilityState === 'visible') sincronizar(false); }, 120000);
 
