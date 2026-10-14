@@ -1,6 +1,6 @@
-2Gather v31 — Início personalizado por perfil (etapa 2 do novo layout)
+2Gather v32 — etapa 3 do novo layout + adaptação a celular, tablet e computador
 
 No GitHub (gestao-igrejas), substitua SÓ: app.js, index.html, sw.js
 (Add file → Upload files → Commit). Não mexa em config.js, _headers, manifest, icons/ e lib/.
 
-Servidor: continua o Codigo_v27 (nenhuma mudança no Apps Script nesta versão).
+Servidor: continua o Codigo_v27 (sem mudança no Apps Script).

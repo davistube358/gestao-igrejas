@@ -20,7 +20,7 @@ var ICONE_2G = 'icons/icon-192.png';
 // padrão antes da 1ª configuração: no app instalado (PWA) é o 2Gather; na página antiga, o logo embutido
 var LOGO_PADRAO = (window.APP_CONFIG && window.APP_CONFIG.apiUrl) ? ICONE_2G : document.getElementById('h-img').getAttribute('src');
 var LOGO = LOGO_PADRAO;        // ícone usado na barra superior e nas telas internas
-var VERSAO_APP = 31;
+var VERSAO_APP = 32;
 var SERVIDOR_ESPERADO = 27;      // versão do Código.gs que acompanha este app
 var EXIGE_HOSPEDADO = true;      // segurança: o app só funciona pelo endereço oficial (dados nunca trafegam pela URL)
 
@@ -1568,26 +1568,39 @@ function rPainel() {
 
 var filtroP = 'todos', buscaP = '';
 function rPessoas() {
-  var id = gcA(), encs = encOrd(id);
-  var l = PES(id).filter(function (p) { return (p.nome + ' ' + (p.apelido || '')).toLowerCase().indexOf(buscaP) >= 0; });
-  if (filtroP === 'inativos') l = l.filter(function (p) { return p.status !== 'Ativo' && p.status !== 'Em visita'; });
-  else if (filtroP !== 'todos') l = l.filter(function (p) { return p.tipo === filtroP && (p.status === 'Ativo' || p.status === 'Em visita'); });
+  var id = gcA(), encs = encOrd(id), todos = PES(id);
+  var ativos = function (p) { return p.status === 'Ativo' || p.status === 'Em visita'; };
+  var cont = { todos: todos.length, Membro: todos.filter(function (p) { return p.tipo === 'Membro' && ativos(p); }).length,
+    Visitante: todos.filter(function (p) { return p.tipo === 'Visitante' && ativos(p); }).length,
+    inativos: todos.filter(function (p) { return !ativos(p); }).length };
+  var q = normalizar(buscaP);
+  var l = todos.filter(function (p) { return !q || normalizar(p.nome + ' ' + (p.apelido || '') + ' ' + (p.bairro || '')).indexOf(q) >= 0 || (soDigitos(buscaP).length >= 4 && soDigitos(p.fone).indexOf(soDigitos(buscaP)) >= 0); });
+  if (filtroP === 'inativos') l = l.filter(function (p) { return !ativos(p); });
+  else if (filtroP !== 'todos') l = l.filter(function (p) { return p.tipo === filtroP && ativos(p); });
   l.sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt-BR'); });
-  var h = '<button class="btn" data-a="novaPessoa">+ Cadastrar membro ou visitante</button>' +
-    '<div style="font-size:11px;color:#999;margin:6px 4px 10px">Este cadastro é só para controle do GC — não dá acesso ao app.</div>';
-  h += '<div class="tabs">' + [['todos', 'Todos'], ['Membro', 'Membros'], ['Visitante', 'Visitantes'], ['inativos', 'Inativos']].map(function (x) {
-    return '<button data-a="filtroP" data-v="' + x[0] + '" class="' + (filtroP === x[0] ? 'on' : '') + '">' + x[1] + '</button>'; }).join('') + '</div>' +
-    '<input id="busca-p" placeholder="Buscar por nome..." value="' + esc(buscaP) + '" style="margin-bottom:12px">';
-  h += '<div class="card">' + (l.length ? l.map(function (p) {
-    var st = statusDe(p, encs), s = statsDe(p, encs);
-    var pill = { emdia: ['p-verde', 'Em dia'], atencao: ['p-amarelo', '1 falta'], contatar: ['p-vermelho', st.faltas + ' faltas'], inativo: ['p-cinza', p.status],
-                 visita: ['p-dour', 'visita ' + visitasDe(p) + '/' + VISITAS_PARA_ATIVO] }[st.s];
-    return '<div class="row cl" data-a="abrirPessoa" data-v="' + esc(p.id) + '"><div class="av">' + ini(p.nome) + '</div><div class="info"><div class="nm">' + esc(p.nome) + (p.apelido ? ' <span style="color:#a87700;font-weight:600">“' + esc(p.apelido) + '”</span>' : '') + '</div>' +
-      '<div class="sb">' + esc(p.tipo) + ' · ' + (s.mar ? pct(s.pct) + ' presença' : 'sem registro') + ' · ' + esc(p.jornada || '') +
-      (p.origem ? ' · ' + esc(p.origem) : '') + (p.visitaIgrejaEm ? ' · visitou a igreja ' + br(p.visitaIgrejaEm) : '') + (p.lvStatus === 'acompanhando' ? ' · Lar de Vida ' + lvVis(p).length + '/' + LV_SEMANAS : '') + '</div></div><span class="pill ' + pill[0] + '">' + pill[1] + '</span></div>';
-  }).join('') : '<div class="empty">Nenhuma pessoa encontrada.</div>') + '</div>';
-  return h;
+  var h = '<div class="busca"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>' +
+    '<input id="busca-p" placeholder="Buscar nome, telefone ou bairro" value="' + esc(buscaP) + '" autocomplete="off"></div>';
+  h += '<div class="chips">' + [['todos', 'Todos'], ['Membro', 'Membros'], ['Visitante', 'Visitantes'], ['inativos', 'Inativos']].map(function (x) {
+    return '<button data-a="filtroP" data-v="' + x[0] + '" class="' + (filtroP === x[0] ? 'on' : '') + '">' + x[1] + ' <span>' + cont[x[0]] + '</span></button>'; }).join('') + '</div>';
+  if (!l.length) return h + '<div class="card"><div class="empty">Nenhuma pessoa encontrada.</div></div>' + fabPessoa();
+  var grupos = {}, ordem = [];
+  l.forEach(function (p) { var k = normalizar(p.nome).charAt(0).toUpperCase() || '#'; if (!grupos[k]) { grupos[k] = []; ordem.push(k); } grupos[k].push(p); });
+  h += '<div class="lista-pes">' + ordem.map(function (k) {
+    return '<div class="grp"><div class="letra">' + k + '</div><div class="card lp">' + grupos[k].map(function (p) {
+      var st = statusDe(p, encs), s2 = statsDe(p, encs);
+      var pill = { emdia: ['p-verde', 'em dia'], atencao: ['p-amarelo', '1 falta'], contatar: ['p-vermelho', st.faltas + ' faltas'], inativo: ['p-cinza', String(p.status).toLowerCase()],
+                   visita: ['p-dour', 'visitante ' + visitasDe(p) + '/' + VISITAS_PARA_ATIVO] }[st.s] || ['p-cinza', ''];
+      var sub = [s2.mar ? pct(s2.pct) + ' presença' : 'sem chamada', separarBairroCidade(p.bairro, p.cidade).bairro, p.lvStatus === 'acompanhando' ? 'Lar de Vida ' + lvVis(p).length + '/' + LV_SEMANAS : ''].filter(Boolean).join(' · ');
+      return '<div class="row cl" data-a="fichaPessoa" data-v="' + esc(p.id) + '"><div class="av" style="' + corAvatar(p.nome) + '">' + ini(p.nome) + '</div><div class="info"><div class="nm">' + esc(p.nome) +
+        (p.apelido ? ' <span class="apel">“' + esc(p.apelido) + '”</span>' : '') + '</div><div class="sb">' + esc(sub) + '</div></div>' +
+        '<span class="pill ' + pill[0] + '">' + pill[1] + '</span></div>';
+    }).join('') + '</div></div>';
+  }).join('') + '</div>';
+  return h + '<div class="meta">' + l.length + ' pessoa(s) · o cadastro do GC não dá acesso ao app</div>' + fabPessoa();
 }
+function fabPessoa() { return editaPessoas() ? '<button class="fab" data-a="novaPessoa" title="Cadastrar pessoa"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>' : ''; }
+var CORES_AV = ['#2F5BEA', '#16A36A', '#7C5CFA', '#F06A3A', '#0E9C9C', '#C9930A', '#DB2777', '#5E6470'];
+function corAvatar(nome) { var h = 0, t = String(nome || ''); for (var i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0; return 'background:' + CORES_AV[h % CORES_AV.length] + ';color:#fff'; }
 var editP = null;
 var ctxPessoa = {};
 function abrirPessoa(id, ctx) {
@@ -1711,6 +1724,21 @@ function rChamada() {
   }
   return topo + corpoChamada(id, d, e);
 }
+var filtroCh = 'todos';
+function atualizarProgCh() {
+  var id = gcA(), d = ($('ch-data') && $('ch-data').value) || dataChamada(), e = achaEnc(id, d), l = listaChamada(id, d, e);
+  var marc = l.filter(function (p) { return e && e.presencas[p.id]; }).length, pres = l.filter(function (p) { return e && e.presencas[p.id] === 'P'; }).length;
+  if ($('ch-marc')) $('ch-marc').textContent = marc + ' de ' + l.length + ' marcados';
+  if ($('ch-pres')) $('ch-pres').textContent = pres + ' presente(s)';
+  if ($('ch-bar')) $('ch-bar').style.width = (l.length ? Math.round(marc / l.length * 100) : 0) + '%';
+}
+function chTodosP() {
+  var e = encontroAtual(true); if (!e) return;
+  var l = listaChamada(gcA(), e.data, e), n = 0;
+  l.forEach(function (p) { if (!e.presencas[p.id]) { e.presencas[p.id] = 'P'; n++; } });
+  e.updatedAt = agora(); e._pend = true; salvarDB(); promoverVisitantes(gcA()); render();
+  toast(n + ' pessoa(s) marcada(s) como presente — confira e salve a chamada.', 3500);
+}
 function corpoChamada(id, d, e) {
   var dr = chDraft && chDraft.gc === id && chDraft.data === d ? chDraft : null;
   var tema = dr ? dr.tema : (e ? e.tema : ''), preg = dr ? dr.preg : (e ? e.anfitriao : '');
@@ -1718,7 +1746,17 @@ function corpoChamada(id, d, e) {
   var rec = dr ? dr.rec : (e ? e.recados || '' : '');
   var roE = pode('gcEvento') ? '' : ' disabled';
   var l = listaChamada(id, d, e);
-  var h = '<div class="sec">Chamada de ' + br(d) + '</div><div class="card"><input type="hidden" id="ch-data" value="' + d + '">' +
+  var tot = l.length, marc = l.filter(function (p) { return e && e.presencas[p.id]; }).length, pres = l.filter(function (p) { return e && e.presencas[p.id] === 'P'; }).length;
+  var visit = l.filter(function (p) { return p.status === 'Em visita' || p.tipo === 'Visitante'; }).length;
+  var lf = filtroCh === 'membros' ? l.filter(function (p) { return !(p.status === 'Em visita' || p.tipo === 'Visitante'); })
+    : filtroCh === 'visitantes' ? l.filter(function (p) { return p.status === 'Em visita' || p.tipo === 'Visitante'; })
+    : filtroCh === 'sem' ? l.filter(function (p) { return !(e && e.presencas[p.id]); }) : l;
+  var prog = '<div class="card ch-prog"><div class="ch-l"><span id="ch-marc">' + marc + ' de ' + tot + ' marcados</span><span id="ch-pres" style="color:var(--verde)">' + pres + ' presente(s)</span></div>' +
+    '<div class="prog"><i id="ch-bar" style="width:' + (tot ? Math.round(marc / tot * 100) : 0) + '%"></i></div>' +
+    (pode('gc') && tot && marc < tot ? '<button class="btn gh sm" data-a="chTodosP" style="margin-top:10px;width:100%">Marcar todos sem registro como presentes</button>' : '') + '</div>' +
+    '<div class="chips">' + [['todos', 'Todos', tot], ['membros', 'Membros', tot - visit], ['visitantes', 'Visitantes', visit], ['sem', 'Sem marcar', tot - marc]].map(function (x) {
+      return '<button data-a="filtroCh" data-v="' + x[0] + '" class="' + (filtroCh === x[0] ? 'on' : '') + '">' + x[1] + ' <span>' + x[2] + '</span></button>'; }).join('') + '</div>';
+  var dadosEnc = '<div class="sec">Dados do encontro · ' + br(d) + '</div><div class="card"><input type="hidden" id="ch-data" value="' + d + '">' +
     '<label>Tema / estudo</label><input id="ch-tema" value="' + esc(tema) + '" placeholder="Ex.: Mateus 5"' + roE + '>' +
     '<label>Pregador</label><input id="ch-preg" value="' + esc(preg) + '" placeholder="Quem ministrou a palavra"' + roE + '>' +
     (pode('gcEvento')
@@ -1730,17 +1768,18 @@ function corpoChamada(id, d, e) {
       ? '<label>Recados</label><textarea id="ch-rec" rows="3" placeholder="Avisos para o GC: próximos encontros, eventos, pedidos de oração...">' + esc(rec) + '</textarea>'
       : (rec ? '<div style="background:var(--cc);border-radius:10px;padding:9px 10px;font-size:12.5px;margin-top:10px;white-space:pre-line"><b>Recados:</b> ' + esc(rec) + '</div>' : '')) +
     '</div>';
-  h += '<div class="sec">Marque a presença · ' + (e ? presentes(e) : 0) + ' presente(s)</div><div class="card">';
-  h += l.length ? l.map(function (p) {
+  var h = '<div class="sec">Presença</div>' + prog + '<div class="card ch-lista">' + (lf.length ? '' : '') ;
+  var corpoLista = lf.length ? lf.map(function (p) {
     var m = (e && e.presencas[p.id]) || '';
     var etiqueta = p.status === 'Em visita' ? '<span class="pill p-dour">' + (p.prim === d ? '1ª visita' : 'visita ' + Math.min(visitasDe(p) + (m === 'P' ? 0 : 1), VISITAS_PARA_ATIVO) + '/' + VISITAS_PARA_ATIVO) + '</span>'
       : (p.tipo === 'Visitante' ? '<span class="pill p-dour">visitante</span>' : '');
-    return '<div class="chamada"><div class="nm2"><b>' + esc(p.apelido ? p.apelido + ' · ' + p.nome : p.nome) + '</b>' + etiqueta + '</div>' +
+    return '<div class="chamada"><div class="av" style="' + corAvatar(p.nome) + '">' + ini(p.nome) + '</div><div class="nm2"><b>' + esc(p.apelido ? p.apelido + ' · ' + p.nome : p.nome) + '</b>' + etiqueta + '</div>' +
       '<div class="tg">' + ['P', 'F', 'J'].map(function (x) { return '<button class="' + x.toLowerCase() + (m === x ? ' on' : '') + '" data-a="marcar" data-v="' + esc(p.id) + '" data-m="' + x + '">' + x + '</button>'; }).join('') +
       '<button class="rm" data-a="remChamada" data-v="' + esc(p.id) + '" title="Tirar da chamada deste dia">×</button></div></div>';
-  }).join('') : '<div class="empty">Ninguém na lista deste encontro.</div>';
-  h += '<button class="btn gh" data-a="addChamada" style="margin-top:10px">+ Adicionar pessoa à chamada</button>';
-  h += '</div><button class="btn" data-a="salvarChamada">Salvar chamada</button><div class="meta">P = presente · F = falta · J = justificada · × tira da lista do dia<br>Visitante entra sozinho só na 1ª visita. Nas próximas, use “Adicionar pessoa”.<br>Com ' + VISITAS_PARA_ATIVO + ' presenças o visitante passa para Ativo.</div>';
+  }).join('') : '<div class="empty">' + (l.length ? 'Ninguém neste filtro.' : 'Ninguém na lista deste encontro.') + '</div>';
+  h += corpoLista + '<button class="btn gh" data-a="addChamada" style="margin-top:10px">+ Adicionar visitante ou pessoa</button></div>';
+  h += '<button class="btn" data-a="salvarChamada">Salvar chamada</button>' + dadosEnc + '<div class="gap"></div>';
+  h += '<div class="meta">P = presente · F = falta · J = justificada · × tira da lista do dia<br>Visitante entra sozinho só na 1ª visita. Nas próximas, use “Adicionar pessoa”.<br>Com ' + VISITAS_PARA_ATIVO + ' presenças o visitante passa para Ativo.</div>';
   return h;
 }
 function encontroAtual(criar) {
@@ -1754,7 +1793,7 @@ function marcar(pid, m, btn) {
   e.updatedAt = agora(); e._pend = true;
   var bs = btn.parentElement.querySelectorAll('button');
   for (var i = 0; i < bs.length; i++) bs[i].classList.toggle('on', bs[i].getAttribute('data-m') === e.presencas[pid]);
-  salvarDB();
+  salvarDB(); atualizarProgCh();
   if (m === 'P' && promoverVisitantes(gcA()).length) { salvarDB(); render(); }
 }
 function remChamada(pid) {
@@ -2047,11 +2086,10 @@ var end = separarBairroCidade(p.bairro, p.cidade);
 var pill = atr ? ['p-vermelho', 'atrasada'] : n >= LV_SEMANAS ? ['p-verde', 'encerrar'] : ['p-dour', 'visita ' + (n + 1) + '/' + LV_SEMANAS];
 var f = fone(p.fone);
 var wa = f ? 'https://wa.me/' + (f.length <= 11 ? '55' : '') + f + '?text=' + encodeURIComponent('Oi, ' + nomeChamado(p) + '! Aqui é ' + pri(eu().nome) + ', do ' + gcNome(p.gcId) + '. Posso passar aí essa semana para te visitar?') : '';
-var h = '<div class="card"' + (atr ? ' style="border-left:5px solid var(--vermelho)"' : '') + '><div class="row" style="padding:0;border:none">' +
-  '<div class="av">' + ini(p.nome) + '</div><div class="info"><div class="nm">' + esc(p.nome) + (p.apelido ? ' <span style="color:#a87700;font-weight:600">“' + esc(p.apelido) + '”</span>' : '') + '</div>' +
+var h = '<div class="card lvc' + (atr ? ' atr' : '') + '"><div class="row" style="padding:0;border:none">' +
+  '<div class="av" style="' + corAvatar(p.nome) + '">' + ini(p.nome) + '</div><div class="info"><div class="nm">' + esc(p.nome) + (p.apelido ? ' <span style="color:#a87700;font-weight:600">“' + esc(p.apelido) + '”</span>' : '') + '</div>' +
   '<div class="sb">Discípulo: <b>' + esc(p.lvDiscipuloNome || '—') + '</b> · início ' + br(p.lvInicio) + ' · ' + n + ' de ' + LV_SEMANAS + ' visitas</div></div>' +
-  '<span class="pill ' + pill[0] + '">' + pill[1] + '</span></div>' + lvDots(p) +
-  (lvPrazo(p) ? '<div style="margin:2px 0 6px">' + lvPrazoPill(p) + '</div>' : '') +
+  (lvPrazo(p) ? lvPrazoPill(p) : '<span class="pill ' + pill[0] + '">' + pill[1] + '</span>') + '</div>' + lvDots(p) +
   '<div class="sb" style="font-size:11.5px;color:#777;line-height:1.5">' + esc([enderecoTexto(p), end.cidade].filter(Boolean).join(' · ') || 'endereço não informado') +
   (p.origem ? ' · ' + esc(p.origem) : '') + '</div>' +
   (ult ? '<div style="font-size:12px;color:#555;margin-top:6px;line-height:1.5"><b>Última:</b> ' + br(ult.data) + ' — ' +
@@ -3391,25 +3429,48 @@ function fichaPessoa(id) {
   var p = pessoaPor(id); if (!p) return;
   var end = separarBairroCidade(p.bairro, p.cidade), f = fone(p.fone), idade = idadeDe(p), g = gcPor(p.gcId);
   var rua = [p.endereco, p.numero].filter(Boolean).join(', ') + (p.complemento ? ' - ' + p.complemento : '');
-  var linha = function (r, v) { return v ? '<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid #f2f2f2;font-size:13.5px"><span style="flex:0 0 112px;color:#888">' + r + '</span><span style="flex:1;word-break:break-word">' + v + '</span></div>' : ''; };
   var mapaUrl = rua || end.bairro ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent([rua, end.bairro, end.cidade || cidadeIgreja()].filter(Boolean).join(', ')) : '';
-  abrirModal('<h2>' + esc(p.nome) + '</h2>' + (p.apelido ? '<div style="color:#a87700;font-weight:700;margin-bottom:4px">“' + esc(p.apelido) + '”</div>' : '') +
-    '<div style="margin:4px 0 8px">' + '<span class="pill ' + (p.status === 'Ativo' ? 'p-verde' : 'p-dour') + '">' + esc(p.status) + '</span> ' +
-    (p.origem ? '<span class="pill p-cinza">' + esc(p.origem) + '</span>' : '') + '</div>' +
-    (f ? '<div style="display:flex;gap:8px;margin-bottom:8px"><a class="wa" style="flex:1;text-align:center;padding:11px" href="https://wa.me/' + (f.length <= 11 ? '55' : '') + f + '" target="_blank" rel="noopener">WhatsApp</a>' +
-      '<a class="btn gh sm" style="flex:1;text-align:center;text-decoration:none;padding:11px" href="tel:' + f + '">Ligar</a></div>' : '') +
-    linha('Telefone', esc(p.fone)) + linha('Endereço', esc(rua)) + linha('Bairro', esc(end.bairro)) + linha('Cidade', esc(end.cidade)) + linha('CEP', esc(p.cep)) +
-    (mapaUrl ? linha('Mapa', '<a href="' + mapaUrl + '" target="_blank" rel="noopener" style="color:var(--azul);font-weight:700">abrir no mapa</a>') : '') +
-    linha('Nascimento', p.nasc ? brCompleto(p.nasc) + (idade !== null ? ' (' + idade + ' anos)' : '') : '') + linha('Sexo', esc(p.sexo)) +
-    linha('GC', esc(g ? g.nome : 'sem GC')) + linha('Líder do GC', esc(g ? g.liderNome : '')) +
-    linha('Jornada', esc(p.jornada)) + linha('1ª participação', p.prim ? brCompleto(p.prim) : '') +
-    linha('Frequenta igreja', p.frequentaIgreja === 'Sim' ? esc(p.igrejaQual || 'sim') : '') + linha('Aceita visita', esc(p.aceitaVisita)) +
-    linha('Lar de Vida', p.lvStatus === 'acompanhando' ? 'em acompanhamento (' + lvVis(p).length + '/' + LV_SEMANAS + ')' : p.lvStatus === 'encerrado' ? 'encerrado · ' + esc(p.lvResultado) : '') +
-    linha('Como conheceu', esc(textoCanal(p))) + linha('Visitas ao culto', +p.visitasIgreja ? esc(p.visitasIgreja) + (p.visitaIgrejaEm ? ' · 1ª em ' + brCompleto(p.visitaIgrejaEm) : '') : '') +
-    linha('Convidado por', esc(p.conv)) + linha('Observações', esc(p.obs)) +
-      linha('Uso dos dados', p.anonimizadoEm ? 'anonimizado em ' + brCompleto(String(p.anonimizadoEm).slice(0, 10)) : textoConsent(p)) +
-    (papel() === 'master' && !p.anonimizadoEm ? '<div class="gap"></div><button class="btn dg" data-a="anonimizar" data-v="' + esc(p.id) + '">Anonimizar dados (pedido do titular)</button>' : '') +
-    '<div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>');
+  var podeEditar = editaPessoas() && (!p.gcId || !!gcPor(p.gcId)) && !p.anonimizadoEm;
+  var kv = function (r, v) { return v ? '<div class="kv"><span>' + r + '</span><b>' + v + '</b></div>' : ''; };
+  var at = function (ic, rot, href, acao, val) {
+    var dis = !href && !acao;
+    return (href ? '<a class="qa" href="' + href + '" target="_blank" rel="noopener">' : '<button class="qa"' + (acao ? ' data-a="' + acao + '" data-v="' + esc(val) + '"' : ' disabled') + '>') +
+      '<svg viewBox="0 0 24 24">' + ic + '</svg><span>' + rot + '</span>' + (href ? '</a>' : '</button>');
+  };
+  var s2 = p.gcId ? statsDe(p) : null;
+  // jornada em linha do tempo
+  var tl = [];
+  if (p.visitaIgrejaEm) tl.push(['ok', '1ª visita ao culto', brCompleto(p.visitaIgrejaEm)]);
+  if (p.prim && p.gcId) tl.push(['ok', 'Entrou no ' + esc(g ? g.nome : 'GC'), brCompleto(p.prim) + (p.direcionadoPor ? ' · ' + esc(p.direcionadoPor) : '')]);
+  if (p.lvInicio) tl.push([p.lvStatus === 'encerrado' ? 'ok' : '', 'Lar de Vida ' + (p.lvStatus === 'encerrado' ? 'concluído' : 'em andamento (' + lvVis(p).length + '/' + LV_SEMANAS + ')'),
+    brCompleto(p.lvInicio) + (p.lvStatus === 'encerrado' && p.lvResultado ? ' · ' + esc(String(p.lvResultado).toLowerCase()) : '')]);
+  var ie = ETAPAS.indexOf(p.jornada);
+  if (ie >= 0) tl.push(['ok', 'Jornada: ' + esc(p.jornada.replace(/^\d+\.\s*/, '')), 'etapa atual']);
+  if (ie >= 0 && ie < ETAPAS.length - 1) tl.push(['', esc(ETAPAS[ie + 1].replace(/^\d+\.\s*/, '')), 'próxima etapa']);
+  abrirModal('<div class="perfil"><div class="av" style="' + corAvatar(p.nome) + '">' + ini(p.nome) + '</div><h2>' + esc(p.nome) + '</h2>' +
+    (p.apelido ? '<div class="apel">“' + esc(p.apelido) + '”</div>' : '') +
+    '<p>' + esc([p.status === 'Em visita' ? 'Visitante' : p.status === 'Ativo' ? (p.tipo || 'Membro') : p.status, g ? g.nome : (p.gcId ? '' : 'sem GC'), p.prim ? 'desde ' + br(p.prim) : ''].filter(Boolean).join(' · ')) + '</p>' +
+    '<div class="pills">' + (p.origem ? '<span class="pill p-cinza">' + esc(p.origem) + '</span>' : '') + lvResumoPill(p) + pillIgreja(p) + '</div></div>' +
+    '<div class="qas">' +
+      at('<path d="M21 11.5a8.4 8.4 0 0 1-12.4 7.4L3 21l2.1-5.6A8.4 8.4 0 1 1 21 11.5z"/>', 'WhatsApp', f ? 'https://wa.me/' + (f.length <= 11 ? '55' : '') + f : '') +
+      at('<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.8 2z"/>', 'Ligar', f ? 'tel:' + f : '') +
+      at('<path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>', 'Mapa', mapaUrl) +
+      at('<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>', 'Editar', '', podeEditar ? 'perfilEditar' : '', p.id) +
+    '</div>' +
+    '<div class="stats" style="margin-top:12px">' +
+      statCard('Presença no GC', s2 && s2.mar ? pct(s2.pct) : '—', s2 && s2.mar ? s2.mar + ' encontro(s) marcados' : (p.gcId ? 'sem chamada ainda' : 'sem GC'), s2 && s2.mar ? 'up' : '') +
+      statCard('Visitas ao culto', +p.visitasIgreja || 0, p.visitaIgrejaEm ? '1ª em ' + br(p.visitaIgrejaEm) : 'nenhuma registrada') + '</div>' +
+    '<div class="sec">Dados</div><div class="card kvs">' +
+      kv('Telefone', esc(p.fone)) + kv('Endereço', esc([rua, end.bairro].filter(Boolean).join(' · '))) + kv('Cidade', esc(end.cidade)) +
+      kv('Nascimento', p.nasc ? br(p.nasc) + (idade !== null ? ' · ' + idade + ' anos' : '') : '') + kv('Sexo', esc(p.sexo)) +
+      kv('Líder do GC', esc(g ? g.liderNome : '')) + kv('Como conheceu', esc(textoCanal(p))) + kv('Convidado por', esc(p.conv)) +
+      kv('Aceita visita', esc(p.aceitaVisita)) + kv('Frequenta igreja', p.frequentaIgreja === 'Sim' ? esc(p.igrejaQual || 'sim') : '') +
+      kv('Observações', esc(p.obs)) +
+      kv('Uso dos dados', p.anonimizadoEm ? 'anonimizado em ' + br(String(p.anonimizadoEm).slice(0, 10)) : textoConsent(p)) + '</div>' +
+    (tl.length ? '<div class="sec">Jornada</div><div class="card"><div class="tl">' + tl.map(function (x) {
+      return '<div class="' + x[0] + '"><b>' + x[1] + '</b><small>' + x[2] + '</small></div>'; }).join('') + '</div></div>' : '') +
+    (papel() === 'master' && !p.anonimizadoEm ? '<button class="btn dg" data-a="anonimizar" data-v="' + esc(p.id) + '">Anonimizar dados (pedido do titular)</button><div class="gap"></div>' : '') +
+    '<button class="btn gh" data-a="fechar">Fechar</button>');
 }
 function csvConsulta() {
   var hd = ['Nome', 'Apelido', 'Status', 'Tipo', 'Telefone', 'Endereco', 'Numero', 'Complemento', 'Bairro', 'Cidade', 'CEP', 'Nascimento', 'Idade', 'Aniversario',
@@ -4743,6 +4804,7 @@ var ACOES = {
   sincronizar: function () { sincronizar(true); }, servidor: servidor, salvarServidor: function () { salvarServidor(); },
   padraoServidor: function () { salvarServidor(URL_PADRAO); },
   novaPessoa: function () { abrirPessoa(null); }, abrirPessoa: function (v) { abrirPessoa(v); }, salvarPessoa: function () { salvarPessoa(); }, modulo: abrirModulo,
+    filtroCh: function (v) { filtroCh = v; render(); }, chTodosP: chTodosP,
     lvIrForm: function () { var t = $('lv-tabs'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); setTimeout(function () { if ($('v-nome')) $('v-nome').focus(); }, 350); },
     encSel: function (v) { chDraft = null; cfg.dataChamada = v; cfg.dataChamadaGC = gcA(); salvarCfg(); render(); },
     avisarEscala: function (v) { avisarEscalaModal(v); }, recEnviar: recEnviar, salvarSenhaNova: salvarSenhaNova,
@@ -4778,7 +4840,8 @@ var ACOES = {
       if (mud) return toast('Salve as configurações antes de corrigir os cadastros.');
       if (confirm('Ajustar a grafia do bairro nos cadastros para os nomes da lista?')) corrigirGrafiaBairros();
     },
-    filtroM: function (v) { filtroM = v; render(); }, fichaPessoa: fichaPessoa, csvConsulta: csvConsulta,
+    filtroM: function (v) { filtroM = v; render(); }, fichaPessoa: fichaPessoa,
+    perfilEditar: function (v) { var p = pessoaPor(v); if (!p) return; if (p.gcId && cfg.modo === 'gc' && p.gcId === gcA()) abrirPessoa(v); else if (p.gcId) abrirPessoa(v); else lvEditar(v); }, csvConsulta: csvConsulta,
     cfRemCulto: function (v) { cfgDraft = lerCfgForm(); cfgDraft.cultos.splice(+v, 1); render(); }, cfSalvar: cfSalvar,
     encEditar: encEditar, encSalvar: encSalvar, encChamada: function (v) { cfg.dataChamada = v; cfg.dataChamadaGC = gcA(); if (cfg.aba === 'chamada') render(); else irAba('chamada'); },
     permPadrao: marcarPadraoPerms,
@@ -4807,7 +4870,7 @@ document.addEventListener('click', function (ev) {
   if (ACOES[a]) { ev.preventDefault(); ACOES[a](t.getAttribute('data-v'), t); }
 });
 document.addEventListener('input', function (ev) {
-  if (ev.target.id === 'busca-p') { buscaP = ev.target.value.toLowerCase(); var pos = ev.target.selectionStart; render(); var el = $('busca-p'); el.focus(); el.setSelectionRange(pos, pos); }
+  if (ev.target.id === 'busca-p') { buscaP = ev.target.value; var pos = ev.target.selectionStart; render(); var el = $('busca-p'); el.focus(); el.setSelectionRange(pos, pos); }
   if (ev.target.id === 'cf-cnpj') ev.target.value = mascaraCnpj(ev.target.value);
   if (['f-cep', 'g-cep', 'v-cep', 'cf-cep'].indexOf(ev.target.id) >= 0) {
     var pxc = ev.target.id.replace('-cep', '');
