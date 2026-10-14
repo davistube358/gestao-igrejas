@@ -20,8 +20,8 @@ var ICONE_2G = 'icons/icon-192.png';
 // padrão antes da 1ª configuração: no app instalado (PWA) é o 2Gather; na página antiga, o logo embutido
 var LOGO_PADRAO = (window.APP_CONFIG && window.APP_CONFIG.apiUrl) ? ICONE_2G : document.getElementById('h-img').getAttribute('src');
 var LOGO = LOGO_PADRAO;        // ícone usado na barra superior e nas telas internas
-var VERSAO_APP = 33;
-var SERVIDOR_ESPERADO = 28;      // versão do Código.gs que acompanha este app
+var VERSAO_APP = 34;
+var SERVIDOR_ESPERADO = 29;      // versão do Código.gs que acompanha este app
 var EXIGE_HOSPEDADO = true;      // segurança: o app só funciona pelo endereço oficial (dados nunca trafegam pela URL)
 
 /* ───────── armazenamento ───────── */
@@ -610,7 +610,7 @@ function sincronizar(avisar) {
       locaisE.forEach(function (l) { ne = ne.filter(function (e) { return chaveE(e) !== chaveE(l); }); ne.push(l); });
       db.pessoas = np; db.encontros = ne; db.gcs = d.gcs || [];
       db.equipe = d.equipe || []; db.pendentes = d.pendentes || 0; db.alertas = d.alertas || []; db.eventos = d.eventos || [];
-        db.reunioes = d.reunioes || []; db.aulas = d.aulas || []; db.jovens = d.jovens || null; db.waApi = !!d.waApi; db.equipeGC = d.equipeGC || [];
+        db.reunioes = d.reunioes || []; db.aulas = d.aulas || []; db.jovens = d.jovens || null; db.waApi = !!d.waApi; db.equipeGC = d.equipeGC || []; db.mural = d.mural || [];
       atualizarConfig(d.config).then(function (mudou) { if (mudou) render(); });
       if (r.usuario && cfg.usuario && r.usuario.id === cfg.usuario.id) { cfg.usuario = r.usuario; setTimeout(verificarConsentimento, 300); }
       cfg.ultima = agora(); salvarCfg(); salvarDB();
@@ -618,6 +618,7 @@ function sincronizar(avisar) {
       else if (r.rejeitados) toast(modoVisitante() ? msgBloqueioCadastro() : r.rejeitados + ' alteração(ões) recusada(s) por falta de permissão.', 5000);
       else if (avisar) toast('Sincronizado ✓');
       validarContexto();
+      try { notificarNovos(); } catch (eN) {}
       render();
       return buscarFotos();
     })
@@ -765,8 +766,9 @@ function abasAtuais() {
     var A = [];
     if (pode('visitantes')) A.push({ id: 'lvnovo', nome: 'Início', ic: IC_INICIO });
     if (temCultos()) A.push({ id: 'cultos', nome: 'Agenda', ic: IC_AGENDA });
+    A.push({ id: 'avisos', nome: 'Avisos', ic: IC_AVISOS });
     if (pode('visitantes')) A.push({ id: 'lvmeus', nome: 'Cadastros', ic: IC_LISTA });
-    if (pode('consulta')) A.push({ id: 'membros', nome: 'Pessoas', ic: IC_PESSOAS });
+    else if (pode('consulta')) A.push({ id: 'membros', nome: 'Pessoas', ic: IC_PESSOAS });
     A.push({ id: 'conta', nome: 'Perfil', ic: IC_PERFIL });
     return A.slice(0, 5);
   }
@@ -816,7 +818,9 @@ function navegar(muda) {
   muda(); salvarCfg(); window.scrollTo(0, 0); render();
 }
 /** Barra inferior: abre a tela como ponto de partida (zera o caminho anterior). */
+function muralNovos() { var v = lerVistos(), ult = v._mural || ''; return (db.mural || []).filter(function (m) { return !m.meu && m.criadoEm > ult; }).length; }
 function irRaiz(id) {
+  if (id === 'avisos' || id === 'alertas') { var vv = lerVistos(); vv._mural = new Date().toISOString(); salvarVistos(); }
   // mantém o caminho até a entrada no contexto atual (ex.: lista de GCs → GC aberto); descarta o resto
   var k = navStack.length;
   while (k > 0 && navStack[k - 1].modo === cfg.modo && navStack[k - 1].gcAtual === cfg.gcAtual) k--;
@@ -885,7 +889,7 @@ function render() {
   $('b-voltar-ger').classList.add('hide');
   var abas = abasAtuais(), abaNav = raizes.indexOf(cfg.aba) >= 0 ? cfg.aba : (navStack.length ? (navStack[0].aba && raizes.indexOf(navStack[0].aba) >= 0 ? navStack[0].aba : inicioId()) : inicioId());
   $('nav').innerHTML = abas.map(function (a) {
-    var nb = a.id === 'avisos' ? badgeAvisos() : a.id === 'alertas' ? alertasNaoLidos([gcA()]).length + lvBadgeGC() : 0;
+    var nb = a.id === 'avisos' ? (cfg.modo === 'lv' ? alertasNaoLidos(null).length : badgeAvisos()) + muralNovos() : a.id === 'alertas' ? alertasNaoLidos(null).length + lvBadgeGC() + muralNovos() : 0;
     var bdg = nb ? '<span class="bdg">' + nb + '</span>' : '';
     return '<button data-a="nav" data-v="' + a.id + '" class="' + (abaNav === a.id ? 'on' : '') + '">' +
       '<svg viewBox="0 0 24 24">' + a.ic + '</svg>' + a.nome + bdg + '</button>';
@@ -976,8 +980,9 @@ function rAvisos() {
   var atr = PES().filter(lvAtrasada).length;
   if (atr) { n++; h += '<div class="aviso r" data-a="aba" data-v="lv" style="cursor:pointer"><b>' + atr + ' visita(s) do Lar de Vida atrasada(s).</b></div>'; }
   var al = blocoAlertas(null, true); if (al) n++;
-  h += blocoMinhasEscalas() + al;
-  return n ? h : h + '<div class="card"><div class="empty">Nenhum aviso agora. 🙌</div></div>';
+  h = blocoNotif() + h + blocoMinhasEscalas() + al;
+  if (!n) h += '<div class="card"><div class="empty" style="padding:8px">Nenhum aviso para você agora. 🙌</div></div>';
+  return h + blocoMural();
 }
 
 /* ── módulos (atalhos) ── */
@@ -1801,7 +1806,7 @@ function linhaContato(p, tipo, encs) {
     (l ? '<a class="wa" href="' + l + '" target="_blank" rel="noopener">Enviar</a>' : '<span class="pill p-cinza">sem nº</span>') + '</div>';
 }
 function rAlertas() {
-  var id = gcA(), encs = encOrd(id), pes = PES(id), topo = blocoMinhasEscalas() + blocoAlertas([id], false) + blocoLVResumo([id], true);
+  var id = gcA(), encs = encOrd(id), pes = PES(id), topo = blocoNotif() + blocoMinhasEscalas() + blocoAlertas(null, false) + blocoMural() + '<div class="sec">Cuidado do GC</div>' + blocoLVResumo([id], true);
   var c = pes.filter(function (p) { return statusDe(p, encs).s === 'contatar'; }).sort(function (a, b) { return statusDe(b, encs).faltas - statusDe(a, encs).faltas; });
   var a = pes.filter(function (p) { return statusDe(p, encs).s === 'atencao'; });
   var mes = new Date().getMonth() + 1;
@@ -2585,6 +2590,7 @@ function abasExtras() {
   if (podeFin()) x.push('financeiro');
   if (cfg.modo === 'gc') x.push('lar');
   if (cfg.modo === 'lv' && pode('visitantes')) x.push('lvnovo', 'lvmeus');
+  x.push('avisos');
   if (pode('rede')) x.push('novo');
   if (pode('config')) x.push('config');
   if (pode('visitantes')) x.push('lvnovo', 'lvmeus');
@@ -3349,17 +3355,19 @@ function blocoFiltrosM() {
 function rConsulta() {
   if (!pode('consulta')) return '<div class="empty">Sem permissão.</div>';
   var l = pessoasConsulta(), todas = PES();
-  var h = '<div class="kpis" style="margin-bottom:10px">' + kpi(todas.length, 'Pessoas cadastradas', 'dk') +
-    kpi(todas.filter(function (p) { return p.status === 'Ativo'; }).length + ' / ' + todas.filter(function (p) { return p.status === 'Em visita'; }).length, 'Membros / visitantes') + '</div>';
-  h += '<input id="busca-m" placeholder="Buscar por nome, telefone, bairro, rua ou GC..." value="' + esc(buscaM) + '" style="margin-bottom:10px">';
-  h += '<div class="tabs">' + [['todos', 'Todos'], ['membros', 'Membros'], ['visitantes', 'Visitantes'], ['semgc', 'Sem GC'], ['inativos', 'Inativos']].map(function (x) {
-    return '<button data-a="filtroM" data-v="' + x[0] + '" class="' + (filtroM === x[0] ? 'on' : '') + '">' + x[1] + '</button>'; }).join('') + '</div>';
+  var at = function (p) { return p.status === 'Ativo' || p.status === 'Em visita'; };
+  var cnt = { todos: todas.length, membros: todas.filter(function (p) { return p.status === 'Ativo'; }).length, visitantes: todas.filter(function (p) { return p.status === 'Em visita'; }).length,
+              semgc: todas.filter(function (p) { return !p.gcId && at(p); }).length, inativos: todas.filter(function (p) { return !at(p); }).length };
+  var h = '<div class="busca"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>' +
+    '<input id="busca-m" placeholder="Buscar nome, telefone, bairro, rua ou GC" value="' + esc(buscaM) + '" autocomplete="off"></div>';
+  h += '<div class="chips">' + [['todos', 'Todos'], ['membros', 'Membros'], ['visitantes', 'Visitantes'], ['semgc', 'Sem GC'], ['inativos', 'Inativos']].map(function (x) {
+    return '<button data-a="filtroM" data-v="' + x[0] + '" class="' + (filtroM === x[0] ? 'on' : '') + '">' + x[1] + ' <span>' + cnt[x[0]] + '</span></button>'; }).join('') + '</div>';
   h += blocoFiltrosM();
-  h += '<div class="sec" style="margin-top:6px">' + l.length + ' resultado(s)' + (l.length > 150 ? ' — mostrando 150' : '') + '</div><div class="card">';
+  h += '<div class="sec" style="margin-top:6px">' + l.length + ' resultado(s)' + (l.length > 150 ? ' — mostrando 150' : '') + '</div><div class="card lp">';
   h += l.length ? l.slice(0, 150).map(function (p) {
     var end = separarBairroCidade(p.bairro, p.cidade), idade = idadeDe(p), st = p.gcId ? statsDe(p) : null, ult = p.gcId ? ultimaPresenca(p) : '';
     var aniv = fM.ordem === 'aniversario' && p.nasc ? ' · aniv. ' + p.nasc.slice(8, 10) + '/' + p.nasc.slice(5, 7) : '';
-    return '<div class="row cl" data-a="fichaPessoa" data-v="' + esc(p.id) + '"><div class="av">' + ini(p.nome) + '</div><div class="info">' +
+    return '<div class="row cl" data-a="fichaPessoa" data-v="' + esc(p.id) + '"><div class="av" style="' + corAvatar(p.nome) + '">' + ini(p.nome) + '</div><div class="info">' +
       '<div class="nm">' + esc(p.nome) + (p.apelido ? ' <span style="color:#a87700;font-weight:600">“' + esc(p.apelido) + '”</span>' : '') + '</div>' +
       '<div class="sb">' + esc(p.fone || 'sem telefone') + ' · ' + esc(end.bairro || 'sem bairro') + ' · ' + esc(p.gcId ? gcNome(p.gcId) : 'sem GC') + '</div>' +
       '<div class="sb">' + (idade !== null ? idade + ' anos' : 'idade —') + aniv +
@@ -4607,6 +4615,95 @@ function rFinanceiro() {
   return h;
 }
 
+/* ═══════════════════ v34: MURAL (recados e oração) + NOTIFICAÇÕES DO APARELHO ═══════════════════ */
+var muralTipo = 'recado', muralFiltro = 'todos';
+function tempoRel(iso) {
+  var m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (m < 1) return 'agora'; if (m < 60) return m + ' min'; var h = Math.round(m / 60); if (h < 24) return h + ' h';
+  var d = Math.round(h / 24); return d === 1 ? 'ontem' : d + ' dias';
+}
+function diasRestam(iso) { return Math.max(0, 15 - Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)); }
+function blocoMural() {
+  var l = (db.mural || []).filter(function (m) { return muralFiltro === 'todos' || m.tipo === muralFiltro; });
+  var nO = (db.mural || []).filter(function (m) { return m.tipo === 'oracao'; }).length, nR = (db.mural || []).length - nO;
+  var h = '<div class="sec sec-l"><span>Mural da igreja</span><span style="font-size:11.5px;color:var(--tx3);font-weight:600">apaga em 15 dias</span></div>' +
+    '<div class="card mural-novo"><div class="chips" style="margin:0 0 8px">' +
+      '<button data-a="muralTipo" data-v="recado" class="' + (muralTipo === 'recado' ? 'on' : '') + '">💬 Recado</button>' +
+      '<button data-a="muralTipo" data-v="oracao" class="' + (muralTipo === 'oracao' ? 'on' : '') + '">🙏 Pedido de oração</button></div>' +
+    '<textarea id="mural-txt" rows="3" maxlength="600" placeholder="' + (muralTipo === 'oracao' ? 'Compartilhe seu motivo de oração…' : 'Escreva um recado para a igreja…') + '"></textarea>' +
+    '<button class="btn pr" data-a="muralPostar" style="margin-top:8px">Publicar</button>' +
+    '<div style="font-size:11px;color:var(--tx3);margin-top:6px;line-height:1.4">Todos os usuários veem o mural. Só você, o pastor ou o master podem apagar sua mensagem.</div></div>';
+  h += '<div class="chips">' + [['todos', 'Todos', nO + nR], ['recado', 'Recados', nR], ['oracao', 'Oração', nO]].map(function (x) {
+    return '<button data-a="muralFiltro" data-v="' + x[0] + '" class="' + (muralFiltro === x[0] ? 'on' : '') + '">' + x[1] + ' <span>' + x[2] + '</span></button>'; }).join('') + '</div>';
+  h += l.length ? l.map(function (m) {
+    var or = m.tipo === 'oracao';
+    return '<div class="card mural-it' + (or ? ' or' : '') + '"><div class="mh"><div class="av" style="' + corAvatar(m.autorNome) + '">' + ini(m.autorNome) + '</div>' +
+      '<div class="info"><div class="nm">' + esc(m.autorNome) + (m.meu ? ' <span class="apel">(você)</span>' : '') + '</div><div class="sb">' + (or ? '🙏 pedido de oração' : '💬 recado') + ' · ' + tempoRel(m.criadoEm) + '</div></div>' +
+      (m.podeApagar ? '<button class="mx" data-a="muralApagar" data-v="' + esc(m.id) + '" title="Apagar">×</button>' : '') + '</div>' +
+      '<div class="mt-txt">' + esc(m.texto) + '</div>' +
+      '<div class="mf">' + (or ? '<button class="orar' + (m.oreiEu ? ' on' : '') + '" data-a="muralOrar" data-v="' + esc(m.id) + '">🙏 ' + (m.oreiEu ? 'Orei' : 'Vou orar') + (m.oracoes ? ' · ' + m.oracoes : '') + '</button>' : '<span></span>') +
+      '<span class="ate">some em ' + diasRestam(m.criadoEm) + ' dia(s)</span></div></div>';
+  }).join('') : '<div class="card"><div class="empty">Nenhuma mensagem ' + (muralFiltro === 'oracao' ? 'de oração ' : '') + 'no mural.</div></div>';
+  return h;
+}
+function muralAcao(acao, dados, ok) {
+  carregando(true, 'Enviando...');
+  chamar(acao, dados).then(function (r) { db.mural = r.mural || db.mural; salvarDB(); marcarVistos(); render(); if (ok) toast(ok); })
+    .catch(function (e) { toast(e.message, 4500); }).then(function () { carregando(false); });
+}
+
+/* ── notificações do aparelho (central do celular / computador) ── */
+var notifVistos = null;
+function lerVistos() { if (notifVistos) return notifVistos; try { notifVistos = JSON.parse(localStorage.getItem('g2_vistos') || '{}'); } catch (e) { notifVistos = {}; } return notifVistos; }
+function salvarVistos() { try { localStorage.setItem('g2_vistos', JSON.stringify(notifVistos || {})); } catch (e) {} }
+function notifSuportada() { return typeof Notification !== 'undefined'; }
+function notifStatus() { return notifSuportada() ? Notification.permission : 'indisponivel'; }
+function itensNotificaveis() {
+  var out = [];
+  (db.alertas || []).filter(function (a) { return !a.lido; }).forEach(function (a) { out.push({ id: 'a:' + a.id, titulo: tituloAviso(a), corpo: a.mensagem, aba: 'avisos' }); });
+  (db.mural || []).filter(function (m) { return !m.meu; }).forEach(function (m) {
+    out.push({ id: 'm:' + m.id, titulo: (m.tipo === 'oracao' ? '🙏 Pedido de oração · ' : '💬 Recado · ') + m.autorNome, corpo: m.texto, aba: 'avisos' });
+  });
+  return out;
+}
+function tituloAviso(a) {
+  return ({ escala: '🎵 Você está na escala', lvAtraso: '🏠 Lar de Vida atrasado', visitaIgreja: '⛪ Visitou a igreja', novoMembro: '👋 Novo membro no GC',
+            visitasSemGC: '🚶 Visitante sem GC', transferencia: '🔁 Pedido de transferência', associado: '✅ Visitante associado' })[a.tipo] || '🔔 ' + igrNome();
+}
+/** Após cada sincronização: mostra na central de notificações o que é novo (e atualiza o número no ícone). */
+function notificarNovos() {
+  var vistos = lerVistos(), itens = itensNotificaveis(), primeira = !vistos._init, novos = [];
+  itens.forEach(function (x) { if (!vistos[x.id]) { novos.push(x); vistos[x.id] = Date.now(); } });
+  vistos._init = 1;
+  var lim = Date.now() - 20 * 86400000; Object.keys(vistos).forEach(function (k) { if (k !== '_init' && vistos[k] < lim) delete vistos[k]; });
+  salvarVistos();
+  var n = (db.alertas || []).filter(function (a) { return !a.lido; }).length;
+  try { if (navigator.setAppBadge) { if (n) navigator.setAppBadge(n); else navigator.clearAppBadge(); } } catch (e) {}
+  if (primeira || !novos.length || notifStatus() !== 'granted') return;
+  var mostrar = function (t, o) {
+    if (navigator.serviceWorker && navigator.serviceWorker.ready && MODO_PWA) navigator.serviceWorker.ready.then(function (reg) { reg.showNotification(t, o); }).catch(function () { try { new Notification(t, o); } catch (e) {} });
+    else { try { new Notification(t, o); } catch (e) {} }
+  };
+  var ic = MODO_PWA ? 'icons/icon-192.png' : undefined;
+  if (novos.length > 3) mostrar(igrNome(), { body: novos.length + ' novos avisos e mensagens no app.', icon: ic, badge: ic, tag: 'g2-lote', data: { aba: 'avisos' } });
+  else novos.forEach(function (x) { mostrar(x.titulo, { body: String(x.corpo || '').slice(0, 180), icon: ic, badge: ic, tag: x.id, data: { aba: x.aba } }); });
+}
+function marcarVistos() { var v = lerVistos(); itensNotificaveis().forEach(function (x) { v[x.id] = v[x.id] || Date.now(); }); v._init = 1; salvarVistos(); }
+function blocoNotif() {
+  var st = notifStatus();
+  if (st === 'granted' || st === 'indisponivel') return '';
+  if (st === 'denied') return '<div class="aviso" style="font-size:12.5px">As notificações estão bloqueadas neste aparelho. Para receber os avisos na central do celular/computador, libere em <b>Configurações do navegador → Notificações</b>.</div>';
+  return '<div class="card notif-cta"><div style="flex:1"><b>Receber avisos no celular</b><div style="font-size:12.5px;color:var(--tx2);margin-top:2px">Escalas, Lar de Vida, recados e pedidos de oração aparecem na central de notificações.</div></div>' +
+    '<button class="btn sm" data-a="notifAtivar">Ativar</button></div>';
+}
+function notifAtivar() {
+  if (!notifSuportada()) return toast('Este navegador não permite notificações.' + (/iPhone|iPad/.test(navigator.userAgent) ? ' No iPhone, instale o app (Compartilhar → Adicionar à Tela de Início) e abra por ele.' : ''), 6000);
+  Notification.requestPermission().then(function (p) {
+    if (p === 'granted') { marcarVistos(); toast('Notificações ativadas ✓'); try { new Notification(igrNome(), { body: 'Você vai receber os avisos por aqui.', icon: MODO_PWA ? 'icons/icon-192.png' : undefined }); } catch (e) {} }
+    render();
+  });
+}
+
 /* ── encontros agendados (futuros) ── */
 function agendados(gcId) {
   var hj = hoje();
@@ -4871,6 +4968,11 @@ var ACOES = {
   sincronizar: function () { sincronizar(true); }, servidor: servidor, salvarServidor: function () { salvarServidor(); },
   padraoServidor: function () { salvarServidor(URL_PADRAO); },
   novaPessoa: function () { abrirPessoa(null); }, abrirPessoa: function (v) { abrirPessoa(v); }, salvarPessoa: function () { salvarPessoa(); }, modulo: abrirModulo,
+    muralTipo: function (v) { var t = $('mural-txt') ? $('mural-txt').value : ''; muralTipo = v; render(); if ($('mural-txt')) $('mural-txt').value = t; },
+    muralFiltro: function (v) { muralFiltro = v; render(); },
+    muralPostar: function () { var t = ($('mural-txt').value || '').trim(); if (t.length < 3) return toast('Escreva a mensagem.'); muralAcao('muralPostar', { tipo: muralTipo, texto: t }, 'Publicado no mural ✓'); },
+    muralApagar: function (v) { if (confirm('Apagar esta mensagem do mural?')) muralAcao('muralApagar', { id: v }, 'Mensagem apagada'); },
+    muralOrar: function (v) { muralAcao('muralOrar', { id: v }); }, notifAtivar: notifAtivar,
     filtroCh: function (v) { filtroCh = v; render(); }, chTodosP: chTodosP,
     lvIrForm: function () { var t = $('lv-tabs'); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); setTimeout(function () { if ($('v-nome')) $('v-nome').focus(); }, 350); },
     encSel: function (v) { chDraft = null; cfg.dataChamada = v; cfg.dataChamadaGC = gcA(); salvarCfg(); render(); },
@@ -4937,6 +5039,7 @@ document.addEventListener('click', function (ev) {
   if (ACOES[a]) { ev.preventDefault(); ACOES[a](t.getAttribute('data-v'), t); }
 });
 document.addEventListener('input', function (ev) {
+  if (ev.target.id === 'busca-m' && false) {}
   if (ev.target.id === 'busca-p') { buscaP = ev.target.value; var pos = ev.target.selectionStart; render(); var el = $('busca-p'); el.focus(); el.setSelectionRange(pos, pos); }
   if (ev.target.id === 'cf-cnpj') ev.target.value = mascaraCnpj(ev.target.value);
   if (['f-cep', 'g-cep', 'v-cep', 'cf-cep'].indexOf(ev.target.id) >= 0) {
@@ -5014,7 +5117,9 @@ $('c-vpol').addEventListener('click', function (e) { e.preventDefault(); verPoli
 $('b-voltar-ger').addEventListener('click', voltarRede);
 $('b-voltar').addEventListener('click', voltar);
 window.addEventListener('online', function () { if (cfg.token) sincronizar(false); });
-setInterval(function () { if (cfg.token && document.visibilityState === 'visible') sincronizar(false); }, 120000);
+setInterval(function () { if (cfg.token && (document.visibilityState === 'visible' || notifStatus() === 'granted')) sincronizar(false); }, 120000);
+document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible' && cfg.token) sincronizar(false); });
+if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', function (e) { if (e.data && e.data.tipo === 'ABRIR' && cfg.token) irRaiz(cfg.modo === 'gc' ? 'alertas' : 'avisos'); });
 
 /* ───────── início ───────── */
 pwaIniciar();

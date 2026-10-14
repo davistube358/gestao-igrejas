@@ -1,7 +1,7 @@
 /* 2Gather — service worker.
    Guarda só a TELA do app (HTML, JS, CSS, ícones) para abrir rápido e sem internet.
    Dados nunca passam por aqui: as chamadas ao servidor (Apps Script) não são guardadas. */
-var VERSAO = '2gather-v33';
+var VERSAO = '2gather-v34';
 var ARQUIVOS = ['./', './index.html', './app.js', './config.js', './manifest.webmanifest',
   './lib/leaflet.js', './lib/leaflet.css',
   './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png'];
@@ -19,4 +19,12 @@ self.addEventListener('fetch', function (e) {
   if (req.method !== 'GET' || url.origin !== self.location.origin) return;
   if (req.mode === 'navigate') { e.respondWith(fetch(req).catch(function () { return caches.match('./index.html'); })); return; }
   e.respondWith(caches.match(req, { ignoreSearch: true }).then(function (r) { return r || fetch(req); }));
+});
+/* toque na notificação: abre (ou traz para frente) o app na central de avisos */
+self.addEventListener('notificationclick', function (e) {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (l) {
+    for (var i = 0; i < l.length; i++) { if ('focus' in l[i]) { l[i].postMessage({ tipo: 'ABRIR' }); return l[i].focus(); } }
+    return self.clients.openWindow('./?origem=notificacao');
+  }));
 });

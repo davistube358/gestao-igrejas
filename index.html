@@ -395,6 +395,32 @@ nav .bdg{top:2px;background:var(--vermelho)}
   .fab{right:calc(50vw - 410px + 116px)}
 }
 @media (min-width:1400px){ main>*{max-width:860px!important} }
+
+/* ═════════ v34 · mural, notificações e demais telas no novo visual ═════════ */
+.mural-novo textarea{min-height:76px}
+.mural-it{padding:14px 16px}
+.mural-it.or{box-shadow:0 0 0 1.5px #FFE3A3}
+.mural-it .mh{display:flex;align-items:center;gap:10px}
+.mural-it .mh .av{width:38px;height:38px;flex:0 0 38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800}
+.mural-it .mh .info{flex:1;min-width:0}.mural-it .nm{font-weight:800;font-size:14px}.mural-it .sb{font-size:11.5px;color:var(--tx3)}
+.mural-it .mx{border:none;background:var(--bg);width:30px;height:30px;border-radius:10px;color:var(--tx3);font-size:18px;cursor:pointer}
+.mt-txt{font-size:14.5px;line-height:1.5;white-space:pre-line;margin:10px 2px 8px;word-wrap:break-word}
+.mf{display:flex;justify-content:space-between;align-items:center}
+.mf .orar{border:none;background:#FFF5DC;color:#8A5A00;border-radius:99px;padding:7px 12px;font-weight:800;font-size:12.5px;cursor:pointer;font-family:inherit}
+.mf .orar.on{background:#FFE3A3}
+.mf .ate{font-size:10.5px;color:var(--tx3)}
+.notif-cta{display:flex;gap:12px;align-items:center;background:var(--pri-s)!important}
+/* tabelas, listas e formulários das demais telas */
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{font-size:10.5px;color:var(--tx3);font-weight:800;text-transform:uppercase;letter-spacing:.4px;text-align:left;padding:8px 6px;border-bottom:1px solid var(--ln)}
+.tbl td{padding:10px 6px;border-bottom:1px solid var(--ln)}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tr.cl:hover td{background:var(--bg)}
+#main>input,#main>select{background:#fff;border:none;box-shadow:0 1px 2px rgba(20,22,26,.05)}
+#main .card h3{font-size:15px;letter-spacing:-.1px}
+#main details summary{color:var(--tx2)}
+.evcard,.card.cl{transition:transform .1s}
+.card.cl:active{transform:scale(.99)}
 </style>
 </head>
 <body>

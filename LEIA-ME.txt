@@ -1,4 +1,5 @@
-2Gather v33 — etapa 4: Relatórios, Financeiro consolidado, Início enxuto, avisos privados e computador mais próximo do celular
+2Gather v34 — Mural de recados e oração + notificações do aparelho
 
-1) GitHub (gestao-igrejas): substitua SÓ app.js, index.html, sw.js (Add file → Upload files → Commit).
-2) Apps Script: cole o Codigo_v28.txt no Código.gs → Implantar → Gerenciar implantações → lápis → Nova versão.
+1) GitHub: substitua app.js, index.html, sw.js (Add file → Upload files → Commit).
+2) Apps Script: cole o Codigo_v29.txt → Implantar → Gerenciar implantações → lápis → Nova versão.
+   (a aba "Mural" é criada sozinha na planilha.)
