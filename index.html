@@ -435,6 +435,39 @@ img.av{object-fit:cover;border-radius:50%;background:var(--bg);display:block;fle
 .fp-prev{width:76px;height:76px;flex:0 0 76px;border-radius:50%;background:var(--bg) center/cover no-repeat;display:flex;align-items:center;justify-content:center;font-size:26px;border:2px dashed var(--ln)}
 .fp-bts{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .fp-bts .btn.sm{padding:8px 10px}
+
+/* ═════════ v36 · Instituto ═════════ */
+.agcard{display:flex;gap:12px;align-items:center;padding:14px 16px;cursor:pointer}
+.agcard .info{flex:1;min-width:0}
+.agic{width:46px;height:46px;flex:0 0 46px;border-radius:15px;display:flex;align-items:center;justify-content:center;background:#FDECEC;color:#E5484D}
+.agic.pastoral{background:#F1ECFF;color:#7C5CFA}
+.agic svg{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.dstrip{display:flex;gap:7px;overflow-x:auto;margin:10px 0 4px;padding-bottom:4px;scrollbar-width:none}
+.dstrip::-webkit-scrollbar{display:none}
+.dch{flex:0 0 58px;border:none;background:#fff;border-radius:16px;padding:9px 4px;display:flex;flex-direction:column;align-items:center;gap:1px;cursor:pointer;font-family:inherit;box-shadow:0 1px 2px rgba(20,22,26,.05);color:var(--tx)}
+.dch small{font-size:10.5px;color:var(--tx3);font-weight:700;text-transform:uppercase}
+.dch b{font-size:19px;font-weight:800}
+.dch i{font-style:normal;font-size:9.5px;color:var(--verde);font-weight:700}
+.dch.off{opacity:.45}.dch.off i{color:var(--tx3)}
+.dch.on{background:var(--tx);color:#fff}.dch.on small,.dch.on i{color:#C9CED6}
+.sheet .dch{background:var(--bg);box-shadow:none}.sheet .dch.on{background:var(--tx)}
+.hgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.hgrid button{border:none;background:var(--bg);border-radius:12px;padding:12px 0;font-weight:800;font-size:14px;cursor:pointer;font-family:inherit;color:var(--tx)}
+.hgrid button:active{background:var(--pri-s);color:var(--pri)}
+.slotb{border-bottom:1px solid var(--ln)}.slotb:last-child{border-bottom:none}
+.slotbt{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 10px 54px}
+.slotbt .btn.sm{padding:7px 11px;font-size:12px}
+.row.slot .btn.sm{padding:8px 14px}
+.hdia{display:grid;grid-template-columns:34px 1fr 1fr;gap:8px;align-items:center;margin-bottom:6px}
+.hdia b{font-size:12.5px}
+.hper{display:flex;align-items:center;gap:3px;min-width:0}.hper u{text-decoration:none;color:var(--tx3)}
+.hdia input{padding:9px 2px;font-size:13.5px;margin:0;min-width:0;text-align:center;width:100%}
+.bloqs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+
+/* v36.1 · especialidades e equipe */
+.espg{margin-bottom:6px}
+.espt{display:flex;flex-direction:column;gap:1px;margin:12px 4px 7px}
+.espt b{font-size:14px;letter-spacing:-.1px}.espt span{font-size:11.5px;color:var(--tx3);font-weight:600}
 </style>
 </head>
 <body>
@@ -491,6 +524,8 @@ img.av{object-fit:cover;border-radius:50%;background:var(--bg);display:block;fle
       <option value="tesouraria">Tesouraria</option>
       <option value="voluntario">Voluntário (cadastro de visitantes no culto)</option>
       <option value="voluntarioLV">Voluntário Lar de Vida (visita casas)</option>
+      <option value="voluntarioInst">Voluntário Instituto (agenda atendimentos)</option>
+      <option value="profissional">Profissional de saúde (Instituto)</option>
     </select>
     <label>Observação (opcional)</label>
     <textarea id="c-obs" rows="2" placeholder="Ex.: sou co-líder do GC Centro"></textarea>

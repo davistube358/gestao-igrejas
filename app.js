@@ -20,8 +20,8 @@ var ICONE_2G = 'icons/icon-192.png';
 // padrão antes da 1ª configuração: no app instalado (PWA) é o 2Gather; na página antiga, o logo embutido
 var LOGO_PADRAO = (window.APP_CONFIG && window.APP_CONFIG.apiUrl) ? ICONE_2G : document.getElementById('h-img').getAttribute('src');
 var LOGO = LOGO_PADRAO;        // ícone usado na barra superior e nas telas internas
-var VERSAO_APP = 35;
-var SERVIDOR_ESPERADO = 30;      // versão do Código.gs que acompanha este app
+var VERSAO_APP = 36;
+var SERVIDOR_ESPERADO = 31;      // versão do Código.gs que acompanha este app
 var EXIGE_HOSPEDADO = true;      // segurança: o app só funciona pelo endereço oficial (dados nunca trafegam pela URL)
 
 /* ───────── armazenamento ───────── */
@@ -81,7 +81,7 @@ function toast(msg, ms) { var t = $('toast'); t.textContent = msg; t.style.displ
 function carregando(on, txt) { $('carregando').classList.toggle('on', !!on); $('carregando-txt').textContent = txt || 'Carregando...'; }
 
 var DIAS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
-var PAPEL_NOME = { master: 'Master', pastor: 'Pastor', supervisor: 'Supervisor', lider: 'Líder', discipulo: 'Discípulo', secretaria: 'Secretaria', tesouraria: 'Tesouraria', voluntario: 'Voluntário', voluntarioLV: 'Voluntário Lar de Vida' };
+var PAPEL_NOME = { master: 'Master', pastor: 'Pastor(a)', supervisor: 'Supervisor', lider: 'Líder', discipulo: 'Discípulo', secretaria: 'Secretaria', tesouraria: 'Tesouraria', voluntario: 'Voluntário', voluntarioLV: 'Voluntário Lar de Vida', voluntarioInst: 'Voluntário Instituto', profissional: 'Profissional de saúde' };
 var ETAPAS = ['1. Visitou', '2. Frequentando', '3. Membro da igreja', '4. Batizado', '5. Em discipulado', '6. Em formação de líder'];
 var CANAIS = ['Evangelismo', 'Convite de membros', 'GC', 'Redes sociais', 'Outros'];
 
@@ -717,7 +717,7 @@ function sair(confirmar) {
   mostrarTela('s-login');
 }
 function limparSessao() {
-  chDraft = null; usuariosCache = null; cfgDraft = null; lvPendente = null; consentAberto = false;
+  chDraft = null; usuariosCache = null; cfgDraft = null; lvPendente = null; consentAberto = false; if (typeof instLimpar === 'function') instLimpar();
   var url = cfg.url;
   cfg = { url: url }; salvarCfg();
   db = { pessoas: [], encontros: [], gcs: [], equipe: [], pendentes: 0 }; fotos = {};
@@ -765,6 +765,7 @@ function abasAtuais() {
   if (cfg.modo === 'lv') {
     var A = [];
     if (pode('visitantes')) A.push({ id: 'lvnovo', nome: 'Início', ic: IC_INICIO });
+    if (temInst()) A.push({ id: 'instituto', nome: 'Instituto', ic: IC_INST });
     if (pode('lvVisitas')) A.push({ id: 'lvcasas', nome: 'Lar de Vida', ic: IC_LAR });
     if (temCultos() && !pode('lvVisitas')) A.push({ id: 'cultos', nome: 'Agenda', ic: IC_AGENDA });
     A.push({ id: 'avisos', nome: 'Avisos', ic: IC_AVISOS });
@@ -786,7 +787,7 @@ function abasAtuais() {
           { id: 'pessoas', nome: 'Pessoas', ic: IC_PESSOAS }, { id: 'alertas', nome: 'Avisos', ic: IC_AVISOS },
           { id: 'mais', nome: 'Perfil', ic: IC_PERFIL }];
 }
-function inicioId() { return cfg.modo === 'lv' ? (pode('visitantes') ? 'lvnovo' : pode('lvVisitas') ? 'lvcasas' : 'conta') : cfg.modo === 'ger' ? 'bi' : 'painel'; }
+function inicioId() { return cfg.modo === 'lv' ? (pode('visitantes') ? 'lvnovo' : temInst() ? 'instituto' : pode('lvVisitas') ? 'lvcasas' : 'conta') : cfg.modo === 'ger' ? 'bi' : 'painel'; }
 function validarContexto() {
   if (!pode('rede') && !pode('gc')) { cfg.modo = 'lv'; }
   else if (pode('rede') && cfg.modo === 'lv') { cfg.modo = 'ger'; }
@@ -882,7 +883,7 @@ function render() {
   validarContexto();
   var g = cfg.modo === 'gc' ? gcPor(cfg.gcAtual) : null;
   $('h-img').src = g ? iconeGC(g.id) : LOGO;
-  var TIT = { lvcasas: 'Lar de Vida', relatorios: 'Relatórios', financeiro: 'Financeiro', usuarios: 'Usuários e acessos', avisos: 'Avisos', gcs: 'GCs' };
+  var TIT = { instituto: 'Instituto', instagenda: 'Agenda', lvcasas: 'Lar de Vida', relatorios: 'Relatórios', financeiro: 'Financeiro', usuarios: 'Usuários e acessos', avisos: 'Avisos', gcs: 'GCs' };
   $('h-tit').textContent = TIT[cfg.aba] ? TIT[cfg.aba] : cfg.modo === 'lv' ? igrNome() : cfg.aba === 'config' ? 'Configurações' : cfg.aba === 'cultos' ? 'Cultos e eventos' : cfg.aba === 'membros' ? 'Cadastro de pessoas' : cfg.aba === 'cursos' ? 'Cursos e reuniões' : cfg.modo === 'ger' ? igrNome() : (g ? g.nome : 'Meu GC');
   $('h-papel').textContent = PAPEL_NOME[papel()] || '';
   var raizes = abasAtuais().map(function (a) { return a.id; }), naRaiz = raizes.indexOf(cfg.aba) >= 0 && !cursoAberto;
@@ -898,7 +899,7 @@ function render() {
   var f = {
     bi: rBI, gcs: rGCs, novo: rNovoGC, usuarios: rUsuarios, conta: rConta,
     painel: rPainel, pessoas: rPessoas, chamada: rChamada, alertas: rAlertas, mais: rMaisGC,
-    lv: rLVGer, lar: rLar, lvcasas: rLVVol, avisos: rAvisos, relatorios: rRelatorios, financeiro: rFinanceiro, lvnovo: rLVNovo, lvmeus: rLVMeus, cultos: rCultos, config: rConfig, membros: rConsulta, cursos: rCursos
+    lv: rLVGer, lar: rLar, instituto: rInstituto, instagenda: rInstAgenda, lvcasas: rLVVol, avisos: rAvisos, relatorios: rRelatorios, financeiro: rFinanceiro, lvnovo: rLVNovo, lvmeus: rLVMeus, cultos: rCultos, config: rConfig, membros: rConsulta, cursos: rCursos
   }[cfg.aba];
   if (cfg.modo === 'gc' && !g) {
     $('main').innerHTML = '<div class="empty">' + (db.gcs.length ? 'Você ainda não está vinculado a um GC. Fale com a liderança.' : 'Carregando dados do GC...') + '</div>';
@@ -1000,6 +1001,7 @@ function modulosDisponiveis() {
   if (ger && pode('lvDirecionar')) m.push({ id: 'lv', nome: 'Lar de Vida', ic: IC_LAR, cor: '#1f9d63' });
   else if (cfg.modo === 'gc') m.push({ id: 'lar', nome: 'Lar de Vida', ic: IC_LAR, cor: '#1f9d63' });
   if (ger && temCultos()) m.push({ id: 'cultos', nome: 'Cultos', ic: IC_CULTO, cor: '#7a4fd6' });
+  if (ger && temInst()) m.push({ id: 'instituto', nome: 'Instituto', ic: IC_INST, cor: '#E5484D' });
   if (pode('consulta') && cfg.modo !== 'gc') m.push({ id: 'membros', nome: 'Membros', ic: IC_MEM, cor: '#d6572f' });
   else if (cfg.modo === 'gc') m.push({ id: 'pessoas', nome: 'Pessoas', ic: IC_MEM, cor: '#d6572f' });
   if (ger && podeFin()) m.push({ id: 'financeiro', nome: 'Financeiro', ic: IC_FIN, cor: '#c99a1a' });
@@ -1279,7 +1281,7 @@ function carregarUsuarios(forcar) {
   }).catch(function (e) { toast(e.message, 4000); }).then(function () { carregandoUsr = false; });
 }
 function papeisPermitidos() {
-  var l = ['supervisor', 'lider', 'discipulo', 'secretaria', 'tesouraria', 'voluntario', 'voluntarioLV'];
+  var l = ['supervisor', 'lider', 'discipulo', 'secretaria', 'tesouraria', 'voluntario', 'voluntarioLV', 'voluntarioInst', 'profissional'];
   if (papel() === 'master') l = ['master', 'pastor'].concat(l);
   return l.map(function (p) { return [p, PAPEL_NOME[p]]; });
 }
@@ -1308,7 +1310,7 @@ function rUsuarios() {
         '<button class="btn gh sm" data-a="excluirUsuario" data-v="' + u.id + '" style="color:var(--vermelho)">Excluir</button></div>' : '') + '</div>';
   });
   var ativos = usuariosCache.filter(function (u) { return u.status !== 'pendente'; });
-  var ordem = { master: 0, pastor: 1, supervisor: 2, lider: 3, discipulo: 4, secretaria: 5, tesouraria: 6, voluntario: 7 };
+  var ordem = { master: 0, pastor: 1, supervisor: 2, lider: 3, discipulo: 4, secretaria: 5, tesouraria: 6, profissional: 7, voluntario: 8, voluntarioLV: 8, voluntarioInst: 8 };
   ativos.sort(function (a, b) { return (ordem[a.papel] || 9) - (ordem[b.papel] || 9) || String(a.nome).localeCompare(String(b.nome), 'pt-BR'); });
   h += '<div class="sec">Usuários (' + ativos.length + ')</div><div class="card">';
   h += ativos.length ? ativos.map(function (u) {
@@ -1322,7 +1324,8 @@ function rUsuarios() {
     '<b>Supervisor</b>: painel da rede, cadastro e edição de GCs, acesso a todos os GCs.<br>' +
     '<b>Líder</b>: o próprio GC, completo; libera as visitas do Lar de Vida.<br><b>Discípulo</b>: o próprio GC — chamada e visitas do Lar de Vida.<br>' +
     '<b>Secretaria</b>: cultos e eventos, cadastro de visitantes e recados.<br><b>Tesouraria</b>: valores dos cultos e relatório financeiro.<br>' +
-    '<b>Voluntário</b>: só cadastra visitantes no horário do culto liberado.<br>' +
+    '<b>Voluntário</b>: só cadastra visitantes no horário do culto liberado. <b>Voluntário Lar de Vida</b>: também visita as casas que o líder liberar. <b>Voluntário Instituto</b>: agenda atendimentos, sem ver os nomes dos pacientes.<br>' +
+    '<b>Profissional de saúde</b>: vê apenas a própria agenda, os nomes dos pacientes e o prontuário — nem o master nem o pastor têm acesso a esses dados.<br>' +
     '<span style="color:#888">Toque num usuário para ajustar acessos individuais (o “+” indica ajustes).</span></div>';
   if (logCache.length) {
     h += '<div class="sec">Atividade recente</div><div class="card">' + logCache.slice(0, 25).map(function (l) {
@@ -1437,9 +1440,10 @@ function blocoConta() {
     (pode('config') ? '<button class="btn pr" data-a="aba" data-v="config">Configurações da igreja</button><div class="gap"></div>' : '') +
     (ehAdmin() ? '<button class="btn gh" data-a="aba" data-v="usuarios">Usuários e acessos' + (db.pendentes ? ' · <b style="color:var(--vermelho)">' + db.pendentes + ' aguardando</b>' : '') + '</button><div class="gap"></div>' : '') +
     (podeFin() && cfg.modo !== 'ger' ? '<button class="btn gh" data-a="aba" data-v="financeiro">Consolidado financeiro</button><div class="gap"></div>' : '') +
-    (temCultos() && cfg.modo === 'gc' ? '<button class="btn gh" data-a="aba" data-v="cultos">Cultos e eventos</button><div class="gap"></div>' : '') +
+    (temCultos() && cfg.modo !== 'ger' ? '<button class="btn gh" data-a="aba" data-v="cultos">Cultos e eventos</button><div class="gap"></div>' : '') +
     (temCursos() && cfg.modo !== 'ger' ? '<button class="btn gh" data-a="aba" data-v="cursos">Cursos e reuniões</button><div class="gap"></div>' : '') +
-    (pode('consulta') && cfg.modo === 'gc' ? '<button class="btn gh" data-a="aba" data-v="membros">Consultar cadastro de pessoas</button><div class="gap"></div>' : '') +
+    (temInst() && cfg.modo !== 'ger' ? '<button class="btn gh" data-a="aba" data-v="instituto">Instituto</button><div class="gap"></div>' : '') +
+    (pode('consulta') && cfg.modo !== 'ger' ? '<button class="btn gh" data-a="aba" data-v="membros">Consultar cadastro de pessoas</button><div class="gap"></div>' : '') +
     (pode('visitantes') && cfg.modo !== 'lv' ? '<button class="btn gh" data-a="aba" data-v="lvnovo">Cadastrar visitante do culto</button><div class="gap"></div>' : '') +
     '<button class="btn gh" data-a="trocarSenha">Trocar minha senha</button><div class="gap"></div>' +
     (pwaPodeInstalar() ? '<button class="btn pr" data-a="pwaInstalar">Instalar o app neste aparelho</button><div class="gap"></div>' : '') +
@@ -2511,7 +2515,8 @@ return h + '</div><div class="meta">Dá para editar enquanto o cadastro aguarda 
 var IC_CULTO = '<path d="M12 2v5M9.5 4.5h5"/><path d="M4 21V11l8-4 8 4v10"/><path d="M10 21v-5h4v5"/>';
 var ABA_CULTOS = { id: 'cultos', nome: 'Cultos', ic: IC_CULTO };
 var TIPOS_EVENTO = ['Culto', 'Evento', 'Conferência', 'Santa Ceia', 'Batismo', 'Outro'];
-var PERM_ORDEM = ['config', 'eventos', 'visitantes', 'financeiro', 'recados', 'relFin', 'rede', 'gc', 'gcEvento', 'lvDirecionar', 'lvLiberar', 'lvVisitas', 'usuarios', 'consulta', 'cursos'];
+var SEM_MASTER_C = ['prontuario', 'pacienteNomes'];
+var PERM_ORDEM = ['config', 'eventos', 'visitantes', 'financeiro', 'recados', 'relFin', 'rede', 'gc', 'gcEvento', 'lvDirecionar', 'lvLiberar', 'lvVisitas', 'usuarios', 'consulta', 'cursos', 'instituto', 'institutoAdmin', 'agendaPastoral', 'prontuario', 'pacienteNomes'];
 var PERM_NOME_C = {
   config: 'Configurações da igreja', eventos: 'Criar e liberar cultos/eventos', visitantes: 'Cadastrar visitantes no culto',
   financeiro: 'Lançar dízimos e ofertas do culto', recados: 'Recados e tema do culto', relFin: 'Relatório financeiro',
@@ -2519,14 +2524,17 @@ var PERM_NOME_C = {
   lvDirecionar: 'Lar de Vida: direcionar visitantes', lvLiberar: 'Lar de Vida: liberar casas',
   lvVisitas: 'Lar de Vida: registrar visitas', usuarios: 'Aprovar usuários e acessos',
   consulta: 'Consultar cadastro de pessoas (telefone, endereço)',
-  cursos: 'Cursos, reuniões e treinamentos'
+  cursos: 'Cursos, reuniões e treinamentos',
+  instituto: 'Instituto: ver agendas e agendar (sem ver nomes)', institutoAdmin: 'Instituto: criar agendas e horários',
+  agendaPastoral: 'Agenda pastoral: agendar atendimentos', prontuario: 'Prontuário e atendimentos (somente o profissional)', pacienteNomes: 'Ver nomes dos pacientes nas agendas'
 };
-var TODAS_C = ['config', 'eventos', 'visitantes', 'financeiro', 'recados', 'relFin', 'rede', 'gc', 'gcEvento', 'lvDirecionar', 'lvLiberar', 'usuarios', 'consulta', 'cursos'];
+var TODAS_C = ['config', 'eventos', 'visitantes', 'financeiro', 'recados', 'relFin', 'rede', 'gc', 'gcEvento', 'lvDirecionar', 'lvLiberar', 'usuarios', 'consulta', 'cursos', 'instituto', 'institutoAdmin', 'agendaPastoral'];
 var PERM_PADRAO_C = {
   master: TODAS_C, pastor: TODAS_C,
   supervisor: ['visitantes', 'rede', 'gc', 'gcEvento', 'lvDirecionar', 'lvLiberar'],
   lider: ['gc', 'gcEvento', 'lvLiberar'], discipulo: ['gc', 'lvVisitas'],
-  secretaria: ['eventos', 'visitantes', 'recados', 'consulta'], tesouraria: ['financeiro', 'relFin'], voluntario: ['visitantes'], voluntarioLV: ['visitantes', 'lvVisitas']
+  secretaria: ['eventos', 'visitantes', 'recados', 'consulta', 'instituto', 'institutoAdmin', 'agendaPastoral'], tesouraria: ['financeiro', 'relFin'], voluntario: ['visitantes'], voluntarioLV: ['visitantes', 'lvVisitas'],
+  voluntarioInst: ['instituto'], profissional: ['instituto', 'prontuario']
 };
 
 /* ── logo e dados da igreja (cache local) ── */
@@ -2582,7 +2590,7 @@ function atualizarConfig(c) {
 /* ── permissões ── */
 function pode(p) {
   var u = eu();
-  if (u.papel === 'master') return true;                       // master: acesso total, independente de ajustes
+  if (u.papel === 'master') return SEM_MASTER_C.indexOf(p) < 0;   // master: acesso total, exceto dados de saúde (só o profissional responsável)
   if (u.perms) return !!u.perms[p];
   return (PERM_PADRAO_C[u.papel] || []).indexOf(p) >= 0;     // sessão antiga, antes da 1ª sincronização
 }
@@ -2596,6 +2604,7 @@ function abasExtras() {
   if (cfg.modo === 'lv' && pode('visitantes')) x.push('lvnovo', 'lvmeus');
   if (cfg.modo === 'lv' && pode('lvVisitas')) x.push('lvcasas');
   x.push('avisos');
+  if (temInst()) x.push('instituto', 'instagenda');
   if (pode('rede')) x.push('novo');
   if (pode('config')) x.push('config');
   if (pode('visitantes')) x.push('lvnovo', 'lvmeus');
@@ -4827,6 +4836,523 @@ function rLVVol() {
   return h;
 }
 
+/* ═══════════════════ v36: MÓDULO INSTITUTO — agendas, atendimentos e prontuário ═══════════════════ */
+var IC_INST = '<path d="M12 21s-7-4.4-9-9.2C1.8 8.6 3.6 5 7 5c2 0 3.4 1.1 5 3 1.6-1.9 3-3 5-3 3.4 0 5.2 3.6 4 6.8C19 16.6 12 21 12 21z"/><path d="M12 9v6M9 12h6"/>';
+var instD = { t: 0, carregando: false, agendas: [], ags: [], pac: {}, profissionais: [], perm: {}, hoje: '' };
+var instSel = { agenda: '', data: '' }, instFl = null, instCd = null, instAgForm = null, instBuscaT = null;
+function instLimpar() { instD = { t: 0, carregando: false, agendas: [], ags: [], pac: {}, profissionais: [], perm: {}, hoje: '' }; instSel = { agenda: '', data: '' }; instFl = null; instCd = null; instAgForm = null; }
+function temInst() { return pode('instituto') || pode('agendaPastoral') || pode('prontuario'); }
+function agendaPor(id) { return instD.agendas.filter(function (a) { return a.id === id; })[0] || null; }
+function podeAgendarNa(ag) { return ag && (ag.dono || (ag.tipo === 'pastoral' ? pode('agendaPastoral') : pode('instituto'))); }
+/** Dados do Instituto ficam só na memória (nunca no armazenamento do aparelho): são dados sensíveis. */
+function carregarInst(forcar) {
+  if (instD.carregando || (!forcar && instD.t && Date.now() - instD.t < 45000)) return Promise.resolve();
+  instD.carregando = true;
+  return chamar('instDados', {}).then(function (r) {
+    instD.agendas = r.agendas || []; instD.ags = r.agendamentos || []; instD.pac = r.pacientes || {}; instD.profissionais = r.profissionais || [];
+    instD.perm = r.perm || {}; instD.hoje = r.hoje || hoje(); instD.t = Date.now();
+  }).catch(function (e) { toast(e.message, 5000); instD.t = Date.now(); })
+    .then(function () { instD.carregando = false; if (['instituto', 'instagenda'].indexOf(cfg.aba) >= 0) render(); });
+}
+/* ── grade de horários ── */
+function slotsDoDia(ag, iso) {
+  var dow = parseData(iso).getDay(), dur = ag.duracaoMin || 30, out = [];
+  if ((ag.bloqueios || []).indexOf(iso) >= 0) return out;
+  (ag.horarios || []).filter(function (h) { return +h.dow === dow; }).forEach(function (h) {
+    for (var m = minStr(h.ini); m !== null && m + dur <= minStr(h.fim); m += dur) { var x = hhmm(m); if (out.indexOf(x) < 0) out.push(x); }
+  });
+  return out.sort();
+}
+function atendDe(agId, iso) { return instD.ags.filter(function (a) { return a.agendaId === agId && a.data === iso; }); }
+function ocupanteDe(ag, iso, hora) {
+  var ini = minStr(hora), fim = ini + (ag.duracaoMin || 30);
+  return atendDe(ag.id, iso).filter(function (a) { if (a.status === 'cancelado') return false; var s = minStr(a.hora), e = s + (+a.duracao || ag.duracaoMin || 30); return ini < e && s < fim; })[0] || null;
+}
+function passou(iso, hora) { return iso < hoje() || (iso === hoje() && minStr(hora) < agoraMin()); }
+function livresDoDia(ag, iso) { return slotsDoDia(ag, iso).filter(function (h) { return !passou(iso, h) && !ocupanteDe(ag, iso, h); }); }
+function proximosDias(n) { var out = [], d = parseData(hoje()); for (var i = 0; i < n; i++) { out.push(isoData(d)); d.setDate(d.getDate() + 1); } return out; }
+function proxLivre(ag) {
+  var ds = proximosDias(60);
+  for (var i = 0; i < ds.length; i++) { var l = livresDoDia(ag, ds[i]); if (l.length) return { data: ds[i], hora: l[0] }; }
+  return null;
+}
+function rotDia(iso) { var d = parseData(iso); return DIAS[d.getDay()].slice(0, 3) + ' ' + pad(d.getDate()); }
+function quandoRot(iso, hora) { var am = parseData(hoje()); am.setDate(am.getDate() + 1); return (iso === hoje() ? 'hoje' : iso === isoData(am) ? 'amanhã' : DIAS[parseData(iso).getDay()].toLowerCase() + ', ' + br(iso)) + (hora ? ' às ' + hora : ''); }
+var ST_AT = { agendado: ['p-dour', 'agendado'], confirmado: ['p-verde', 'confirmado'], atendido: ['p-verde', 'atendido ✓'], faltou: ['p-vermelho', 'faltou'], cancelado: ['p-cinza', 'cancelado'] };
+function pillAt(s) { var x = ST_AT[s] || ['p-cinza', s]; return '<span class="pill ' + x[0] + '">' + x[1] + '</span>'; }
+function avatarInst(pc, nome, tam) {
+  var est = tam ? 'width:' + tam + 'px;height:' + tam + 'px;font-size:' + Math.round(tam / 3) + 'px;margin:0 auto 8px;' : '';
+  return pc && pc.foto ? '<img class="av" src="' + pc.foto + '" alt=""' + (est ? ' style="' + est + '"' : '') + '>' : '<div class="av" style="' + est + corAvatar(nome || '?') + '">' + ini(nome || '?') + '</div>';
+}
+
+/* ═════ especialidades e equipe ═════ */
+var instFiltroEsp = '';
+function espChave(a) { return a.tipo === 'pastoral' ? '__pastoral__' : (normalizar(a.especialidade || '') || 'geral'); }
+function espNome(a) { return a.tipo === 'pastoral' ? 'Atendimento pastoral' : (String(a.especialidade || '').trim() || 'Atendimento geral'); }
+/** Grupos: uma especialidade pode ter vários profissionais (cada um com a própria agenda). */
+function gruposEsp(lista) {
+  var g = {}, ordem = [];
+  lista.forEach(function (a) {
+    var k = espChave(a);
+    if (!g[k]) { g[k] = { chave: k, nome: espNome(a), tipo: a.tipo, agendas: [] }; ordem.push(k); }
+    g[k].agendas.push(a);
+  });
+  return ordem.map(function (k) { return g[k]; }).sort(function (x, y) { return (x.tipo === y.tipo ? 0 : x.tipo === 'saude' ? -1 : 1) || x.nome.localeCompare(y.nome, 'pt-BR'); });
+}
+function proxLivreGrupo(g) {
+  var melhor = null;
+  g.agendas.forEach(function (a) { if (!a.ativa) return; var p = proxLivre(a); if (p && (!melhor || (p.data + p.hora) < (melhor.data + melhor.hora))) melhor = p; });
+  return melhor;
+}
+function profissionaisDe(lista) {
+  var m = {}, ordem = [];
+  lista.forEach(function (a) {
+    var k = a.profissionalId || a.id;
+    if (!m[k]) { m[k] = { id: a.profissionalId, nome: a.profissionalNome || '—', agendas: [] }; ordem.push(k); }
+    m[k].agendas.push(a);
+  });
+  return ordem.map(function (k) { return m[k]; }).sort(function (x, y) { return x.nome.localeCompare(y.nome, 'pt-BR'); });
+}
+var ESPECIALIDADES_SUG = ['Clínica geral', 'Pediatria', 'Ginecologia', 'Cardiologia', 'Psicologia', 'Odontologia', 'Nutrição', 'Fisioterapia', 'Enfermagem', 'Oftalmologia', 'Dermatologia', 'Ortopedia', 'Fonoaudiologia', 'Serviço social'];
+
+/* ═════ página inicial do Instituto ═════ */
+function rInstituto() {
+  if (!temInst()) return '<div class="empty">Sem acesso.</div>';
+  carregarInst();
+  if (!instD.t) return '<div class="card"><div class="empty">Carregando agendas…</div></div>';
+  var h = '<div class="ini-ola" style="font-size:24px">Instituto</div><div class="ini-sub">Atendimentos de saúde, atendimento pastoral e ações sociais.</div>';
+  var minhas = instD.agendas.filter(function (a) { return a.dono; }), hj = hoje();
+  if (minhas.length) {
+    var lista = instD.ags.filter(function (a) { return a.data === hj && a.status !== 'cancelado' && minhas.some(function (m) { return m.id === a.agendaId; }); }).sort(function (a, b) { return a.hora < b.hora ? -1 : 1; });
+    var pend = lista.filter(function (a) { return a.status === 'agendado' || a.status === 'confirmado'; });
+    h += heroCard('MINHA AGENDA · HOJE', lista.length ? lista.length + ' atendimento' + (lista.length > 1 ? 's' : '') : 'Nenhum atendimento hoje',
+      pend.length ? 'Próximo: ' + esc(pend[0].hora) + (pend[0].pessoaNome ? ' · ' + esc(pend[0].pessoaNome) : '') : (lista.length ? 'Todos os atendimentos de hoje foram registrados.' : 'Aproveite para revisar sua agenda da semana.'),
+      [['Abrir minha agenda', 'instAbrirAgenda', minhas[0].id, true]]);
+    if (lista.length) h += '<div class="card lp">' + lista.map(function (a) { return linhaAtend(a, true); }).join('') + '</div>';
+  }
+  if (instD.agendas.some(podeAgendarNa)) {
+    h += '<div class="big-cta" data-a="instNovoAg"><div class="bi"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18M12 14v4M10 16h4"/></svg></div>' +
+      '<div><b>Agendar atendimento</b><span>escolha a especialidade, o profissional e o horário</span></div></div>';
+  }
+  var visiveis = instD.ags.filter(function (a) { return a.data === hj && a.status !== 'cancelado'; }).length;
+  var livresHoje = instD.agendas.reduce(function (s2, a) { return s2 + (a.ativa ? livresDoDia(a, hj).length : 0); }, 0);
+  var gr = gruposEsp(instD.agendas), nProf = profissionaisDe(instD.agendas).length;
+  h += '<div class="stats">' + statCard('Atendimentos hoje', visiveis) + statCard('Horários livres hoje', livresHoje) +
+    statCard('Especialidades', gr.length, nProf + (nProf === 1 ? ' profissional' : ' profissionais')) + statCard('Agendas ativas', instD.agendas.filter(function (a) { return a.ativa; }).length) + '</div>';
+  // filtro por especialidade
+  h += '<div class="sec sec-l"><span>Agendas</span>' + (instD.perm.admin ? '<a data-a="instAgendaForm" data-v="">+ Nova agenda</a>' : '') + '</div>';
+  if (gr.length > 1) h += '<div class="chips"><button data-a="instFiltroEsp" data-v="" class="' + (!instFiltroEsp ? 'on' : '') + '">Todas <span>' + instD.agendas.length + '</span></button>' +
+    gr.map(function (g) { return '<button data-a="instFiltroEsp" data-v="' + esc(g.chave) + '" class="' + (instFiltroEsp === g.chave ? 'on' : '') + '">' + esc(g.nome) + ' <span>' + g.agendas.length + '</span></button>'; }).join('') + '</div>';
+  var mostrar = gr.filter(function (g) { return !instFiltroEsp || g.chave === instFiltroEsp; });
+  h += mostrar.length ? mostrar.map(function (g) {
+    var pg = proxLivreGrupo(g), n = g.agendas.length;
+    return '<div class="espg"><div class="espt"><b>' + esc(g.nome) + '</b><span>' + n + (g.tipo === 'pastoral' ? ' pastor(a)' : (n > 1 ? ' profissionais' : ' profissional')) + (pg ? ' · próximo livre: ' + quandoRot(pg.data, pg.hora) : '') + '</span></div>' +
+      g.agendas.slice().sort(function (a, b) { return (a.profissionalNome || '').localeCompare(b.profissionalNome || '', 'pt-BR'); }).map(function (a) {
+        var l = livresDoDia(a, hj), nn = slotsDoDia(a, hj).length, pl = a.ativa ? proxLivre(a) : null;
+        return '<div class="card agcard cl" data-a="instAbrirAgenda" data-v="' + esc(a.id) + '"><div class="agic ' + a.tipo + '"><svg viewBox="0 0 24 24">' + (a.tipo === 'pastoral' ? '<path d="M12 2v5M9.5 4.5h5"/><path d="M4 21V11l8-4 8 4v10"/><path d="M10 21v-5h4v5"/>' : IC_INST) + '</svg></div>' +
+          '<div class="info"><div class="nm">' + esc(a.profissionalNome || a.nome) + (a.dono ? ' <span class="pill p-verde">você</span>' : '') + (a.ativa ? '' : ' <span class="pill p-cinza">inativa</span>') + '</div>' +
+          '<div class="sb">' + esc([String(a.nome).indexOf(a.profissionalNome || '\u0000') === 0 ? '' : a.nome, a.local, (a.duracaoMin || 30) + ' min'].filter(Boolean).join(' · ')) + '</div>' +
+          '<div class="sb" style="margin-top:3px">' + (nn ? '<b style="color:' + (l.length ? 'var(--verde)' : 'var(--vermelho)') + '">' + l.length + ' livre(s) hoje</b> de ' + nn : 'sem atendimento hoje') + (pl ? ' · próximo: ' + quandoRot(pl.data, pl.hora) : '') + '</div></div><span style="color:var(--tx3);font-size:18px">›</span></div>';
+      }).join('') + '</div>';
+  }).join('') : '<div class="card"><div class="empty">Nenhuma agenda cadastrada' + (instD.perm.admin ? '. Toque em “+ Adicionar profissional”.' : '.') + '</div></div>';
+  // equipe
+  if (instD.perm.admin) {
+    var eq = profissionaisDe(instD.agendas);
+    h += '<div class="sec sec-l"><span>Equipe — profissionais e pastores (' + eq.length + ')</span><a data-a="instProfForm">+ Adicionar profissional</a></div><div class="card lp">' +
+      (eq.length ? eq.map(function (p) {
+        return '<div class="row"><div class="av" style="' + corAvatar(p.nome) + '">' + ini(p.nome) + '</div><div class="info"><div class="nm">' + esc(p.nome) + '</div><div class="sb">' +
+          p.agendas.map(function (a) { return esc(espNome(a)); }).filter(function (v, i, arr) { return arr.indexOf(v) === i; }).join(' · ') + '</div></div>' +
+          '<button class="btn gh sm" data-a="instAgendaProf" data-v="' + esc(p.id) + '" title="Outra especialidade ou local para este profissional">+ agenda</button></div>';
+      }).join('') : '<div class="empty" style="padding:12px">Nenhum profissional ainda.</div>') + '</div>' +
+      '<div style="font-size:11.5px;color:var(--tx3);margin:-4px 4px 6px;line-height:1.45">Cada profissional tem a <b>própria agenda</b> e é o único a ver os nomes dos pacientes. Várias especialidades? Cadastre quantos profissionais precisar — o agendamento já pergunta primeiro a especialidade.</div>';
+  }
+  // atalhos
+  h += '<div class="sec">Mais do Instituto</div><div class="mods" style="grid-template-columns:repeat(4,1fr)">' +
+    '<button class="mod" data-a="instNovoAtendido"><span class="mi" style="background:#fff!important;color:#E5484D"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span><span class="mn">Novo atendido</span></button>' +
+    '<button class="mod breve" data-a="instEmBreve" data-v="Mercado solidário"><span class="mi" style="background:#fff!important;color:#C9930A"><svg viewBox="0 0 24 24"><path d="M6 6h15l-1.5 9h-12z"/><path d="M6 6L5 3H2"/><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/></svg></span><span class="mn">Mercado</span><span class="mb">em breve</span></button>' +
+    '<button class="mod breve" data-a="instEmBreve" data-v="Farmácia solidária"><span class="mi" style="background:#fff!important;color:#16A36A"><svg viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="12" rx="2"/><path d="M8 9V6a4 4 0 0 1 8 0v3M12 12v6M9 15h6"/></svg></span><span class="mn">Farmácia</span><span class="mb">em breve</span></button>' +
+    (temCursos() ? '<button class="mod" data-a="aba" data-v="cursos"><span class="mi" style="background:#fff!important;color:#0F8A8A"><svg viewBox="0 0 24 24">' + IC_CURSO + '</svg></span><span class="mn">Cursos</span></button>' : '') + '</div>';
+  h += '<div class="card" style="font-size:11.5px;color:var(--tx2);line-height:1.55;background:#FFF8E6"><b>Privacidade:</b> os nomes dos pacientes e as anotações do atendimento aparecem <b>somente para o profissional responsável</b> pela agenda. ' +
+    'Secretaria, voluntários, pastor e master veem apenas “horário ocupado” e o protocolo.</div>';
+  return h;
+}
+/** Linha de atendimento. dono = true mostra o paciente (quando o servidor liberou o nome). */
+function linhaAtend(a, destaque) {
+  var ag = agendaPor(a.agendaId) || {}, pc = a.pessoaId ? instD.pac[a.pessoaId] : null, nome = a.pessoaNome;
+  var pend = a.status === 'agendado' || a.status === 'confirmado';
+  return '<div class="row' + (pc && ag.dono ? ' cl' : '') + '"' + (pc && ag.dono ? ' data-a="instAtender" data-v="' + esc(a.id) + '"' : '') + '>' +
+    (nome ? avatarInst(pc, nome) : '<div class="av" style="background:var(--bg);color:var(--tx3)">' + esc(a.hora) + '</div>') +
+    '<div class="info"><div class="nm">' + (nome ? esc(nome) : 'Horário ocupado') + '</div><div class="sb">' + esc(a.hora) + ' · ' + esc(a.codigo) + (destaque ? ' · ' + esc(ag.nome || '') : '') +
+    (a.pessoaCodigo && !nome ? '' : '') + (a.criadoPorNome ? ' · por ' + esc(pri(a.criadoPorNome)) : '') + '</div></div>' + pillAt(a.status) + '</div>';
+}
+
+/* ═════ detalhe de uma agenda (dias e horários) ═════ */
+function rInstAgenda() {
+  if (!temInst()) return '<div class="empty">Sem acesso.</div>';
+  carregarInst();
+  var ag = agendaPor(instSel.agenda);
+  if (!instD.t) return '<div class="card"><div class="empty">Carregando…</div></div>';
+  if (!ag) return '<div class="card"><div class="empty">Agenda não encontrada.</div></div>';
+  var dias = proximosDias(21), sel = instSel.data && dias.indexOf(instSel.data) >= 0 ? instSel.data : hoje();
+  instSel.data = sel;
+  var h = '<div class="card" style="padding:14px 16px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div style="min-width:0"><div style="font-size:11px;color:var(--tx3);font-weight:800;letter-spacing:.6px">' +
+    (ag.tipo === 'pastoral' ? 'AGENDA PASTORAL' : 'AGENDA DE SAÚDE') + '</div><div style="font-size:18px;font-weight:800;margin-top:2px">' + esc(ag.nome) + '</div>' +
+    '<div style="font-size:12.5px;color:var(--tx2);margin-top:2px">' + esc([ag.especialidade, ag.profissionalNome, ag.local, (ag.duracaoMin || 30) + ' min por atendimento'].filter(Boolean).join(' · ')) + '</div></div>' +
+    (ag.dono ? '<span class="pill p-verde">minha agenda</span>' : '') + '</div>' +
+    ((instD.perm.admin || ag.dono) ? '<div style="margin-top:10px"><button class="btn gh sm" data-a="instAgendaForm" data-v="' + esc(ag.id) + '">Editar agenda e horários</button></div>' : '') + '</div>';
+  h += '<div class="dstrip">' + dias.map(function (d) {
+    var n = slotsDoDia(ag, d).length, l = livresDoDia(ag, d).length;
+    return '<button class="dch' + (d === sel ? ' on' : '') + (n ? '' : ' off') + '" data-a="instDia" data-v="' + d + '"><small>' + DIAS[parseData(d).getDay()].slice(0, 3) + '</small><b>' + pad(parseData(d).getDate()) + '</b><i>' + (n ? (l ? l + ' livre' + (l > 1 ? 's' : '') : 'lotado') : '—') + '</i></button>';
+  }).join('') + '</div>';
+  var slots = slotsDoDia(ag, sel), ags = atendDe(ag.id, sel), fora = ags.filter(function (a) { return a.status !== 'cancelado' && slots.indexOf(a.hora) < 0; }), canc = ags.filter(function (a) { return a.status === 'cancelado'; });
+  h += '<div class="sec">' + DIAS[parseData(sel).getDay()] + ', ' + brCompleto(sel) + '</div>';
+  if (!slots.length && !fora.length) h += '<div class="card"><div class="empty">' + ((ag.bloqueios || []).indexOf(sel) >= 0 ? 'Dia sem atendimento (folga/feriado).' : 'Sem atendimento neste dia da semana.') + '</div></div>';
+  else {
+    h += '<div class="card lp">' + slots.map(function (hr) {
+      var o = ocupanteDe(ag, sel, hr);
+      if (!o) {
+        var pas = passou(sel, hr), pode = podeAgendarNa(ag) && !pas && ag.ativa;
+        return '<div class="row slot"><div class="av" style="background:var(--bg);color:var(--tx);font-size:12px">' + hr + '</div><div class="info"><div class="nm" style="color:' + (pas ? 'var(--tx3)' : 'var(--verde)') + '">' + (pas ? 'Encerrado' : 'Livre') + '</div></div>' +
+          (pode ? '<button class="btn sm" data-a="instAgendarSlot" data-v="' + esc(ag.id + '|' + sel + '|' + hr) + '">Agendar</button>' : '') + '</div>';
+      }
+      return linhaAtendSlot(o, ag, hr);
+    }).join('') + fora.map(function (a) { return linhaAtendSlot(a, ag, a.hora); }).join('') + '</div>';
+  }
+  if (canc.length) h += '<div style="font-size:11.5px;color:var(--tx3);margin:6px 4px">' + canc.length + ' atendimento(s) cancelado(s) neste dia: ' + canc.map(function (a) { return esc(a.hora); }).join(', ') + '</div>';
+  return h;
+}
+function linhaAtendSlot(a, ag, hr) {
+  var pc = a.pessoaId ? instD.pac[a.pessoaId] : null, nome = a.pessoaNome, pend = a.status === 'agendado' || a.status === 'confirmado', hj = hoje();
+  var bts = '';
+  if (ag.dono && a.data <= hj && pend) bts += '<button class="btn sm" data-a="instAtender" data-v="' + esc(a.id) + '">Atender</button><button class="btn gh sm" data-a="instStatusAt" data-v="' + esc(a.id + '|faltou') + '">Faltou</button>';
+  else if (ag.dono && (a.status === 'atendido' || a.status === 'faltou')) bts += '<button class="btn gh sm" data-a="instAtender" data-v="' + esc(a.id) + '">Anotações</button>';
+  if (podeAgendarNa(ag) && pend) {
+    if (a.status === 'agendado') bts += '<button class="btn gh sm" data-a="instStatusAt" data-v="' + esc(a.id + '|confirmado') + '">Confirmar</button>';
+    bts += '<button class="btn gh sm" data-a="instRemarcar" data-v="' + esc(a.id) + '">Remarcar</button><button class="btn gh sm" data-a="instStatusAt" data-v="' + esc(a.id + '|cancelado') + '" style="color:var(--vermelho)">Cancelar</button>';
+  }
+  return '<div class="slotb"><div class="row" style="border:none;padding-bottom:4px">' +
+    (nome ? avatarInst(pc, nome) : '<div class="av" style="background:#FFF5DC;color:#8A5A00;font-size:12px">' + esc(hr) + '</div>') +
+    '<div class="info"><div class="nm">' + (nome ? esc(nome) : 'Horário ocupado') + ' <span style="color:var(--tx3);font-weight:600;font-size:12px">' + esc(a.hora) + '</span></div>' +
+    '<div class="sb">' + esc(a.codigo) + (a.criadoPorNome ? ' · agendado por ' + esc(pri(a.criadoPorNome)) : '') + (a.motivo ? '<br><i>' + esc(String(a.motivo).slice(0, 90)) + '</i>' : '') + '</div></div>' + pillAt(a.status) + '</div>' +
+    (bts ? '<div class="slotbt">' + bts + '</div>' : '') + '</div>';
+}
+
+/* ═════ fluxo de agendamento ═════ */
+function instNovoAg(agId, data, hora) {
+  var ag = agId ? agendaPor(agId) : null;
+  instFl = { esp: ag ? espChave(ag) : '', agenda: agId || '', data: data || '', hora: hora || '', pessoa: null, motivo: '', autorizou: false, res: [], fim: null };
+  instFluxo();
+}
+function instFluxo() {
+  var f = instFl, ag = agendaPor(f.agenda), h = '<h2>Agendar atendimento</h2>';
+  var disp = instD.agendas.filter(function (a) { return a.ativa && podeAgendarNa(a); }), gr = gruposEsp(disp);
+  if (!f.esp && gr.length === 1) f.esp = gr[0].chave;                 // só uma especialidade: pula a escolha
+  var grupo = gr.filter(function (g) { return g.chave === f.esp; })[0];
+  if (grupo && !f.agenda && grupo.agendas.length === 1) { f.agenda = grupo.agendas[0].id; ag = agendaPor(f.agenda); }   // só um profissional: pula
+  var chips = [];
+  if (grupo && gr.length > 1) chips.push('<span class="pill p-dour" data-a="instFlVoltar" data-v="esp" style="cursor:pointer">' + esc(grupo.nome) + ' ✎</span>');
+  if (ag) chips.push('<span class="pill p-dour" data-a="instFlVoltar" data-v="agenda" style="cursor:pointer">' + esc(ag.profissionalNome || ag.nome) + ' ✎</span>');
+  if (f.data) chips.push('<span class="pill p-dour" data-a="instFlVoltar" data-v="data" style="cursor:pointer">' + brCompleto(f.data) + ' ✎</span>');
+  if (f.hora) chips.push('<span class="pill p-dour" data-a="instFlVoltar" data-v="hora" style="cursor:pointer">' + esc(f.hora) + ' ✎</span>');
+  if (f.pessoa) chips.push('<span class="pill p-verde" data-a="instFlVoltar" data-v="pessoa" style="cursor:pointer">' + esc(f.pessoa.nome) + ' ✎</span>');
+  if (chips.length) h += '<div style="display:flex;flex-wrap:wrap;gap:5px;margin:6px 0 10px">' + chips.join('') + '</div>';
+  if (f.fim) return instComprovante();
+  if (!f.esp) {
+    h += '<div class="sb" style="font-size:13px;margin:6px 0">1. Qual especialidade?</div>' + (gr.length ? gr.map(function (g) {
+      var pg = proxLivreGrupo(g), n = g.agendas.length;
+      return '<div class="card cl" data-a="instFlEsp" data-v="' + esc(g.chave) + '" style="padding:12px 14px;box-shadow:none;background:var(--bg)"><b>' + esc(g.nome) + '</b><div class="sb" style="font-size:12px;color:var(--tx2)">' +
+        n + (g.tipo === 'pastoral' ? ' pastor(a)' : (n > 1 ? ' profissionais' : ' profissional')) + (pg ? ' · próximo livre: ' + quandoRot(pg.data, pg.hora) : ' · sem horários livres') + '</div></div>';
+    }).join('') : '<div class="empty">Nenhuma agenda disponível para você.</div>');
+  } else if (!f.agenda) {
+    h += '<div class="sb" style="font-size:13px;margin:6px 0">2. ' + (grupo && grupo.tipo === 'pastoral' ? 'Com qual pastor(a)?' : 'Com qual profissional?') + '</div>' + grupo.agendas.map(function (a) {
+      var pl = proxLivre(a);
+      return '<div class="card cl" data-a="instFlAgenda" data-v="' + esc(a.id) + '" style="padding:12px 14px;box-shadow:none;background:var(--bg)"><b>' + esc(a.profissionalNome || a.nome) + '</b><div class="sb" style="font-size:12px;color:var(--tx2)">' +
+        esc([a.local, (a.duracaoMin || 30) + ' min'].filter(Boolean).join(' · ')) + (pl ? ' · próximo livre: ' + quandoRot(pl.data, pl.hora) : ' · sem horários livres') + '</div></div>';
+    }).join('');
+  } else if (!f.data) {
+    h += '<div class="sb" style="font-size:13px;margin:6px 0">3. Qual dia?</div><div class="dstrip" style="flex-wrap:wrap">' + proximosDias(28).filter(function (d) { return slotsDoDia(ag, d).length; }).map(function (d) {
+      var l = livresDoDia(ag, d).length;
+      return '<button class="dch' + (l ? '' : ' off') + '" ' + (l ? 'data-a="instFlDia" data-v="' + d + '"' : 'disabled') + '><small>' + DIAS[parseData(d).getDay()].slice(0, 3) + '</small><b>' + pad(parseData(d).getDate()) + '</b><i>' + (l ? l + ' livre' + (l > 1 ? 's' : '') : 'lotado') + '</i></button>';
+    }).join('') + '</div>';
+  } else if (!f.hora) {
+    var lv = livresDoDia(ag, f.data);
+    h += '<div class="sb" style="font-size:13px;margin:6px 0">4. Qual horário? (' + DIAS[parseData(f.data).getDay()] + ')</div>' + (lv.length ? '<div class="hgrid">' + lv.map(function (x) { return '<button data-a="instFlHora" data-v="' + x + '">' + x + '</button>'; }).join('') + '</div>' : '<div class="empty">Sem horários livres neste dia.</div>');
+  } else if (!f.pessoa) {
+    h += '<div class="sb" style="font-size:13px;margin:6px 0">5. Quem será atendido?</div><div class="busca"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input id="fl-busca" placeholder="Nome ou telefone (mín. 3 letras)" autocomplete="off"></div>' +
+      '<div id="fl-res">' + resultadosBusca(f.res) + '</div><button class="btn gh" data-a="instNovoAtendido" data-v="fluxo" style="margin-top:8px">+ Cadastrar novo atendido</button>';
+  } else {
+    h += '<div class="sb" style="font-size:13px;margin:6px 0">6. Confirmar</div>' +
+      '<label>' + (ag.tipo === 'pastoral' ? 'Assunto (opcional — só o pastor vê)' : 'Motivo da consulta (opcional — só o profissional vê)') + '</label><textarea id="fl-motivo" rows="3" maxlength="1000" placeholder="Ex.: retorno, dor, primeira consulta…">' + esc(f.motivo) + '</textarea>' +
+      (f.pessoa.autorizou === false ? '<label style="display:flex;gap:10px;align-items:flex-start;margin:10px 0 0;font-size:12.5px;color:#7a4b00"><input type="checkbox" id="fl-aut" style="width:20px;height:20px;flex:0 0 20px"> <span>Confirmo que a pessoa <b>autorizou o uso dos dados</b> (LGPD) para este atendimento.</span></label>' : '') +
+      '<div style="height:12px"></div><button class="btn pr" data-a="instFlConfirmar">Agendar atendimento</button>';
+  }
+  h += '<div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>';
+  abrirModal(h);
+  if (ag && f.data && f.hora && !f.pessoa && $('fl-busca')) setTimeout(function () { try { $('fl-busca').focus(); } catch (e) {} }, 250);
+}
+function resultadosBusca(l) {
+  if (!l || !l.length) return '<div style="font-size:12px;color:var(--tx3);padding:8px 2px">Digite para buscar. Se a pessoa ainda não tem cadastro, toque em “Cadastrar novo atendido”.</div>';
+  return '<div class="card lp" style="box-shadow:none;background:var(--bg)">' + l.map(function (x) {
+    return '<div class="row cl" data-a="instFlPessoa" data-v="' + esc(x.id) + '"><div class="av" style="' + corAvatar(x.nome) + '">' + ini(x.nome) + '</div><div class="info"><div class="nm">' + esc(x.nome) + '</div>' +
+      '<div class="sb">' + esc(x.codigo) + (x.bairro ? ' · ' + esc(x.bairro) : '') + (x.fone4 ? ' · tel. final ' + esc(x.fone4) : '') + '</div></div><span class="pill ' + (x.igreja ? 'p-dour' : 'p-cinza') + '">' + (x.igreja ? 'da igreja' : 'Instituto') + '</span></div>';
+  }).join('') + '</div>';
+}
+function instBuscar(q, destino) {
+  clearTimeout(instBuscaT);
+  instBuscaT = setTimeout(function () {
+    if (String(q).trim().length < 3) { destino([]); return; }
+    chamar('instBuscarPessoa', { q: q }).then(function (r) { destino(r.itens || []); }).catch(function (e) { toast(e.message, 4000); });
+  }, 350);
+}
+function instFlPessoa(id) {
+  var x = (instFl.res || []).filter(function (r) { return r.id === id; })[0]; if (!x) return;
+  instFl.pessoa = { id: x.id, nome: x.nome, codigo: x.codigo, autorizou: x.autorizou }; instFluxo();
+}
+function instFlConfirmar() {
+  var f = instFl, motivo = $('fl-motivo') ? $('fl-motivo').value.trim() : f.motivo; f.motivo = motivo;
+  var aut = $('fl-aut') ? $('fl-aut').checked : true;
+  if (f.pessoa.autorizou === false && !aut) return toast('Confirme a autorização de uso dos dados.');
+  carregando(true, 'Agendando...');
+  chamar('instAgendar', { agendaId: f.agenda, data: f.data, hora: f.hora, pessoaId: f.pessoa.id, motivo: motivo, autorizou: f.pessoa.autorizou === false ? true : undefined }).then(function (r) {
+    f.fim = r.comprovante; return carregarInst(true);
+  }).then(function () { if (instFl && instFl.fim) instFluxo(); else instFluxo(); })
+    .catch(function (e) { toast(e.message, 5000); carregarInst(true).then(function () { if (/ocupado|fora da agenda/i.test(e.message)) { f.hora = ''; instFluxo(); } }); })
+    .then(function () { carregando(false); });
+}
+function textoComprovante(c) {
+  var d = parseData(c.data);
+  return '✅ *Atendimento agendado*\nProtocolo: ' + c.codigo + '\n' + c.agenda + (c.especialidade ? ' — ' + c.especialidade : '') + '\n📅 ' + DIAS[d.getDay()].toLowerCase() + ', ' + brCompleto(c.data) + ' às ' + c.hora +
+    (c.local ? '\n📍 ' + c.local : '') + '\n👤 ' + c.pessoaNome + ' (' + c.pessoaCodigo + ')\n\nChegue 10 minutos antes e traga um documento. Se não puder vir, avise com antecedência. 🙏\n' + igrNome();
+}
+function instComprovante() {
+  var c = instFl.fim;
+  abrirModal('<div class="perfil" style="padding-top:2px"><div class="av" style="background:var(--verde);color:#fff;width:64px;height:64px;font-size:28px;margin:0 auto 8px">✓</div><h2>Agendado!</h2><p>Protocolo <b>' + esc(c.codigo) + '</b></p></div>' +
+    '<div class="card kvs" style="background:var(--bg);box-shadow:none"><div class="kv"><span>Com</span><b>' + esc(c.agenda) + '</b></div><div class="kv"><span>Quando</span><b>' + DIAS[parseData(c.data).getDay()] + ', ' + brCompleto(c.data) + ' · ' + esc(c.hora) + '</b></div>' +
+    (c.local ? '<div class="kv"><span>Local</span><b>' + esc(c.local) + '</b></div>' : '') + '<div class="kv"><span>Atendido</span><b>' + esc(c.pessoaNome) + '</b></div></div>' +
+    '<div class="gap"></div><button class="btn pr" data-a="instCompartilhar">Enviar comprovante (WhatsApp)</button><div class="gap"></div><button class="btn gh" data-a="instNovoAg">Novo agendamento</button><div class="gap"></div><button class="btn gh" data-a="fechar">Concluir</button>');
+}
+function instCompartilhar() {
+  var t = textoComprovante(instFl.fim);
+  if (navigator.share) navigator.share({ text: t }).catch(function () {});
+  else window.open('https://wa.me/?text=' + encodeURIComponent(t), '_blank');
+}
+function instStatusAt(v) {
+  var p = v.split('|'), id = p[0], st = p[1];
+  var a = instD.ags.filter(function (x) { return x.id === id; })[0];
+  if (st === 'cancelado' && !confirm('Cancelar o atendimento ' + (a ? a.codigo : '') + '? O horário volta a ficar livre.')) return;
+  if (st === 'faltou' && !confirm('Registrar falta?')) return;
+  carregando(true, 'Salvando...');
+  chamar('instStatus', { id: id, status: st }).then(function () { toast(st === 'cancelado' ? 'Atendimento cancelado' : st === 'faltou' ? 'Falta registrada' : 'Atualizado ✓'); return carregarInst(true); })
+    .catch(function (e) { toast(e.message, 5000); }).then(function () { carregando(false); render(); });
+}
+function instRemarcarAbrir(id) {
+  var a = instD.ags.filter(function (x) { return x.id === id; })[0], ag = a && agendaPor(a.agendaId); if (!a || !ag) return;
+  instFl = { remarcar: id, agenda: ag.id, data: '', hora: '' }; instRemFluxo();
+}
+function instRemFluxo() {
+  var f = instFl, ag = agendaPor(f.agenda), h = '<h2>Remarcar</h2><div class="sb" style="font-size:12.5px;color:var(--tx2)">' + esc(ag.nome) + '</div>';
+  if (!f.data) h += '<div class="sb" style="font-size:13px;margin:10px 0 6px">Escolha o novo dia</div><div class="dstrip" style="flex-wrap:wrap">' + proximosDias(28).filter(function (d) { return livresDoDia(ag, d).length; }).map(function (d) {
+    return '<button class="dch" data-a="instRemDia" data-v="' + d + '"><small>' + DIAS[parseData(d).getDay()].slice(0, 3) + '</small><b>' + pad(parseData(d).getDate()) + '</b><i>' + livresDoDia(ag, d).length + ' livres</i></button>'; }).join('') + '</div>';
+  else h += '<div class="sb" style="font-size:13px;margin:10px 0 6px">' + DIAS[parseData(f.data).getDay()] + ', ' + brCompleto(f.data) + ' — escolha o horário</div><div class="hgrid">' + livresDoDia(ag, f.data).map(function (x) { return '<button data-a="instRemHora" data-v="' + x + '">' + x + '</button>'; }).join('') + '</div>' +
+    '<button class="btn gh sm" data-a="instRemDia" data-v="" style="margin-top:8px">‹ outro dia</button>';
+  abrirModal(h + '<div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>');
+}
+function instRemConfirmar(hora) {
+  carregando(true, 'Remarcando...');
+  chamar('instRemarcar', { id: instFl.remarcar, data: instFl.data, hora: hora }).then(function () { fechar(); toast('Atendimento remarcado ✓'); return carregarInst(true); })
+    .catch(function (e) { toast(e.message, 5000); }).then(function () { carregando(false); render(); });
+}
+
+/* ═════ cadastro de atendido (base única) ═════ */
+function instNovoAtendido(origem) {
+  instCd = { igreja: null, res: [], origem: origem === 'fluxo' ? 'fluxo' : '' };
+  fotoNovaP = null; fpAlvo = { pid: '', direto: false};
+  instCdTela();
+}
+function instCdTela() {
+  var c = instCd, h = '<h2>Cadastro de atendido</h2>';
+  if (c.igreja === null) {
+    h += '<div class="sb" style="font-size:13.5px;margin:8px 0 12px;line-height:1.5">A pessoa <b>já faz parte da igreja</b>? Se sim, vamos localizar o cadastro dela e vincular pelo código — sem duplicar.</div>' +
+      '<div class="opt"><button class="btn pr" data-a="instCdIgreja" data-v="1">Sim, é da igreja</button><button class="btn gh" data-a="instCdIgreja" data-v="0">Não</button></div>';
+  } else if (c.igreja === true) {
+    h += '<div class="busca"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input id="cd-busca" placeholder="Nome ou telefone" autocomplete="off"></div><div id="cd-res">' + resultadosBuscaCd(c.res) +
+      '</div><button class="btn gh sm" data-a="instCdIgreja" data-v="0" style="margin-top:8px">Não encontrei — cadastrar como novo</button>';
+  } else {
+    h += '<div class="aviso" style="margin:6px 0 4px;font-size:12.5px">Pessoa <b>fora da igreja</b>: será criado um cadastro novo, com código próprio, visível só ao Instituto.</div>' + campoFotoPessoa('') +
+      '<label>Nome completo *</label><input id="i-nome" autocomplete="off"><div class="g2"><div><label>WhatsApp</label><input id="i-fone" type="tel" inputmode="numeric" placeholder="(16) 99999-0000"></div>' +
+      '<div><label>Nascimento</label><input id="i-nasc" type="date"></div></div><div class="g2"><div><label>Sexo</label><select id="i-sexo"><option value="">—</option><option>Feminino</option><option>Masculino</option></select></div><div>' + campoBairro('i', '', false, '') + '</div></div>' +
+      '<label>Cidade</label><input id="i-cidade" value="' + esc(cidadeIgreja()) + '">' + camposConsent('i', null, '').replace('A pessoa autorizou o uso dos dados pela igreja?', 'A pessoa autorizou o uso dos dados e da imagem?') +
+      '<div style="height:12px"></div><button class="btn pr" data-a="instCdSalvar">Cadastrar atendido</button>';
+  }
+  abrirModal(h + '<div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>');
+}
+function resultadosBuscaCd(l) {
+  if (!l || !l.length) return '<div style="font-size:12px;color:var(--tx3);padding:8px 2px">Digite ao menos 3 letras do nome ou 4 dígitos do telefone.</div>';
+  return '<div class="card lp" style="box-shadow:none;background:var(--bg)">' + l.map(function (x) {
+    return '<div class="row cl" data-a="instCdEscolher" data-v="' + esc(x.id) + '"><div class="av" style="' + corAvatar(x.nome) + '">' + ini(x.nome) + '</div><div class="info"><div class="nm">' + esc(x.nome) + '</div>' +
+      '<div class="sb">' + esc(x.codigo) + (x.bairro ? ' · ' + esc(x.bairro) : '') + (x.fone4 ? ' · tel. final ' + esc(x.fone4) : '') + '</div></div><span class="pill ' + (x.igreja ? 'p-dour' : 'p-cinza') + '">' + (x.igreja ? 'da igreja' : 'Instituto') + '</span></div>';
+  }).join('') + '</div>';
+}
+function instCdConcluir(p, msg) {
+  toast(msg || 'Atendido vinculado ✓ ' + p.codigo, 4000);
+  if (instCd && instCd.origem === 'fluxo' && instFl) { instFl.pessoa = { id: p.id, nome: p.nome, codigo: p.codigo, autorizou: p.autorizou !== false }; instCd = null; instFluxo(); }
+  else { instCd = null; fechar(); }
+}
+function instCdSalvar() {
+  var v = function (id) { var e = $(id); return e ? e.value.trim() : ''; };
+  if (v('i-nome').length < 3) return toast('Informe o nome completo.');
+  var er = validarConsent('i', true); if (er) return toast(er, 4500);
+  var d = { nome: v('i-nome'), fone: v('i-fone'), nasc: v('i-nasc'), sexo: v('i-sexo'), bairro: v('i-bairro'), cidade: v('i-cidade'), consentimento: 'Sim', responsavel: v('i-resp'), foto: fotoNovaP && fotoNovaP !== '__remover__' ? fotoNovaP : '' };
+  carregando(true, 'Cadastrando...');
+  chamar('instCriarPessoa', { pessoa: d }).then(function (r) {
+    fotoNovaP = null; instCdConcluir(r.pessoa, r.existente ? 'Esta pessoa já estava cadastrada — vinculada pelo código ' + r.pessoa.codigo : 'Atendido cadastrado ✓ ' + r.pessoa.codigo);
+  }).catch(function (e) { toast(e.message, 5000); }).then(function () { carregando(false); });
+}
+
+/* ═════ atendimento e prontuário (somente o profissional responsável) ═════ */
+function instAtender(id) {
+  var a = instD.ags.filter(function (x) { return x.id === id; })[0], ag = a && agendaPor(a.agendaId), pc = a && instD.pac[a.pessoaId];
+  if (!a || !ag || !ag.dono || !pc) return toast('Somente o profissional responsável abre este atendimento.');
+  var past = ag.tipo === 'pastoral';
+  abrirModal('<div class="perfil" style="padding-top:0">' + avatarInst(pc, pc.nome, 72) + '<h2 style="font-size:19px">' + esc(pc.nome) + '</h2>' +
+    '<p>' + esc([pc.codigo, pc.idade !== null && pc.idade !== undefined ? pc.idade + ' anos' : '', pc.sexo, pc.bairro].filter(Boolean).join(' · ')) + '</p>' +
+    '<div class="pills">' + pillAt(a.status) + (pc.igreja ? '<span class="pill p-dour">membro/visitante da igreja</span>' : '') + '</div></div>' +
+    (pc.fone ? '<div class="qas" style="grid-template-columns:1fr 1fr"><a class="qa" target="_blank" rel="noopener" href="https://wa.me/' + (fone(pc.fone).length <= 11 ? '55' : '') + fone(pc.fone) + '"><span>WhatsApp</span></a><a class="qa" href="tel:' + fone(pc.fone) + '"><span>Ligar</span></a></div>' : '') +
+    '<div class="aviso" style="margin:10px 0 4px;font-size:12px;line-height:1.45">🔒 Anotações <b>cifradas</b> e visíveis <b>somente para você</b>' + (past ? '' : '. Master, pastor e secretaria não têm acesso.') + '</div>' +
+    (a.motivo ? '<div style="background:var(--bg);border-radius:12px;padding:9px 12px;font-size:12.5px;margin:8px 0"><b>Motivo informado no agendamento:</b><br>' + esc(a.motivo) + '</div>' : '') +
+    '<div id="pr-corpo"><div class="empty" style="padding:14px">Abrindo anotações…</div></div>');
+  chamar('instProntuarioDe', { pessoaId: a.pessoaId }).then(function (r) {
+    var itens = r.itens || [], atual = itens.filter(function (e) { return e.agendamentoId === a.id; })[0] || {}, ant = itens.filter(function (e) { return e.agendamentoId !== a.id; });
+    var L = past ? ['Assunto', 'Anotações do atendimento', 'Encaminhamentos / próximos passos'] : ['Queixa / motivo da consulta', 'Evolução, exame e anotações clínicas', 'Conduta e prescrição'];
+    var h = '<label>' + L[0] + '</label><textarea id="pr-q" rows="2" maxlength="4000">' + esc(atual.queixa) + '</textarea><label>' + L[1] + '</label><textarea id="pr-e" rows="5" maxlength="4000">' + esc(atual.evolucao) + '</textarea>' +
+      '<label>' + L[2] + '</label><textarea id="pr-c" rows="3" maxlength="4000">' + esc(atual.conduta) + '</textarea><label>Retorno sugerido em</label><input id="pr-r" type="date" value="' + esc(atual.retorno || '') + '">' +
+      '<div style="height:12px"></div>' + (a.data <= hoje() && a.status !== 'atendido' ? '<button class="btn pr" data-a="instRegSalvar" data-v="' + esc(a.id + '|1') + '">Salvar e marcar como atendido</button><div class="gap"></div>' : '') +
+      '<button class="btn ' + (a.status === 'atendido' ? 'pr' : 'gh') + '" data-a="instRegSalvar" data-v="' + esc(a.id + '|0') + '">Salvar anotações</button>' +
+      (a.data <= hoje() && (a.status === 'agendado' || a.status === 'confirmado') ? '<div class="gap"></div><button class="btn gh" data-a="instStatusAt" data-v="' + esc(a.id + '|faltou') + '" style="color:var(--vermelho)">Registrar falta</button>' : '') +
+      '<div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>';
+    if (ant.length) h += '<div class="sec">Histórico com você (' + ant.length + ')</div>' + ant.map(function (e) {
+      return '<div class="card" style="box-shadow:none;background:var(--bg);padding:10px 12px"><div style="font-size:11.5px;color:var(--tx3);font-weight:800">' + brCompleto(e.data) + '</div>' +
+        (e.queixa ? '<div style="font-size:12.5px;margin-top:3px"><b>' + L[0] + ':</b> ' + esc(e.queixa) + '</div>' : '') + (e.evolucao ? '<div style="font-size:12.5px;margin-top:3px;white-space:pre-line"><b>' + L[1] + ':</b> ' + esc(e.evolucao) + '</div>' : '') +
+        (e.conduta ? '<div style="font-size:12.5px;margin-top:3px;white-space:pre-line"><b>' + L[2] + ':</b> ' + esc(e.conduta) + '</div>' : '') + '</div>'; }).join('');
+    if ($('pr-corpo')) $('pr-corpo').innerHTML = h;
+  }).catch(function (e) { if ($('pr-corpo')) $('pr-corpo').innerHTML = '<div class="aviso r">' + esc(e.message) + '</div>'; });
+}
+function instRegSalvar(v) {
+  var p = v.split('|'), id = p[0], marcar = p[1] === '1';
+  carregando(true, 'Salvando...');
+  chamar('instRegistro', { agendamentoId: id, queixa: $('pr-q').value, evolucao: $('pr-e').value, conduta: $('pr-c').value, retorno: $('pr-r').value, marcarAtendido: marcar }).then(function () {
+    fechar(); toast(marcar ? 'Atendimento registrado ✓' : 'Anotações salvas ✓'); return carregarInst(true);
+  }).catch(function (e) { toast(e.message, 5000); }).then(function () { carregando(false); render(); });
+}
+
+/* ═════ novo profissional (login + agenda) ═════ */
+function sugerirLogin(nome) {
+  var tit = { dr: 1, dra: 1, doutor: 1, doutora: 1, pr: 1, pra: 1, pastor: 1, pastora: 1, prof: 1, profa: 1 };
+  var p = normalizar(nome).replace(/[^a-z ]/g, ' ').split(' ').filter(function (w) { return w && !tit[w]; });
+  return p.length > 1 ? p[0] + '.' + p[p.length - 1] : (p[0] || '');
+}
+function instProfForm() {
+  var h = '<h2>Novo profissional</h2><div class="sb" style="font-size:12.5px;color:var(--tx2);line-height:1.5;margin:2px 0 4px">Cria o acesso do profissional (ele vê só a própria agenda e os próprios pacientes) e, em seguida, a agenda dele. ' +
+    'Para pastor(a), use <b>Perfil → Usuários</b> (nível Pastor) e depois crie a agenda pastoral.</div>' +
+    '<label>Nome completo *</label><input id="pf-nome" placeholder="Ex.: Dra. Maria Souza" autocomplete="off">' +
+    '<div class="g2"><div><label>Usuário de acesso *</label><input id="pf-user" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="maria.souza"></div>' +
+    '<div><label>Especialidade *</label><input id="pf-esp" list="esp-lista2" placeholder="Ex.: Pediatria" autocomplete="off"><datalist id="esp-lista2">' +
+      ESPECIALIDADES_SUG.concat(instD.agendas.map(function (x) { return x.especialidade; })).filter(function (v, i, arr) { return v && arr.indexOf(v) === i; }).map(function (v) { return '<option value="' + esc(v) + '">'; }).join('') + '</datalist></div></div>' +
+    '<div class="g2"><div><label>E-mail (recebe a senha)</label><input id="pf-email" type="email" autocapitalize="none" placeholder="nome@email.com"></div>' +
+    '<div><label>WhatsApp</label><input id="pf-fone" type="tel" inputmode="numeric" placeholder="(16) 99999-0000"></div></div>' +
+    '<div class="aviso" style="margin:12px 0 4px;font-size:12px">A senha é <b>temporária</b> (vale 7 dias): se informar o e-mail, ela é enviada; o profissional cria a definitiva no primeiro acesso.</div>' +
+    '<div style="height:10px"></div><button class="btn pr" data-a="instProfSalvar">Cadastrar e configurar a agenda</button><div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>';
+  abrirModal(h);
+}
+function instProfSalvar() {
+  var v = function (id) { var e = $(id); return e ? e.value.trim() : ''; };
+  if (v('pf-nome').length < 3) return toast('Informe o nome completo.');
+  if (!v('pf-user')) return toast('Informe o usuário de acesso.');
+  if (!v('pf-esp')) return toast('Informe a especialidade.');
+  var d = { nome: v('pf-nome'), usuario: v('pf-user'), email: v('pf-email'), fone: v('pf-fone') }, esp = v('pf-esp');
+  carregando(true, 'Cadastrando...');
+  chamar('instCriarProfissional', { profissional: d }).then(function (r) {
+    carregando(false);
+    var wa = fone(d.fone) ? 'https://wa.me/' + (fone(d.fone).length <= 11 ? '55' : '') + fone(d.fone) + '?text=' + encodeURIComponent('Olá, ' + pri(d.nome) + '! Seu acesso ao app ' + igrNome() + ': usuário ' + r.profissional.usuario + ' · senha temporária ' + r.senhaTemp + ' (vale 7 dias; ao entrar você cria a sua).') : '';
+    abrirModal('<div class="perfil" style="padding-top:2px"><div class="av" style="background:var(--verde);color:#fff;width:64px;height:64px;font-size:28px;margin:0 auto 8px">✓</div><h2>Profissional cadastrado</h2><p>' + esc(r.profissional.nome) + '</p></div>' +
+      '<div class="card kvs" style="background:var(--bg);box-shadow:none"><div class="kv"><span>Usuário</span><b>' + esc(r.profissional.usuario) + '</b></div><div class="kv"><span>Senha temporária</span><b style="font-size:16px;letter-spacing:.5px">' + esc(r.senhaTemp) + '</b></div>' +
+      '<div class="kv"><span>E-mail</span><b>' + (r.emailEnviado ? 'enviado ✓' : 'não enviado') + '</b></div></div>' +
+      '<div style="font-size:11.5px;color:var(--tx3);margin:6px 2px 10px;line-height:1.45">Anote ou envie agora: <b>esta senha não aparece de novo</b>. Se perder, use “Redefinir senha” em Usuários.</div>' +
+      (wa ? '<a class="btn gh" style="text-decoration:none;text-align:center" target="_blank" rel="noopener" href="' + wa + '">Enviar acesso pelo WhatsApp</a><div class="gap"></div>' : '') +
+      '<button class="btn pr" data-a="instProfAgenda" data-v="' + esc(r.profissional.id + '|' + esp + '|' + r.profissional.nome) + '">Configurar a agenda agora</button><div class="gap"></div><button class="btn gh" data-a="fechar">Depois</button>');
+    carregarInst(true);
+  }).catch(function (e) { carregando(false); toast(e.message, 5500); });
+}
+/** Abre o formulário de agenda já com o profissional (e a especialidade) escolhidos. */
+function instAgendaDe(profId, esp, nome) {
+  carregarInst(true).then(function () {
+    instAgendaForm('', { profissionalId: profId, especialidade: esp || '', nome: esp ? (nome ? nome + ' — ' : '') + esp : '' });
+  });
+}
+
+/* ═════ cadastro de agendas e horários ═════ */
+var DIAS_ORD = [1, 2, 3, 4, 5, 6, 0];
+function instAgendaForm(id, pre) {
+  pre = pre || {};
+  var a = id ? agendaPor(id) : null, admin = instD.perm.admin;
+  instAgForm = { id: id || '', tipo: a ? a.tipo : (pre.tipo || 'saude'), bloq: a ? (a.bloqueios || []).slice() : [] };
+  var hs = a ? a.horarios || [] : [];
+  var porDia = function (d) { return hs.filter(function (h) { return +h.dow === d; }).sort(function (x, y) { return x.ini < y.ini ? -1 : 1; }); };
+  var h = '<h2>' + (a ? 'Editar agenda' : 'Nova agenda') + '</h2>';
+  if (admin) {
+    h += '<div class="g2"><div><label>Tipo</label><select id="ag-tipo"' + (a ? ' disabled' : '') + '>' + opts([['saude', 'Saúde (médico, psicólogo…)'], ['pastoral', 'Pastoral (pastor/pastora)']], instAgForm.tipo) + '</select></div>' +
+      '<div><label>Situação</label><select id="ag-ativa">' + opts([['1', 'Ativa'], ['0', 'Inativa']], !a || a.ativa ? '1' : '0') + '</select></div></div>' +
+      '<label>Nome da agenda *</label><input id="ag-nome" value="' + esc(a ? a.nome : (pre.nome || '')) + '" placeholder="Ex.: Dra. Maria — Clínica geral">' +
+      '<div class="g2"><div><label>Especialidade</label><input id="ag-esp" list="esp-lista" value="' + esc(a ? a.especialidade : (pre.especialidade || '')) + '" placeholder="Ex.: Pediatria" autocomplete="off"><datalist id="esp-lista">' + ESPECIALIDADES_SUG.concat(instD.agendas.map(function (x) { return x.especialidade; })).filter(function (v, i, arr) { return v && arr.indexOf(v) === i; }).map(function (v) { return '<option value="' + esc(v) + '">'; }).join('') + '</datalist></div><div><label>Local</label><input id="ag-local" value="' + esc(a ? a.local : '') + '" placeholder="Sala 2"></div></div>' +
+      '<label>Profissional responsável *</label><select id="ag-prof">' + opcoesProfissionais(instAgForm.tipo, a ? a.profissionalId : (pre.profissionalId || '')) + '</select>' +
+      '<div style="margin-top:4px"><span class="pill p-dour" data-a="instProfForm" style="cursor:pointer">+ cadastrar novo profissional</span></div>' +
+      '<div style="font-size:11px;color:var(--tx3);margin-top:3px">Só esta pessoa vê os nomes dos pacientes e as anotações. Para criar o profissional, cadastre o usuário com o nível “Profissional de saúde”.</div>';
+  }
+  h += '<label>Duração de cada atendimento (minutos)</label><input id="ag-dur" type="number" min="10" max="240" step="5" value="' + esc(a ? a.duracaoMin : 30) + '">' +
+    '<div class="sec" style="margin-left:0">Dias e horários de atendimento</div><div style="font-size:11.5px;color:var(--tx3);margin:-4px 0 6px">Deixe em branco os dias sem atendimento. Dois períodos por dia (ex.: manhã e tarde).</div>' +
+    DIAS_ORD.map(function (d) {
+      var p = porDia(d), g = function (i, k) { return p[i] ? p[i][k] : ''; };
+      return '<div class="hdia"><b>' + DIAS[d].slice(0, 3) + '</b>' + [0, 1].map(function (i) {
+        return '<span class="hper"><input data-hd="' + d + '-' + i + '-ini" value="' + g(i, 'ini') + '" inputmode="numeric" maxlength="5" placeholder="--:--"><u>–</u><input data-hd="' + d + '-' + i + '-fim" value="' + g(i, 'fim') + '" inputmode="numeric" maxlength="5" placeholder="--:--"></span>';
+      }).join('') + '</div>';
+    }).join('') +
+    '<div class="sec" style="margin-left:0">Dias sem atendimento (folgas, feriados)</div><div id="ag-bloq" class="bloqs"></div><div style="display:flex;gap:8px"><input id="ag-bloqd" type="date"><button class="btn gh sm" data-a="instBloqAdd" style="white-space:nowrap">+ Adicionar</button></div>' +
+    '<div style="height:14px"></div><button class="btn pr" data-a="instAgendaSalvar">Salvar agenda</button>' + (a && admin ? '<div class="gap"></div><button class="btn dg" data-a="instAgendaExcluir">Excluir agenda</button>' : '') + '<div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>';
+  abrirModal(h); pintarBloq();
+}
+function opcoesProfissionais(tipo, sel) {
+  var l = instD.profissionais.filter(function (p) { return tipo === 'pastoral' ? (p.papel === 'pastor' || p.papel === 'master') : p.papel === 'profissional'; });
+  return '<option value="">— escolher —</option>' + l.map(function (p) { return '<option value="' + esc(p.id) + '"' + (p.id === sel ? ' selected' : '') + '>' + esc(p.nome) + '</option>'; }).join('');
+}
+function pintarBloq() {
+  var el = $('ag-bloq'); if (!el) return;
+  el.innerHTML = instAgForm.bloq.length ? instAgForm.bloq.slice().sort().map(function (d) { return '<span class="pill p-cinza">' + brCompleto(d) + ' <b data-a="instBloqRem" data-v="' + d + '" style="cursor:pointer;margin-left:4px">×</b></span>'; }).join(' ') : '<span style="font-size:12px;color:var(--tx3)">Nenhum.</span>';
+}
+var instHoraErr = '';
+/** "830" → "08:30"; "8" → "08:00"; inválido → "" */
+function normHora(v) {
+  var d = String(v || '').replace(/\D/g, ''); if (!d) return '';
+  if (d.length <= 2) d = ('0' + d).slice(-2) + '00'; else if (d.length === 3) d = '0' + d; else d = d.slice(0, 4);
+  var h = +d.slice(0, 2), m = +d.slice(2); return h > 23 || m > 59 ? '' : d.slice(0, 2) + ':' + d.slice(2);
+}
+function lerAgendaForm() {
+  instHoraErr = '';
+  var hs = [], els = document.querySelectorAll('[data-hd]'), m = {};
+  for (var i = 0; i < els.length; i++) { var k = els[i].getAttribute('data-hd').split('-'), key = k[0] + '-' + k[1], raw = els[i].value.trim(), nh = normHora(raw); if (raw && !nh) instHoraErr = raw; (m[key] = m[key] || { dow: +k[0] })[k[2]] = nh; }
+  Object.keys(m).forEach(function (k) { if (m[k].ini || m[k].fim) hs.push(m[k]); });
+  var d = { id: instAgForm.id, horarios: hs, bloqueios: instAgForm.bloq, duracaoMin: +($('ag-dur').value || 30) };
+  if ($('ag-nome')) { d.tipo = $('ag-tipo').value; d.nome = $('ag-nome').value.trim(); d.especialidade = $('ag-esp').value.trim(); d.local = $('ag-local').value.trim(); d.profissionalId = $('ag-prof').value; d.ativa = $('ag-ativa').value === '1'; }
+  return d;
+}
+function instAgendaSalvar(excluir) {
+  var d = lerAgendaForm(); if (excluir === true) d.deleted = true;
+  if (instHoraErr) return toast('Horário inválido: “' + instHoraErr + '”. Use o formato 08:30.', 4500);
+  for (var i = 0; i < d.horarios.length; i++) if (!d.horarios[i].ini || !d.horarios[i].fim) return toast('Preencha o início e o fim de cada período.');
+  carregando(true, 'Salvando...');
+  chamar('instSalvarAgenda', { agenda: d }).then(function () { fechar(); toast(excluir === true ? 'Agenda excluída' : 'Agenda salva ✓'); if (excluir === true && cfg.aba === 'instagenda') irAba('instituto'); return carregarInst(true); })
+    .catch(function (e) { toast(e.message, 5500); }).then(function () { carregando(false); render(); });
+}
+
 /* ── encontros agendados (futuros) ── */
 function agendados(gcId) {
   var hj = hoje();
@@ -5091,6 +5617,27 @@ var ACOES = {
   sincronizar: function () { sincronizar(true); }, servidor: servidor, salvarServidor: function () { salvarServidor(); },
   padraoServidor: function () { salvarServidor(URL_PADRAO); },
   novaPessoa: function () { abrirPessoa(null); }, abrirPessoa: function (v) { abrirPessoa(v); }, salvarPessoa: function () { salvarPessoa(); }, modulo: abrirModulo,
+    instProfForm: instProfForm, instProfSalvar: instProfSalvar,
+    instProfAgenda: function (v) { var p = v.split('|'); instAgendaDe(p[0], p[1], p[2]); },
+    instAgendaProf: function (v) { var pr = profissionaisDe(instD.agendas).filter(function (x) { return x.id === v; })[0]; instAgendaForm('', { profissionalId: v, nome: pr ? pr.nome + ' — ' : '' }); },
+    instFiltroEsp: function (v) { instFiltroEsp = v || ''; render(); },
+    instFlEsp: function (v) { instFl.esp = v; instFl.agenda = ''; instFluxo(); },
+    instAbrirAgenda: function (v) { instSel.agenda = v; instSel.data = hoje(); if (cfg.aba === 'instagenda') render(); else irAba('instagenda'); },
+    instNovoAg: function (v) { instNovoAg(); }, instAgendarSlot: function (v) { var p = v.split('|'); instNovoAg(p[0], p[1], p[2]); },
+    instDia: function (v) { instSel.data = v; render(); },
+    instFlAgenda: function (v) { instFl.agenda = v; var a0 = agendaPor(v); if (a0) instFl.esp = espChave(a0); instFluxo(); }, instFlDia: function (v) { instFl.data = v; instFluxo(); }, instFlHora: function (v) { instFl.hora = v; instFluxo(); },
+    instFlPessoa: instFlPessoa, instFlConfirmar: instFlConfirmar, instCompartilhar: instCompartilhar,
+    instFlVoltar: function (v) { var f = instFl; if (v === 'esp') { f.esp = ''; f.agenda = ''; f.data = ''; f.hora = ''; f.pessoa = null; } else if (v === 'agenda') { f.agenda = ''; var gx = gruposEsp(instD.agendas.filter(function (a) { return a.ativa && podeAgendarNa(a); })).filter(function (g) { return g.chave === f.esp; })[0]; if (gx && gx.agendas.length === 1) f.esp = ''; f.data = ''; f.hora = ''; f.pessoa = null; } else if (v === 'data') { f.data = ''; f.hora = ''; f.pessoa = null; } else if (v === 'hora') { f.hora = ''; f.pessoa = null; } else f.pessoa = null; instFluxo(); },
+    instStatusAt: instStatusAt, instRemarcar: instRemarcarAbrir, instRemDia: function (v) { instFl.data = v; instRemFluxo(); }, instRemHora: instRemConfirmar,
+    instAtender: instAtender, instRegSalvar: instRegSalvar,
+    instNovoAtendido: function (v) { instNovoAtendido(v); },
+    instCdIgreja: function (v) { instCd.igreja = v === '1'; instCdTela(); if (instCd.igreja) setTimeout(function () { try { $('cd-busca').focus(); } catch (e) {} }, 250); },
+    instCdEscolher: function (v) { var x = (instCd.res || []).filter(function (r) { return r.id === v; })[0]; if (x) instCdConcluir({ id: x.id, nome: x.nome, codigo: x.codigo, autorizou: x.autorizou }); },
+    instCdSalvar: instCdSalvar,
+    instAgendaForm: function (v) { instAgendaForm(v); }, instAgendaSalvar: function () { instAgendaSalvar(); }, instAgendaExcluir: function () { if (confirm('Excluir esta agenda? Os atendimentos já realizados continuam guardados.')) instAgendaSalvar(true); },
+    instBloqAdd: function () { var d = $('ag-bloqd').value; if (d && instAgForm.bloq.indexOf(d) < 0) { instAgForm.bloq.push(d); pintarBloq(); } $('ag-bloqd').value = ''; },
+    instBloqRem: function (v) { instAgForm.bloq = instAgForm.bloq.filter(function (x) { return x !== v; }); pintarBloq(); },
+    instEmBreve: function (v) { abrirModal('<h2>' + esc(v) + '</h2><div class="aviso" style="margin-top:8px"><b>Em construção.</b> Entrada e saída de produtos, saldo em estoque, limite de entrega por pessoa' + (/Farm/.test(v) ? ' e receita registrada com imagem para medicamentos' : '') + ' — usando a mesma base de pessoas do Instituto.</div><div class="gap"></div><button class="btn pr" data-a="fechar">Entendi</button>'); },
     fpCam: function () { $('fp-cam').click(); }, fpGal: function () { $('fp-gal').click(); }, fpRem: function () { fotoEscolhida('__remover__'); },
     fotoDireta: function (v) { trocarFotoDireta(v); },
     muralTipo: function (v) { var t = $('mural-txt') ? $('mural-txt').value : ''; muralTipo = v; render(); if ($('mural-txt')) $('mural-txt').value = t; },
@@ -5175,6 +5722,10 @@ document.addEventListener('input', function (ev) {
   }
   if (ev.target.id === 'busca-m') { buscaM = ev.target.value; var pm = ev.target.selectionStart; render(); var em = $('busca-m'); em.focus(); em.setSelectionRange(pm, pm); }
   if (ev.target.id === 'busca-part') { buscaPart = ev.target.value; pintarPart(); }
+  if (ev.target.id === 'pf-nome' && $('pf-user') && !$('pf-user').dataset.manual) $('pf-user').value = sugerirLogin(ev.target.value);
+  if (ev.target.id === 'pf-user') ev.target.dataset.manual = '1';
+  if (ev.target.id === 'fl-busca' && instFl) instBuscar(ev.target.value, function (l) { instFl.res = l; if ($('fl-res')) $('fl-res').innerHTML = resultadosBusca(l); });
+  if (ev.target.id === 'cd-busca' && instCd) instBuscar(ev.target.value, function (l) { instCd.res = l; if ($('cd-res')) $('cd-res').innerHTML = resultadosBuscaCd(l); });
   if (ev.target.id === 'busca-add') { buscaAdd = ev.target.value.toLowerCase(); pintarAdd(); }
   if (ev.target.id === 'busca-gc') { buscaGC = ev.target.value.toLowerCase(); var pos2 = ev.target.selectionStart; render(); var el2 = $('busca-gc'); el2.focus(); el2.setSelectionRange(pos2, pos2); }
 });
@@ -5194,7 +5745,8 @@ document.addEventListener('change', function (ev) {
   if (id === 'v-gc') lvGCManual = true;
   if (id === 'f-canal' || id === 'v-canal') { var cwr = $(id.charAt(0) + '-canalwrap'); if (cwr) cwr.classList.toggle('hide', ev.target.value !== 'Outros'); }
   if (id === 'g-tipo') { var pw = $('g-pubwrap'); if (pw) pw.classList.toggle('hide', ev.target.value !== 'Jovens e adolescentes'); }
-  if (id === 'f-nasc' || id === 'v-nasc' || id === 'f-consent' || id === 'v-consent') pintarConsent(id.charAt(0));
+  if (id === 'f-nasc' || id === 'v-nasc' || id === 'f-consent' || id === 'v-consent' || id === 'i-nasc' || id === 'i-consent') pintarConsent(id.charAt(0));
+  if (id === 'ag-tipo' && instAgForm) { instAgForm.tipo = ev.target.value; $('ag-prof').innerHTML = opcoesProfissionais(ev.target.value, ''); }
   if (id === 'cu-usuario') { var cw = $('cu-senhawrap'), bo = document.querySelector('[data-a=salvarCorrecao]'); if (cw && bo) cw.classList.toggle('hide', ev.target.value.trim().toLowerCase() === bo.getAttribute('data-orig')); }
   if (id === 'per-mes') { perBI.mes = ev.target.value; render(); }
   if (id === 'per-de' || id === 'per-ate') { perBI[id === 'per-de' ? 'de' : 'ate'] = ev.target.value; if (perBI.de && perBI.ate) render(); }

@@ -1,4 +1,6 @@
-2Gather v35 — base unificada (código, foto, quem cadastrou), usuário ↔ pessoa, nível Voluntário Lar de Vida
+2Gather v36 — INSTITUTO (várias especialidades e profissionais, agenda pastoral, prontuário cifrado)
 
-1) Apps Script: cole o Codigo_v30.txt no Código.gs → menu 2Gather → 1. Configurar / migrar (gera os códigos e vincula os usuários) → Implantar → Gerenciar implantações → lápis → Nova versão.
+1) Apps Script: cole o Codigo_v31.txt no Código.gs → menu 2Gather → 1. Configurar / migrar (cria as abas InstAgendas, InstAtendimentos e InstProntuario) → Implantar → Gerenciar implantações → lápis → Nova versão.
 2) GitHub: substitua app.js, index.html e sw.js.
+3) NÃO apague a propriedade INST_KEY (Propriedades do script): ela decifra as anotações clínicas. Guarde uma cópia em local seguro.
+4) No app: Instituto → "+ Adicionar profissional" (cria o acesso e a agenda). Repita para cada profissional/especialidade.
