@@ -1,17 +1,49 @@
-2Gather v37 — Treinamentos/Reuniões + Cursos do Instituto
+2Gather v38 — Instituto: Mercado solidário e Farmácia solidária
+===============================================================
 
-O QUE MUDOU
-- O módulo "Cursos" (líderes e membros) agora se chama "Treinamentos/Reuniões" (tipos: Reunião e Treinamento; cadastros antigos do tipo "Curso" continuam aparecendo).
-- Instituto → nova aba "Cursos" (ao lado de "Atendimentos"), para inglês, informática etc., com a mesma lógica: recorrência, chamada por data, responsáveis pela chamada (professores) e convite por WhatsApp.
-- Participantes dos cursos: membros da igreja E pessoas da comunidade, buscados na base única (código) ou cadastrados na hora ("+ Cadastrar nova pessoa"), sempre com autorização LGPD. Nome e telefone são lidos da base pelo servidor.
-- Novo acesso: "Instituto: cursos (criar e fazer chamada)" — já vem marcado para Secretaria, Pastor e Master. O acesso antigo passou a se chamar "Treinamentos/Reuniões (criar e fazer chamada)".
-- Cada módulo só enxerga os próprios registros. Professor marcado só como responsável pela chamada vê apenas o curso dele (sem telefones).
+ARQUIVOS (troque os três; index.html, config.js, manifest, icons/ e lib/ NÃO mudam)
+- Codigo_v33.txt → Apps Script (Código.gs)
+- app.js         → GitHub
+- sw.js          → GitHub (só muda o número da versão do cache)
 
 COMO ATUALIZAR
-1) Apps Script: Código.gs → apague tudo, cole o Codigo_v32.txt e salve → recarregue a planilha → menu 2Gather → 1. Configurar / migrar (a aba "Reunioes" ganha a coluna "modulo") → Implantar → Gerenciar implantações → lápis → Nova versão.
-2) GitHub: substitua app.js e sw.js (index.html não muda).
-3) NÃO apague a propriedade INST_KEY (Propriedades do script): ela decifra as anotações clínicas. Guarde uma cópia em local seguro.
-4) Para um professor gerir cursos: Perfil → Usuários → tocar no usuário → marcar "Instituto: cursos (criar e fazer chamada)".
+1) Apps Script: Código.gs → apague tudo → cole o Codigo_v33.txt → salve.
+   Recarregue a planilha → menu 2Gather → 1. Configurar / migrar
+   (cria as abas InstEstProdutos e InstEstMovimentos).
+   Implantar → Gerenciar implantações → lápis → Nova versão.
+2) GitHub: substitua app.js e sw.js → Commit.
+3) NÃO apague a propriedade INST_KEY (Propriedades do script).
 
-OBSERVAÇÃO
-- Cursos já cadastrados no módulo antigo ficam em Treinamentos/Reuniões. Para tê-los no Instituto, recrie em Instituto → Cursos.
+O QUE HÁ DE NOVO (Instituto → abas: Atendimentos · Cursos · Mercado · Farmácia)
+Os dois módulos funcionam igual (só a Farmácia tem receita e validade obrigatória):
+- ENTREGAR: busca a pessoa na base única (ou cadastra na hora), inclui os itens, confere saldo e limite e gera protocolo
+  (ME000001 no Mercado, FE000001 na Farmácia) + comprovante por WhatsApp.
+- ESTOQUE: produtos com saldo, mínimo, situação (ok / baixo / zerado / vence em breve / vencido), lotes com validade,
+  entrada (doação, compra, campanha…), baixa (vencido, perda, correção) e exportação em CSV.
+- HISTÓRICO: tudo que entrou, saiu ou foi baixado (hoje / 7 / 30 / 90 dias), com estorno e CSV.
+- Saldo é sempre calculado pelos movimentos (nunca digitado). A validade mais próxima sai primeiro; lote vencido não é entregue.
+- LIMITE POR PESSOA: por produto, "X unidades a cada N dias". Conferido no servidor. Exceção só para quem tem
+  "Instituto: criar agendas e horários" (coordenação), com justificativa registrada.
+- ESTORNO: o operador desfaz o próprio lançamento no mesmo dia; a coordenação desfaz qualquer um. Sempre com motivo.
+- LGPD: quem recebe precisa ter autorização de uso dos dados (se faltar, a entrega só segue com a confirmação).
+  Ao anonimizar uma pessoa, as receitas dela vão para a lixeira do Drive.
+
+FARMÁCIA — RECEITA E PRIVACIDADE
+- A foto da receita é reduzida no aparelho e guardada na pasta PRIVADA do Drive "2Gather - Receitas (privado)" (criada sozinha).
+- Só quem opera a farmácia vê nomes e receitas; cada abertura de receita fica na auditoria.
+- Master e pastor NÃO operam a farmácia (mesma regra do prontuário). Eles e a secretaria veem a aba só em CONSULTA
+  (saldos e movimentações, sem nomes nem receitas).
+
+ACESSOS (Usuários → tocar no usuário → marcar)
+- "Instituto: Mercado solidário"  → já vem marcado para Master, Pastor, Secretaria e Voluntário do Instituto.
+- "Instituto: Farmácia solidária" → NÃO vem marcado para ninguém. Marque para quem vai operar a farmácia
+  (o usuário não pode ser master).
+- Para testar a Farmácia: crie/aprove um usuário que não seja master, marque o acesso acima e entre com ele.
+
+PRIMEIROS PASSOS
+1) Estoque → "+ Novo produto" (nome, unidade, mínimo, limite por pessoa/período; na Farmácia, "exige receita").
+2) Estoque → "+ Entrada" (quantidade, origem, validade).
+3) Entregar → "+ Nova entrega".
+
+PRÓXIMAS RODADAS (planejadas)
+Cultos e Usuários → Lar de Vida do gestor e GCs → Cadastro do visitante em 2 etapas e formulários → Cursos e Configurações → Ministérios.

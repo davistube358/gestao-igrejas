@@ -20,8 +20,8 @@ var ICONE_2G = 'icons/icon-192.png';
 // padrão antes da 1ª configuração: no app instalado (PWA) é o 2Gather; na página antiga, o logo embutido
 var LOGO_PADRAO = (window.APP_CONFIG && window.APP_CONFIG.apiUrl) ? ICONE_2G : document.getElementById('h-img').getAttribute('src');
 var LOGO = LOGO_PADRAO;        // ícone usado na barra superior e nas telas internas
-var VERSAO_APP = 37;
-var SERVIDOR_ESPERADO = 32;      // versão do Código.gs que acompanha este app
+var VERSAO_APP = 38;
+var SERVIDOR_ESPERADO = 33;      // versão do Código.gs que acompanha este app
 var EXIGE_HOSPEDADO = true;      // segurança: o app só funciona pelo endereço oficial (dados nunca trafegam pela URL)
 
 /* ───────── armazenamento ───────── */
@@ -883,7 +883,7 @@ function render() {
   validarContexto();
   var g = cfg.modo === 'gc' ? gcPor(cfg.gcAtual) : null;
   $('h-img').src = g ? iconeGC(g.id) : LOGO;
-  var TIT = { instituto: 'Instituto', instcursos: 'Cursos do Instituto', instagenda: 'Agenda', lvcasas: 'Lar de Vida', relatorios: 'Relatórios', financeiro: 'Financeiro', usuarios: 'Usuários e acessos', avisos: 'Avisos', gcs: 'GCs' };
+  var TIT = { instituto: 'Instituto', instcursos: 'Cursos do Instituto', instmercado: 'Mercado solidário', instfarmacia: 'Farmácia solidária', instagenda: 'Agenda', lvcasas: 'Lar de Vida', relatorios: 'Relatórios', financeiro: 'Financeiro', usuarios: 'Usuários e acessos', avisos: 'Avisos', gcs: 'GCs' };
   $('h-tit').textContent = TIT[cfg.aba] ? TIT[cfg.aba] : cfg.modo === 'lv' ? igrNome() : cfg.aba === 'config' ? 'Configurações' : cfg.aba === 'cultos' ? 'Cultos e eventos' : cfg.aba === 'membros' ? 'Cadastro de pessoas' : cfg.aba === 'cursos' ? 'Treinamentos/Reuniões' : cfg.modo === 'ger' ? igrNome() : (g ? g.nome : 'Meu GC');
   $('h-papel').textContent = PAPEL_NOME[papel()] || '';
   var raizes = abasAtuais().map(function (a) { return a.id; }), naRaiz = raizes.indexOf(cfg.aba) >= 0 && !cursoAberto;
@@ -899,7 +899,7 @@ function render() {
   var f = {
     bi: rBI, gcs: rGCs, novo: rNovoGC, usuarios: rUsuarios, conta: rConta,
     painel: rPainel, pessoas: rPessoas, chamada: rChamada, alertas: rAlertas, mais: rMaisGC,
-    lv: rLVGer, lar: rLar, instituto: rInstituto, instcursos: rInstCursos, instagenda: rInstAgenda, lvcasas: rLVVol, avisos: rAvisos, relatorios: rRelatorios, financeiro: rFinanceiro, lvnovo: rLVNovo, lvmeus: rLVMeus, cultos: rCultos, config: rConfig, membros: rConsulta, cursos: rCursos
+    lv: rLVGer, lar: rLar, instituto: rInstituto, instcursos: rInstCursos, instmercado: rEstoque, instfarmacia: rEstoque, instagenda: rInstAgenda, lvcasas: rLVVol, avisos: rAvisos, relatorios: rRelatorios, financeiro: rFinanceiro, lvnovo: rLVNovo, lvmeus: rLVMeus, cultos: rCultos, config: rConfig, membros: rConsulta, cursos: rCursos
   }[cfg.aba];
   if (cfg.modo === 'gc' && !g) {
     $('main').innerHTML = '<div class="empty">' + (db.gcs.length ? 'Você ainda não está vinculado a um GC. Fale com a liderança.' : 'Carregando dados do GC...') + '</div>';
@@ -2515,8 +2515,8 @@ return h + '</div><div class="meta">Dá para editar enquanto o cadastro aguarda 
 var IC_CULTO = '<path d="M12 2v5M9.5 4.5h5"/><path d="M4 21V11l8-4 8 4v10"/><path d="M10 21v-5h4v5"/>';
 var ABA_CULTOS = { id: 'cultos', nome: 'Cultos', ic: IC_CULTO };
 var TIPOS_EVENTO = ['Culto', 'Evento', 'Conferência', 'Santa Ceia', 'Batismo', 'Outro'];
-var SEM_MASTER_C = ['prontuario', 'pacienteNomes'];
-var PERM_ORDEM = ['config', 'eventos', 'visitantes', 'financeiro', 'recados', 'relFin', 'rede', 'gc', 'gcEvento', 'lvDirecionar', 'lvLiberar', 'lvVisitas', 'usuarios', 'consulta', 'cursos', 'instituto', 'institutoAdmin', 'institutoCursos', 'agendaPastoral', 'prontuario', 'pacienteNomes'];
+var SEM_MASTER_C = ['prontuario', 'pacienteNomes', 'instFarmacia'];
+var PERM_ORDEM = ['config', 'eventos', 'visitantes', 'financeiro', 'recados', 'relFin', 'rede', 'gc', 'gcEvento', 'lvDirecionar', 'lvLiberar', 'lvVisitas', 'usuarios', 'consulta', 'cursos', 'instituto', 'institutoAdmin', 'institutoCursos', 'instMercado', 'instFarmacia', 'agendaPastoral', 'prontuario', 'pacienteNomes'];
 var PERM_NOME_C = {
   config: 'Configurações da igreja', eventos: 'Criar e liberar cultos/eventos', visitantes: 'Cadastrar visitantes no culto',
   financeiro: 'Lançar dízimos e ofertas do culto', recados: 'Recados e tema do culto', relFin: 'Relatório financeiro',
@@ -2526,15 +2526,16 @@ var PERM_NOME_C = {
   consulta: 'Consultar cadastro de pessoas (telefone, endereço)',
   cursos: 'Treinamentos/Reuniões (criar e fazer chamada)', institutoCursos: 'Instituto: cursos (criar e fazer chamada)',
   instituto: 'Instituto: ver agendas e agendar (sem ver nomes)', institutoAdmin: 'Instituto: criar agendas e horários',
-  agendaPastoral: 'Agenda pastoral: agendar atendimentos', prontuario: 'Prontuário e atendimentos (somente o profissional)', pacienteNomes: 'Ver nomes dos pacientes nas agendas'
+  agendaPastoral: 'Agenda pastoral: agendar atendimentos', prontuario: 'Prontuário e atendimentos (somente o profissional)', pacienteNomes: 'Ver nomes dos pacientes nas agendas',
+  instMercado: 'Instituto: Mercado solidário (entradas, entregas e estoque)', instFarmacia: 'Instituto: Farmácia solidária (receitas, entregas e estoque — dados de saúde)'
 };
-var TODAS_C = ['config', 'eventos', 'visitantes', 'financeiro', 'recados', 'relFin', 'rede', 'gc', 'gcEvento', 'lvDirecionar', 'lvLiberar', 'usuarios', 'consulta', 'cursos', 'instituto', 'institutoAdmin', 'institutoCursos', 'agendaPastoral'];
+var TODAS_C = ['config', 'eventos', 'visitantes', 'financeiro', 'recados', 'relFin', 'rede', 'gc', 'gcEvento', 'lvDirecionar', 'lvLiberar', 'usuarios', 'consulta', 'cursos', 'instituto', 'institutoAdmin', 'institutoCursos', 'instMercado', 'agendaPastoral'];
 var PERM_PADRAO_C = {
   master: TODAS_C, pastor: TODAS_C,
   supervisor: ['visitantes', 'rede', 'gc', 'gcEvento', 'lvDirecionar', 'lvLiberar'],
   lider: ['gc', 'gcEvento', 'lvLiberar'], discipulo: ['gc', 'lvVisitas'],
-  secretaria: ['eventos', 'visitantes', 'recados', 'consulta', 'instituto', 'institutoAdmin', 'institutoCursos', 'agendaPastoral'], tesouraria: ['financeiro', 'relFin'], voluntario: ['visitantes'], voluntarioLV: ['visitantes', 'lvVisitas'],
-  voluntarioInst: ['instituto'], profissional: ['instituto', 'prontuario']
+  secretaria: ['eventos', 'visitantes', 'recados', 'consulta', 'instituto', 'institutoAdmin', 'institutoCursos', 'instMercado', 'agendaPastoral'], tesouraria: ['financeiro', 'relFin'], voluntario: ['visitantes'], voluntarioLV: ['visitantes', 'lvVisitas'],
+  voluntarioInst: ['instituto', 'instMercado'], profissional: ['instituto', 'prontuario']
 };
 
 /* ── logo e dados da igreja (cache local) ── */
@@ -2604,7 +2605,7 @@ function abasExtras() {
   if (cfg.modo === 'lv' && pode('visitantes')) x.push('lvnovo', 'lvmeus');
   if (cfg.modo === 'lv' && pode('lvVisitas')) x.push('lvcasas');
   x.push('avisos');
-  if (temInst()) x.push('instituto', 'instagenda'); if (temInstCursos()) x.push('instcursos');
+  if (temInst()) x.push('instituto', 'instagenda'); if (temInstCursos()) x.push('instcursos'); if (temEstMercado()) x.push('instmercado'); if (temEstFarmacia()) x.push('instfarmacia');
   if (pode('rede')) x.push('novo');
   if (pode('config')) x.push('config');
   if (pode('visitantes')) x.push('lvnovo', 'lvmeus');
@@ -4840,8 +4841,8 @@ function rLVVol() {
 var IC_INST = '<path d="M12 21s-7-4.4-9-9.2C1.8 8.6 3.6 5 7 5c2 0 3.4 1.1 5 3 1.6-1.9 3-3 5-3 3.4 0 5.2 3.6 4 6.8C19 16.6 12 21 12 21z"/><path d="M12 9v6M9 12h6"/>';
 var instD = { t: 0, carregando: false, agendas: [], ags: [], pac: {}, profissionais: [], perm: {}, hoje: '' };
 var instSel = { agenda: '', data: '' }, instFl = null, instCd = null, instAgForm = null, instBuscaT = null;
-function instLimpar() { instD = { t: 0, carregando: false, agendas: [], ags: [], pac: {}, profissionais: [], perm: {}, hoje: '' }; instSel = { agenda: '', data: '' }; instFl = null; instCd = null; instAgForm = null; }
-function temInst() { return pode('instituto') || pode('agendaPastoral') || pode('prontuario') || temInstCursos(); }
+function instLimpar() { instD = { t: 0, carregando: false, agendas: [], ags: [], pac: {}, profissionais: [], perm: {}, hoje: '' }; instSel = { agenda: '', data: '' }; instFl = null; instCd = null; instAgForm = null; estLimpar(); }
+function temInst() { return pode('instituto') || pode('agendaPastoral') || pode('prontuario') || temInstCursos() || temEstMercado() || temEstFarmacia(); }
 function agendaPor(id) { return instD.agendas.filter(function (a) { return a.id === id; })[0] || null; }
 function podeAgendarNa(ag) { return ag && (ag.dono || (ag.tipo === 'pastoral' ? pode('agendaPastoral') : pode('instituto'))); }
 /** Dados do Instituto ficam só na memória (nunca no armazenamento do aparelho): são dados sensíveis. */
@@ -4917,7 +4918,7 @@ function profissionaisDe(lista) {
 var ESPECIALIDADES_SUG = ['Clínica geral', 'Pediatria', 'Ginecologia', 'Cardiologia', 'Psicologia', 'Odontologia', 'Nutrição', 'Fisioterapia', 'Enfermagem', 'Oftalmologia', 'Dermatologia', 'Ortopedia', 'Fonoaudiologia', 'Serviço social'];
 
 /* ═════ página inicial do Instituto ═════ */
-function rInstituto() { if (!temInstSaude() && temInstCursos()) { cfg.aba = 'instcursos'; salvarCfg(); return rInstCursos(); }
+function rInstituto() { if (!temInstSaude()) { var tb0 = instTabsLista()[0]; if (tb0 && tb0[0] !== 'instituto') { cfg.aba = tb0[0]; salvarCfg(); setTimeout(render, 0); return ''; } }
   if (!temInst()) return '<div class="empty">Sem acesso.</div>';
   carregarInst();
   if (!instD.t) return '<div class="card"><div class="empty">Carregando agendas…</div></div>';
@@ -4970,8 +4971,8 @@ function rInstituto() { if (!temInstSaude() && temInstCursos()) { cfg.aba = 'ins
   // atalhos
   h += '<div class="sec">Mais do Instituto</div><div class="mods" style="grid-template-columns:repeat(4,1fr)">' +
     '<button class="mod" data-a="instNovoAtendido"><span class="mi" style="background:#fff!important;color:#E5484D"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span><span class="mn">Novo atendido</span></button>' +
-    '<button class="mod breve" data-a="instEmBreve" data-v="Mercado solidário"><span class="mi" style="background:#fff!important;color:#C9930A"><svg viewBox="0 0 24 24"><path d="M6 6h15l-1.5 9h-12z"/><path d="M6 6L5 3H2"/><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/></svg></span><span class="mn">Mercado</span><span class="mb">em breve</span></button>' +
-    '<button class="mod breve" data-a="instEmBreve" data-v="Farmácia solidária"><span class="mi" style="background:#fff!important;color:#16A36A"><svg viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="12" rx="2"/><path d="M8 9V6a4 4 0 0 1 8 0v3M12 12v6M9 15h6"/></svg></span><span class="mn">Farmácia</span><span class="mb">em breve</span></button>' +
+    (temEstMercado() ? '<button class="mod" data-a="aba" data-v="instmercado"><span class="mi" style="background:#fff!important;color:#C9930A"><svg viewBox="0 0 24 24"><path d="M6 6h15l-1.5 9h-12z"/><path d="M6 6L5 3H2"/><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/></svg></span><span class="mn">Mercado</span></button>' : '') +
+    (temEstFarmacia() ? '<button class="mod" data-a="aba" data-v="instfarmacia"><span class="mi" style="background:#fff!important;color:#16A36A"><svg viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="12" rx="2"/><path d="M8 9V6a4 4 0 0 1 8 0v3M12 12v6M9 15h6"/></svg></span><span class="mn">Farmácia</span></button>' : '') +
     (temInstCursos() ? '<button class="mod" data-a="aba" data-v="instcursos"><span class="mi" style="background:#fff!important;color:#0F8A8A"><svg viewBox="0 0 24 24">' + IC_CURSO + '</svg></span><span class="mn">Cursos</span></button>' : '') + '</div>';
   h += '<div class="card" style="font-size:11.5px;color:var(--tx2);line-height:1.55;background:#FFF8E6"><b>Privacidade:</b> os nomes dos pacientes e as anotações do atendimento aparecem <b>somente para o profissional responsável</b> pela agenda. ' +
     'Secretaria, voluntários, pastor e master veem apenas “horário ocupado” e o protocolo.</div>';
@@ -5166,7 +5167,7 @@ function instRemConfirmar(hora) {
 
 /* ═════ cadastro de atendido (base única) ═════ */
 function instNovoAtendido(origem) {
-  instCd = { igreja: null, res: [], origem: origem === 'fluxo' ? 'fluxo' : origem === 'curso' ? 'curso' : '' };
+  instCd = { igreja: null, res: [], origem: origem === 'fluxo' ? 'fluxo' : origem === 'curso' ? 'curso' : origem === 'estoque' ? 'estoque' : '' };
   fotoNovaP = null; fpAlvo = { pid: '', direto: false};
   instCdTela();
 }
@@ -5197,7 +5198,7 @@ function resultadosBuscaCd(l) {
 function instCdConcluir(p, msg) {
   toast(msg || 'Atendido vinculado ✓ ' + p.codigo, 4000);
   if (instCd && instCd.origem === 'fluxo' && instFl) { instFl.pessoa = { id: p.id, nome: p.nome, codigo: p.codigo, autorizou: p.autorizou !== false }; instCd = null; instFluxo(); }
-  else if (instCd && instCd.origem === 'curso' && partInstCtx) { instCd = null; partInstNovo(p); } else { instCd = null; fechar(); }
+  else if (instCd && instCd.origem === 'curso' && partInstCtx) { instCd = null; partInstNovo(p); } else if (instCd && instCd.origem === 'estoque' && estFl) { instCd = null; estFlPessoaNova(p); } else { instCd = null; fechar(); }
 }
 function instCdSalvar() {
   var v = function (id) { var e = $(id); return e ? e.value.trim() : ''; };
@@ -5621,6 +5622,18 @@ var ACOES = {
     instProfForm: instProfForm, instProfSalvar: instProfSalvar,
     instTab: function (v) { if (v !== cfg.aba) { cursoAberto = ''; irAba(v); } },
     partInstAdd: partInstAdd, partInstRem: partInstRem, partInstSalvar: partInstSalvar,
+    estTab: function (v) { estUI.tab = v; render(); }, estFiltro: function (v) { estUI.filtro = v; render(); },
+    estHist: function (v) { estUI.hist = v; render(); }, estHistTipo: function (v) { estUI.histTipo = v; render(); },
+    estNovaEntrega: estNovaEntrega, estFlPessoa: estFlPessoa,
+    estFlTrocar: function () { estFlLer(); estFl.pessoa = null; estFl.resumo = null; estFl.itens = []; estFl.res = []; estFlTela(); },
+    estFlAdd: estFlAdd, estFlRem: function (v) { estFlLer(); estFl.itens.splice(Number(v), 1); estFlTela(); },
+    estFlFoto: estFlFoto, estFlRecRem: function () { estFlLer(); estFl.receita = ''; estFlTela(); }, estFlConfirmar: estFlConfirmar,
+    estComprovante: function () { estComprovante2(); }, estComprovanteDe: estComprovanteDe,
+    estEntregaAbrir: estEntregaAbrir, estVerReceita: estVerReceita, estMovAbrir: estMovAbrir,
+    estEstornarAbrir: estEstornarAbrir, estEstornarOk: estEstornarOk,
+    estProdutoAbrir: estProdutoAbrir, estProdutoForm: function (v) { estProdutoForm(v || ''); }, estProdutoSalvar: function (v) { estProdutoSalvar(v || ''); },
+    estEntradaForm: function (v) { estEntradaForm(v || ''); }, estEntradaSalvar: estEntradaSalvar,
+    estBaixaForm: estBaixaForm, estBaixaSalvar: estBaixaSalvar, estExportar: estExportar,
     instProfAgenda: function (v) { var p = v.split('|'); instAgendaDe(p[0], p[1], p[2]); },
     instAgendaProf: function (v) { var pr = profissionaisDe(instD.agendas).filter(function (x) { return x.id === v; })[0]; instAgendaForm('', { profissionalId: v, nome: pr ? pr.nome + ' — ' : '' }); },
     instFiltroEsp: function (v) { instFiltroEsp = v || ''; render(); },
@@ -5729,6 +5742,8 @@ document.addEventListener('input', function (ev) {
   if (ev.target.id === 'pf-user') ev.target.dataset.manual = '1';
   if (ev.target.id === 'fl-busca' && instFl) instBuscar(ev.target.value, function (l) { instFl.res = l; if ($('fl-res')) $('fl-res').innerHTML = resultadosBusca(l); });
   if (ev.target.id === 'cd-busca' && instCd) instBuscar(ev.target.value, function (l) { instCd.res = l; if ($('cd-res')) $('cd-res').innerHTML = resultadosBuscaCd(l); });
+  if (ev.target.id === 'est-busca') { estUI.busca = ev.target.value; var edd = estD[modEst()].d; if ($('est-lista') && edd) $('est-lista').innerHTML = estListaProdutos(modEst(), edd); }
+  if (ev.target.id === 'est-fl-busca' && estFl) instBuscar(ev.target.value, function (l) { if (estFl) { estFl.res = l; if ($('est-fl-res')) $('est-fl-res').innerHTML = resultadosBuscaEst(l); } });
   if (ev.target.id === 'busca-partinst' && partInstCtx) instBuscar(ev.target.value, function (l) { if (partInstCtx) { partInstCtx.res = l; if ($('pi-res')) $('pi-res').innerHTML = partInstResultados(); } });
   if (ev.target.id === 'busca-add') { buscaAdd = ev.target.value.toLowerCase(); pintarAdd(); }
   if (ev.target.id === 'busca-gc') { buscaGC = ev.target.value.toLowerCase(); var pos2 = ev.target.selectionStart; render(); var el2 = $('busca-gc'); el2.focus(); el2.setSelectionRange(pos2, pos2); }
@@ -5837,7 +5852,7 @@ function tiposReuniao(cur, mod) {
   if (cur && l.indexOf(cur) < 0) l.push(cur);      // cadastros antigos do tipo "Curso" continuam visíveis
   return l;
 }
-function instTabs(cur) {
+function instTabs_v37(cur) {
   if (!(temInstCursos() && temInstSaude())) return '';     // abas só quando a pessoa tem os dois lados
   return '<div class="tabs">' + [['instituto', 'Atendimentos'], ['instcursos', 'Cursos']].map(function (x) {
     return '<button data-a="instTab" data-v="' + x[0] + '" class="' + (cur === x[0] ? 'on' : '') + '">' + x[1] + '</button>';
@@ -5957,6 +5972,520 @@ function partInstSalvar() {
     if (novos.length) rnConvites(rr.id, novos); else toast('Participantes salvos ✓');
   }).catch(function () {});
 }
+
+/* ═══════════════════ v38: INSTITUTO — MERCADO SOLIDÁRIO E FARMÁCIA SOLIDÁRIA ═══════════════════
+   Entrada e saída de produtos, saldo por lote (validade mais próxima sai primeiro), limite de entrega por pessoa e período,
+   receita registrada com foto (Farmácia) e histórico — tudo ligado à base única de pessoas do Instituto.
+   Os dados ficam só na memória (nunca no armazenamento do aparelho). */
+var IC_MERC = '<path d="M6 6h15l-1.5 9h-12z"/><path d="M6 6L5 3H2"/><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/>';
+var IC_FARM = '<rect x="3" y="9" width="18" height="12" rx="2"/><path d="M8 9V6a4 4 0 0 1 8 0v3M12 12v6M9 15h6"/>';
+var EST_NOME = { mercado: 'Mercado solidário', farmacia: 'Farmácia solidária' };
+function estNovo() { return { t: 0, carregando: false, erro: '', d: null }; }
+var estD = { mercado: estNovo(), farmacia: estNovo() };
+var estUI = { tab: 'entregar', busca: '', filtro: 'todos', hist: '7', histTipo: 'todos' };
+var estFl = null, estForm = null;
+function estLimpar() { estD = { mercado: estNovo(), farmacia: estNovo() }; estUI = { tab: 'entregar', busca: '', filtro: 'todos', hist: '7', histTipo: 'todos' }; estFl = null; estForm = null; }
+function temEstMercado() { return pode('instMercado') || pode('institutoAdmin'); }
+function temEstFarmacia() { return pode('instFarmacia') || pode('institutoAdmin'); }
+function modEst() { return cfg.aba === 'instfarmacia' ? 'farmacia' : 'mercado'; }
+function estQ(x) { return String(Math.round(Number(x || 0) * 1000) / 1000).replace('.', ','); }
+function estNum(v) { var n = Number(String(v == null ? '' : v).replace(',', '.')); return isFinite(n) ? n : 0; }
+function estProd(tipo, id) { var d = estD[tipo].d; return d ? (d.produtos.filter(function (p) { return p.id === id; })[0] || null) : null; }
+function estNomeProd(tipo, id) { var p = estProd(tipo, id); return p ? p.nome + (p.apresentacao ? ' ' + p.apresentacao : '') : 'Produto'; }
+function estUn(tipo, id) { var p = estProd(tipo, id); return p ? p.unidade : 'un'; }
+
+function carregarEst(tipo, forcar) {
+  var s = estD[tipo];
+  if (s.carregando || (!forcar && s.t && Date.now() - s.t < 30000)) return Promise.resolve();
+  s.carregando = true;
+  return chamar('estDados', { tipo: tipo }).then(function (r) { s.d = r; s.t = Date.now(); s.erro = ''; })
+    .catch(function (e) { s.erro = e.message; s.t = Date.now(); toast(e.message, 5000); })
+    .then(function () { s.carregando = false; if (cfg.aba === 'inst' + tipo) render(); });
+}
+
+/* ── abas do Instituto (Atendimentos · Cursos · Mercado · Farmácia) ── */
+function instTabsLista() {
+  var l = [];
+  if (temInstSaude()) l.push(['instituto', 'Atendimentos']);
+  if (temInstCursos()) l.push(['instcursos', 'Cursos']);
+  if (temEstMercado()) l.push(['instmercado', 'Mercado']);
+  if (temEstFarmacia()) l.push(['instfarmacia', 'Farmácia']);
+  return l;
+}
+function instTabs(cur) {
+  var l = instTabsLista(); if (l.length < 2) return '';
+  return '<div class="tabs" style="overflow-x:auto">' + l.map(function (x) {
+    return '<button data-a="instTab" data-v="' + x[0] + '" class="' + (cur === x[0] ? 'on' : '') + '" style="white-space:nowrap;flex:1 0 auto">' + x[1] + '</button>';
+  }).join('') + '</div>';
+}
+
+/* ── status do produto ── */
+function estStatus(p) {
+  if (!p.ativa) return ['p-cinza', 'inativo'];
+  if (p.vencido > 0) return ['p-vermelho', 'vencido'];
+  if (p.disponivel <= 0) return ['p-vermelho', 'zerado'];
+  if (p.minimo > 0 && p.disponivel < p.minimo) return ['p-amarelo', 'baixo'];
+  if (p.vence30 > 0) return ['p-amarelo', 'vence em breve'];
+  return ['p-verde', 'ok'];
+}
+function estPill(p) { var s = estStatus(p); return '<span class="pill ' + s[0] + '">' + s[1] + '</span>'; }
+
+/* ── entregas (agrupa as linhas de saída pelo protocolo) ── */
+function estEntregas(d) {
+  var g = {}, ordem = [];
+  d.movimentos.forEach(function (m) {
+    if (m.mov !== 'saida') return;
+    var e = g[m.entregaId];
+    if (!e) { e = g[m.entregaId] = { id: m.entregaId, data: m.data, hora: m.hora, pessoaId: m.pessoaId || '', pessoaNome: m.pessoaNome || '', pessoaCodigo: m.pessoaCodigo || '', itens: {}, estornado: m.estornado, estornoMotivo: m.estornoMotivo, usuarioId: m.usuarioId, usuarioNome: m.usuarioNome, temReceita: !!m.temReceita, prescritor: m.prescritor || '', obs: m.obs || '' }; ordem.push(m.entregaId); }
+    e.itens[m.produtoId] = Math.round(((e.itens[m.produtoId] || 0) + m.qtd) * 1000) / 1000;
+  });
+  return ordem.map(function (id) { return g[id]; });
+}
+function estItensTexto(tipo, e) { return Object.keys(e.itens).map(function (k) { return estQ(e.itens[k]) + ' ' + estUn(tipo, k) + ' · ' + estNomeProd(tipo, k); }).join(' | '); }
+function estPodeEstornar(d, m) { return d.perm.operador && !m.estornado && (d.perm.admin || (m.usuarioId === eu().id && m.data === d.hoje)); }
+
+/* ═════ tela do módulo ═════ */
+function rEstoque() {
+  var tipo = modEst();
+  if (!(tipo === 'mercado' ? temEstMercado() : temEstFarmacia())) return '<div class="empty">Sem acesso.</div>';
+  carregarEst(tipo);
+  var s = estD[tipo], d = s.d;
+  var h = '<div class="ini-ola" style="font-size:24px">' + EST_NOME[tipo] + '</div><div class="ini-sub">' +
+    (tipo === 'mercado' ? 'Entrada e saída de produtos, saldo em estoque e limite de entrega por pessoa.' : 'Medicamentos e materiais de saúde: receita registrada, validade e limite por pessoa.') + '</div>' + instTabs('inst' + tipo);
+  if (!d) return h + '<div class="card"><div class="empty">' + (s.erro ? esc(s.erro) : 'Carregando estoque…') + '</div></div>';
+  var op = d.perm.operador, r = d.resumo, tab = op ? estUI.tab : (estUI.tab === 'entregar' ? 'estoque' : estUI.tab);
+  h += '<div class="kpis" style="margin-bottom:6px">' + kpi(r.entregasHoje, 'Entregas hoje', 'dk') + kpi(r.pessoasMes, 'Pessoas no mês') +
+    kpi(r.abaixoMinimo + r.zerados, 'Baixo ou zerado', r.abaixoMinimo + r.zerados ? 'al' : '') + kpi(r.vencidos + r.vencendo, 'Vencido ou vencendo', r.vencidos + r.vencendo ? 'al' : '') + '</div>';
+  if (!op) h += '<div class="aviso" style="margin:8px 0;font-size:12.5px;line-height:1.5"><b>Somente consulta.</b> ' + (tipo === 'farmacia' ? 'Você vê saldos e movimentações, sem nomes de pessoas nem receitas (dados de saúde).' : 'Para lançar entradas e entregas, peça o acesso “Mercado solidário”.') + '</div>';
+  var abas = (op ? [['entregar', 'Entregar']] : []).concat([['estoque', 'Estoque'], ['historico', 'Histórico']]);
+  h += '<div class="tabs">' + abas.map(function (x) { return '<button data-a="estTab" data-v="' + x[0] + '" class="' + (tab === x[0] ? 'on' : '') + '">' + x[1] + '</button>'; }).join('') + '</div>';
+  h += tab === 'entregar' ? estTabEntregar(tipo, d) : tab === 'historico' ? estTabHistorico(tipo, d) : estTabEstoque(tipo, d);
+  if (tipo === 'farmacia') h += '<div class="card" style="font-size:11.5px;color:var(--tx2);line-height:1.55;background:#FFF8E6"><b>Privacidade:</b> receitas e nomes dos atendidos aparecem <b>somente para quem opera a farmácia</b>. A foto da receita fica numa pasta privada do Drive e cada consulta é registrada na auditoria.</div>';
+  return h;
+}
+
+/* ── aba Entregar ── */
+function estTabEntregar(tipo, d) {
+  var h = '<button class="btn pr" data-a="estNovaEntrega">+ Nova entrega</button><div class="gap"></div>';
+  var hj = estEntregas(d).filter(function (e) { return e.data === d.hoje; });
+  h += '<div class="sec" style="margin-left:0">Entregas de hoje</div>';
+  if (!hj.length) return h + '<div class="card"><div class="empty">Nenhuma entrega hoje.</div></div>';
+  return h + '<div class="card lp">' + hj.map(function (e) {
+    return '<div class="row cl" data-a="estEntregaAbrir" data-v="' + esc(e.id) + '"><div class="av" style="' + corAvatar(e.pessoaNome || '?') + '">' + ini(e.pessoaNome || '?') + '</div>' +
+      '<div class="info"><div class="nm">' + esc(e.pessoaNome || '—') + '</div><div class="sb">' + esc(e.hora) + ' · ' + esc(estItensTexto(tipo, e)) + '</div></div>' +
+      (e.estornado ? '<span class="pill p-cinza">estornada</span>' : '<span class="pill p-verde">' + esc(e.id) + '</span>') + '</div>';
+  }).join('') + '</div>';
+}
+
+/* ── aba Estoque ── */
+function estFiltrar(tipo, d) {
+  var q = normalizar(estUI.busca || '');
+  return d.produtos.filter(function (p) {
+    if (q && normalizar(p.nome + ' ' + p.apresentacao + ' ' + p.categoria + ' ' + p.codigo).indexOf(q) < 0) return false;
+    if (estUI.filtro === 'baixo') return p.ativa && p.minimo > 0 && p.disponivel < p.minimo && p.disponivel > 0;
+    if (estUI.filtro === 'zerado') return p.ativa && p.disponivel <= 0;
+    if (estUI.filtro === 'vencendo') return p.vencido > 0 || p.vence30 > 0;
+    if (estUI.filtro === 'inativo') return !p.ativa;
+    return p.ativa;
+  });
+}
+function estListaProdutos(tipo, d) {
+  var l = estFiltrar(tipo, d);
+  if (!l.length) return '<div class="empty" style="padding:14px">' + (d.produtos.length ? 'Nenhum produto neste filtro.' : 'Nenhum produto cadastrado ainda.') + '</div>';
+  return l.map(function (p) {
+    return '<div class="row cl" data-a="estProdutoAbrir" data-v="' + esc(p.id) + '"><div class="info"><div class="nm">' + esc(p.nome) + (p.apresentacao ? ' <span style="font-weight:500;color:var(--tx2)">' + esc(p.apresentacao) + '</span>' : '') + '</div>' +
+      '<div class="sb">' + esc([p.categoria, p.minimo > 0 ? 'mín. ' + estQ(p.minimo) : '', p.exigeReceita ? 'exige receita' : ''].filter(Boolean).join(' · ') || p.codigo) + '</div></div>' +
+      '<div style="text-align:right;margin-right:8px"><b style="font-size:17px">' + estQ(p.disponivel) + '</b><div class="sb">' + esc(p.unidade) + '</div></div>' + estPill(p) + '</div>';
+  }).join('');
+}
+function estTabEstoque(tipo, d) {
+  var h = '';
+  if (d.perm.operador) h += '<div class="g2"><button class="btn pr sm" data-a="estEntradaForm">+ Entrada</button><button class="btn gh sm" data-a="estProdutoForm">+ Novo produto</button></div><div class="gap"></div>';
+  h += '<div class="busca"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input id="est-busca" placeholder="Buscar produto" value="' + esc(estUI.busca) + '" autocomplete="off"></div>';
+  h += '<div class="tabs" style="overflow-x:auto">' + [['todos', 'Ativos'], ['baixo', 'Baixo'], ['zerado', 'Zerados'], ['vencendo', 'Validade'], ['inativo', 'Inativos']].map(function (x) {
+    return '<button data-a="estFiltro" data-v="' + x[0] + '" class="' + (estUI.filtro === x[0] ? 'on' : '') + '" style="white-space:nowrap;flex:1 0 auto">' + x[1] + '</button>'; }).join('') + '</div>';
+  h += '<div class="card lp" id="est-lista">' + estListaProdutos(tipo, d) + '</div>';
+  h += '<button class="btn gh sm" data-a="estExportar" data-v="estoque">Exportar estoque (CSV)</button><div class="gap"></div>';
+  return h;
+}
+
+/* ── aba Histórico ── */
+function estMovsPeriodo(d) {
+  var dias = estUI.hist === 'hoje' ? 0 : Number(estUI.hist) || 7, de = addDiasISO(d.hoje, -dias);
+  return d.movimentos.filter(function (m) {
+    if (m.data < de) return false;
+    var t = estUI.histTipo; return t === 'todos' || (t === 'entradas' && m.mov === 'entrada') || (t === 'entregas' && m.mov === 'saida') || (t === 'baixas' && m.mov === 'baixa');
+  });
+}
+function addDiasISO(iso, n) { var d = parseData(iso); d.setDate(d.getDate() + n); return isoData(d); }
+function estTabHistorico(tipo, d) {
+  var h = '<div class="tabs" style="overflow-x:auto">' + [['hoje', 'Hoje'], ['7', '7 dias'], ['30', '30 dias'], ['90', '90 dias']].map(function (x) {
+    return '<button data-a="estHist" data-v="' + x[0] + '" class="' + (estUI.hist === x[0] ? 'on' : '') + '" style="white-space:nowrap;flex:1 0 auto">' + x[1] + '</button>'; }).join('') + '</div>';
+  h += '<div class="tabs" style="overflow-x:auto">' + [['todos', 'Tudo'], ['entregas', 'Entregas'], ['entradas', 'Entradas'], ['baixas', 'Baixas']].map(function (x) {
+    return '<button data-a="estHistTipo" data-v="' + x[0] + '" class="' + (estUI.histTipo === x[0] ? 'on' : '') + '" style="white-space:nowrap;flex:1 0 auto">' + x[1] + '</button>'; }).join('') + '</div>';
+  var l = estMovsPeriodo(d), vistos = {}, linhas = [];
+  l.forEach(function (m) {
+    if (m.mov === 'saida') { if (vistos[m.entregaId]) return; vistos[m.entregaId] = 1; }
+    linhas.push(m);
+  });
+  if (!linhas.length) return h + '<div class="card"><div class="empty">Nada neste período.</div></div>';
+  var ent = {}; estEntregas(d).forEach(function (e) { ent[e.id] = e; });
+  var dia = '';
+  h += '<div class="card lp">';
+  linhas.forEach(function (m) {
+    if (m.data !== dia) { dia = m.data; h += '<div class="sec" style="margin:10px 12px 2px;font-size:11px">' + (m.data === d.hoje ? 'Hoje' : DIAS[parseData(m.data).getDay()] + ', ' + brCompleto(m.data)) + '</div>'; }
+    if (m.mov === 'saida') {
+      var e = ent[m.entregaId];
+      h += '<div class="row cl" data-a="estEntregaAbrir" data-v="' + esc(m.entregaId) + '"><div class="info"><div class="nm">Entrega' + (e && e.pessoaNome ? ' · ' + esc(e.pessoaNome) : '') + '</div><div class="sb">' + esc(m.hora) + ' · ' + esc(e ? estItensTexto(tipo, e) : '') + '</div></div>' +
+        (m.estornado ? '<span class="pill p-cinza">estornada</span>' : '<span class="pill p-dour">saída</span>') + '</div>';
+    } else {
+      var ent1 = m.mov === 'entrada';
+      h += '<div class="row cl" data-a="estMovAbrir" data-v="' + esc(m.id) + '"><div class="info"><div class="nm">' + (ent1 ? 'Entrada' : 'Baixa') + ' · ' + esc(estNomeProd(tipo, m.produtoId)) + '</div><div class="sb">' + esc(m.hora) + ' · ' + (ent1 ? '+' : '−') + estQ(m.qtd) + ' ' + esc(estUn(tipo, m.produtoId)) + ' · ' + esc(m.origem || '') + (m.parte ? ' · ' + esc(m.parte) : '') + '</div></div>' +
+        (m.estornado ? '<span class="pill p-cinza">estornada</span>' : '<span class="pill ' + (ent1 ? 'p-verde' : 'p-vermelho') + '">' + (ent1 ? 'entrada' : 'baixa') + '</span>') + '</div>';
+    }
+  });
+  h += '</div>';
+  if (d.truncado) h += '<div class="sb" style="font-size:11.5px;color:var(--tx3);margin:4px 6px">Mostrando as 600 movimentações mais recentes dos últimos 90 dias.</div>';
+  return h + '<button class="btn gh sm" data-a="estExportar" data-v="mov">Exportar movimentações (CSV)</button><div class="gap"></div>';
+}
+
+/* ═════ produto: detalhe, cadastro/edição ═════ */
+function estProdutoAbrir(id) {
+  var tipo = modEst(), d = estD[tipo].d, p = estProd(tipo, id); if (!p) return;
+  var op = d.perm.operador, ms = d.movimentos.filter(function (m) { return m.produtoId === id; }).slice(0, 6);
+  var h = '<h2>' + esc(p.nome) + '</h2><div class="sb" style="font-size:12.5px;color:#888;margin-bottom:8px">' + esc([p.codigo, p.categoria, p.apresentacao].filter(Boolean).join(' · ')) + ' ' + estPill(p) + '</div>' +
+    '<div class="card kvs" style="background:var(--bg);box-shadow:none"><div class="kv"><span>Disponível</span><b>' + estQ(p.disponivel) + ' ' + esc(p.unidade) + '</b></div>' +
+    (p.vencido > 0 ? '<div class="kv"><span>Vencido (dar baixa)</span><b style="color:var(--vermelho)">' + estQ(p.vencido) + ' ' + esc(p.unidade) + '</b></div>' : '') +
+    '<div class="kv"><span>Estoque mínimo</span><b>' + (p.minimo > 0 ? estQ(p.minimo) : '—') + '</b></div>' +
+    '<div class="kv"><span>Limite por pessoa</span><b>' + (p.limiteQtd > 0 ? estQ(p.limiteQtd) + ' ' + esc(p.unidade) + ' a cada ' + p.limiteDias + ' dias' : 'sem limite') + '</b></div>' +
+    (tipo === 'farmacia' ? '<div class="kv"><span>Receita</span><b>' + (p.exigeReceita ? 'obrigatória' : 'não exigida') + '</b></div>' : '') + '</div>';
+  h += '<div class="sec" style="margin-left:0">Lotes em estoque</div>';
+  h += p.lotes.length ? '<div class="card lp" style="box-shadow:none;background:var(--bg)">' + p.lotes.map(function (l) {
+    var venc = l.validade && l.validade < d.hoje, soon = l.validade && !venc && l.validade <= addDiasISO(d.hoje, 30);
+    return '<div class="row"><div class="info"><div class="nm">' + estQ(l.saldo) + ' ' + esc(p.unidade) + (l.lote ? ' · lote ' + esc(l.lote) : '') + '</div><div class="sb">' + (l.validade ? 'validade ' + brCompleto(l.validade) : 'sem validade') + ' · entrou em ' + br(l.data) + (l.origem ? ' · ' + esc(l.origem) : '') + (l.parte ? ' · ' + esc(l.parte) : '') + '</div></div>' +
+      (venc ? '<span class="pill p-vermelho">vencido</span>' : soon ? '<span class="pill p-amarelo">vence logo</span>' : '') + '</div>';
+  }).join('') + '</div>' : '<div class="empty" style="padding:10px">Sem saldo em lotes.</div>';
+  if (ms.length) h += '<div class="sec" style="margin-left:0">Últimas movimentações</div><div class="card lp" style="box-shadow:none;background:var(--bg)">' + ms.map(function (m) {
+    return '<div class="row"><div class="info"><div class="nm">' + (m.mov === 'entrada' ? '+' : '−') + estQ(m.qtd) + ' ' + esc(p.unidade) + ' · ' + (m.mov === 'entrada' ? 'entrada' : m.mov === 'saida' ? 'entrega' : 'baixa') + '</div><div class="sb">' + brCompleto(m.data) + ' ' + esc(m.hora) + ' · ' + esc(m.usuarioNome) + '</div></div>' + (m.estornado ? '<span class="pill p-cinza">estornada</span>' : '') + '</div>';
+  }).join('') + '</div>';
+  if (op) h += '<div class="gap"></div><div class="g2"><button class="btn pr sm" data-a="estEntradaForm" data-v="' + esc(id) + '">+ Entrada</button><button class="btn gh sm" data-a="estBaixaForm" data-v="' + esc(id) + '"' + (p.lotes.length ? '' : ' disabled') + '>Dar baixa</button></div><div class="gap"></div><button class="btn gh sm" data-a="estProdutoForm" data-v="' + esc(id) + '">Editar produto</button>';
+  abrirModal(h + '<div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>');
+}
+var EST_CATEG = { mercado: ['Alimentos', 'Higiene pessoal', 'Limpeza', 'Vestuário', 'Outros'], farmacia: ['Medicamento', 'Material de saúde', 'Higiene / curativo', 'Outros'] };
+var EST_UNIDADES = ['un', 'kg', 'g', 'L', 'pacote', 'caixa', 'cartela', 'comprimido', 'frasco', 'bisnaga', 'ampola'];
+function estProdutoForm(id) {
+  var tipo = modEst(), p = id ? estProd(tipo, id) : null; p = p || { nome: '', categoria: '', unidade: 'un', apresentacao: '', minimo: 0, limiteQtd: 0, limiteDias: 30, exigeReceita: false, ativa: true };
+  var h = '<h2>' + (id ? 'Editar produto' : 'Novo produto') + '</h2><div class="sb" style="font-size:12.5px;color:#888">' + EST_NOME[tipo] + '</div>' +
+    '<label>Nome *</label><input id="pf-nome" value="' + esc(p.nome) + '" placeholder="' + (tipo === 'mercado' ? 'Ex.: Arroz' : 'Ex.: Dipirona') + '" autocomplete="off">' +
+    (tipo === 'farmacia' ? '<label>Apresentação (dose / forma)</label><input id="pf-apr" value="' + esc(p.apresentacao) + '" placeholder="Ex.: 500 mg · comprimido">' : '<label>Apresentação (opcional)</label><input id="pf-apr" value="' + esc(p.apresentacao) + '" placeholder="Ex.: pacote 5 kg">') +
+    '<div class="g2"><div><label>Categoria</label><select id="pf-cat"><option value="">—</option>' + opts(EST_CATEG[tipo].map(function (c) { return [c, c]; }), p.categoria) + '</select></div>' +
+    '<div><label>Unidade</label><input id="pf-un" list="pf-un-l" value="' + esc(p.unidade) + '"><datalist id="pf-un-l">' + EST_UNIDADES.map(function (u) { return '<option value="' + u + '">'; }).join('') + '</datalist></div></div>' +
+    '<div class="g2"><div><label>Estoque mínimo</label><input id="pf-min" type="text" inputmode="decimal" value="' + (p.minimo > 0 ? estQ(p.minimo) : '') + '" placeholder="avisar abaixo de…"></div>' +
+    '<div><label>Limite por pessoa</label><input id="pf-lq" type="text" inputmode="decimal" value="' + (p.limiteQtd > 0 ? estQ(p.limiteQtd) : '') + '" placeholder="vazio = sem limite"></div></div>' +
+    '<label>Período do limite (dias)</label><input id="pf-ld" type="number" min="1" max="365" value="' + (p.limiteDias || 30) + '">' +
+    '<div class="sb" style="font-size:11.5px;color:var(--tx3);margin:2px 2px 6px">Ex.: limite 2 e período 30 = no máximo 2 unidades por pessoa a cada 30 dias.</div>' +
+    (tipo === 'farmacia' ? '<label style="display:flex;gap:10px;align-items:center;margin:8px 0"><input type="checkbox" id="pf-rec" style="width:20px;height:20px"' + (p.exigeReceita ? ' checked' : '') + '> <span>Exige receita para entregar</span></label>' : '') +
+    (id ? '<label style="display:flex;gap:10px;align-items:center;margin:8px 0"><input type="checkbox" id="pf-ativa" style="width:20px;height:20px"' + (p.ativa ? ' checked' : '') + '> <span>Produto ativo (aparece nas entregas)</span></label>' : '') +
+    '<div style="height:10px"></div><button class="btn pr" data-a="estProdutoSalvar" data-v="' + esc(id || '') + '">Salvar produto</button><div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>';
+  abrirModal(h);
+}
+function estProdutoSalvar(id) {
+  var tipo = modEst(), v = function (x) { var e = $(x); return e ? e.value.trim() : ''; };
+  if (v('pf-nome').length < 2) return toast('Informe o nome do produto.');
+  var d = { tipo: tipo, id: id || undefined, nome: v('pf-nome'), apresentacao: v('pf-apr'), categoria: v('pf-cat'), unidade: v('pf-un') || 'un', minimo: estNum(v('pf-min')), limiteQtd: estNum(v('pf-lq')), limiteDias: Number(v('pf-ld')) || 30,
+    exigeReceita: $('pf-rec') ? $('pf-rec').checked : false, ativa: $('pf-ativa') ? $('pf-ativa').checked : true };
+  carregando(true, 'Salvando...');
+  chamar('estSalvarProduto', d).then(function () { toast('Produto salvo ✓'); fechar(); return carregarEst(tipo, true); })
+    .catch(function (e) { toast(e.message, 5000); }).then(function () { carregando(false); render(); });
+}
+
+/* ═════ entrada de estoque e baixa ═════ */
+function estEntradaForm(pid) {
+  var tipo = modEst(), d = estD[tipo].d, ativos = d.produtos.filter(function (p) { return p.ativa; });
+  if (!ativos.length) { toast('Cadastre um produto primeiro.'); return estProdutoForm(''); }
+  var pr = pid ? estProd(tipo, pid) : null, far = tipo === 'farmacia';
+  var h = '<h2>Entrada de estoque</h2><div class="sb" style="font-size:12.5px;color:#888">' + EST_NOME[tipo] + '</div>' +
+    '<label>Produto *</label>' + (pr ? '<input id="en-prodtxt" value="' + esc(pr.nome + (pr.apresentacao ? ' ' + pr.apresentacao : '')) + '" disabled><input type="hidden" id="en-prod" value="' + esc(pr.id) + '">' :
+      '<select id="en-prod"><option value="">Escolha…</option>' + opts(ativos.map(function (p) { return [p.id, p.nome + (p.apresentacao ? ' · ' + p.apresentacao : '') + ' (' + estQ(p.disponivel) + ' ' + p.unidade + ')']; }), '') + '</select>') +
+    '<div class="g2"><div><label>Quantidade *</label><input id="en-qtd" type="text" inputmode="decimal" placeholder="0"></div><div><label>Origem</label><select id="en-origem">' + opts(d.origens.map(function (o) { return [o, o]; }), 'Doação') + '</select></div></div>' +
+    '<label>Doador / fornecedor</label><input id="en-parte" placeholder="Ex.: Supermercado X, campanha de Natal" autocomplete="off">' +
+    '<div class="g2"><div><label>Lote' + (far ? '' : ' (opcional)') + '</label><input id="en-lote"></div><div><label>Validade' + (far ? ' *' : ' (opcional)') + '</label><input id="en-val" type="date"></div></div>' +
+    '<label>Observação</label><input id="en-obs" maxlength="200">' +
+    '<div style="height:10px"></div><button class="btn pr" data-a="estEntradaSalvar">Registrar entrada</button><div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>';
+  abrirModal(h);
+}
+function estEntradaSalvar() {
+  var tipo = modEst(), v = function (x) { var e = $(x); return e ? e.value.trim() : ''; };
+  if (!v('en-prod')) return toast('Escolha o produto.');
+  if (!(estNum(v('en-qtd')) > 0)) return toast('Informe a quantidade.');
+  if (tipo === 'farmacia' && !v('en-val')) return toast('Informe a validade do medicamento.');
+  carregando(true, 'Registrando...');
+  chamar('estEntrada', { tipo: tipo, produtoId: v('en-prod'), qtd: estNum(v('en-qtd')), origem: v('en-origem'), parte: v('en-parte'), lote: v('en-lote'), validade: v('en-val'), obs: v('en-obs') })
+    .then(function () { toast('Entrada registrada ✓'); fechar(); return carregarEst(tipo, true); })
+    .catch(function (e) { toast(e.message, 5000); }).then(function () { carregando(false); render(); });
+}
+function estBaixaForm(pid) {
+  var tipo = modEst(), d = estD[tipo].d, p = estProd(tipo, pid); if (!p || !p.lotes.length) return toast('Sem saldo para dar baixa.');
+  var venc = p.lotes.filter(function (l) { return l.validade && l.validade < d.hoje; })[0];
+  var h = '<h2>Dar baixa</h2><div class="sb" style="font-size:12.5px;color:#888">' + esc(p.nome) + '</div>' +
+    '<label>Lote *</label><select id="ba-lote">' + p.lotes.map(function (l) { return '<option value="' + esc(l.id) + '"' + (venc && venc.id === l.id ? ' selected' : '') + '>' + estQ(l.saldo) + ' ' + esc(p.unidade) + (l.lote ? ' · lote ' + esc(l.lote) : '') + (l.validade ? ' · val. ' + brCompleto(l.validade) : '') + '</option>'; }).join('') + '</select>' +
+    '<div class="g2"><div><label>Quantidade *</label><input id="ba-qtd" type="text" inputmode="decimal" value="' + (venc ? estQ(venc.saldo) : '') + '"></div><div><label>Motivo *</label><select id="ba-motivo"><option value="">Escolha…</option>' + opts(d.motivos.map(function (o) { return [o, o]; }), venc ? 'Vencido' : '') + '</select></div></div>' +
+    '<label>Observação</label><input id="ba-obs" maxlength="200">' +
+    '<div class="aviso" style="margin:8px 0;font-size:12px">A baixa tira o item do estoque. Se lançou por engano, use “Estornar” no histórico.</div>' +
+    '<button class="btn pr" data-a="estBaixaSalvar" data-v="' + esc(pid) + '">Confirmar baixa</button><div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>';
+  abrirModal(h);
+}
+function estBaixaSalvar(pid) {
+  var tipo = modEst(), v = function (x) { var e = $(x); return e ? e.value.trim() : ''; };
+  if (!(estNum(v('ba-qtd')) > 0)) return toast('Informe a quantidade.');
+  if (!v('ba-motivo')) return toast('Escolha o motivo.');
+  carregando(true, 'Registrando...');
+  chamar('estBaixa', { tipo: tipo, produtoId: pid, loteId: v('ba-lote'), qtd: estNum(v('ba-qtd')), motivo: v('ba-motivo'), obs: v('ba-obs') })
+    .then(function () { toast('Baixa registrada ✓'); fechar(); return carregarEst(tipo, true); })
+    .catch(function (e) { toast(e.message, 5000); }).then(function () { carregando(false); render(); });
+}
+
+/* ═════ nova entrega ═════ */
+function estNovaEntrega() {
+  var tipo = modEst(), d = estD[tipo].d;
+  if (!d || !d.perm.operador) return;
+  if (!d.produtos.some(function (p) { return p.ativa && p.disponivel > 0; })) return toast('Não há produtos com saldo disponível.', 4000);
+  estFl = { tipo: tipo, pessoa: null, res: [], resumo: null, itens: [], receita: '', prescritor: '', obs: '', excecao: '', aut: false, fim: null, prodSel: '', qtdSel: '' };
+  estFlTela();
+}
+function estFlLer() {
+  if (!estFl || estFl.fim) return;
+  var g = function (id) { var e = $(id); return e ? e.value : null; };
+  var x;
+  if ((x = g('est-fl-presc')) !== null) estFl.prescritor = x;
+  if ((x = g('est-fl-obs')) !== null) estFl.obs = x;
+  if ((x = g('est-fl-exc')) !== null) estFl.excecao = x;
+  if ($('est-fl-aut')) estFl.aut = $('est-fl-aut').checked;
+  if ((x = g('est-fl-prod')) !== null) estFl.prodSel = x;
+  if ((x = g('est-fl-qtd')) !== null) estFl.qtdSel = x;
+}
+function resultadosBuscaEst(l) {
+  if (!l || !l.length) return '<div style="font-size:12px;color:var(--tx3);padding:8px 2px">Digite ao menos 3 letras do nome ou 4 dígitos do telefone. Quem ainda não tem cadastro: toque em “Cadastrar nova pessoa”.</div>';
+  return '<div class="card lp" style="box-shadow:none;background:var(--bg)">' + l.map(function (x) {
+    return '<div class="row cl" data-a="estFlPessoa" data-v="' + esc(x.id) + '"><div class="av" style="' + corAvatar(x.nome) + '">' + ini(x.nome) + '</div><div class="info"><div class="nm">' + esc(x.nome) + '</div>' +
+      '<div class="sb">' + esc(x.codigo) + (x.bairro ? ' · ' + esc(x.bairro) : '') + (x.fone4 ? ' · tel. final ' + esc(x.fone4) : '') + '</div></div><span class="pill ' + (x.igreja ? 'p-dour' : 'p-cinza') + '">' + (x.igreja ? 'da igreja' : 'Instituto') + '</span></div>';
+  }).join('') + '</div>';
+}
+/** Avisos de uma linha: saldo e limite por pessoa. */
+function estFlAviso(it) {
+  var f = estFl, p = estProd(f.tipo, it.produtoId); if (!p) return { bloqueia: true, txt: 'Produto não encontrado.' };
+  if (it.qtd > p.disponivel) return { bloqueia: true, txt: 'Saldo insuficiente (disponível ' + estQ(p.disponivel) + ').' };
+  if (p.limiteQtd > 0) {
+    var ja = (f.resumo && f.resumo.retirado && f.resumo.retirado[p.id]) || 0;
+    if (Math.round((ja + it.qtd) * 1000) / 1000 > p.limiteQtd) return { excede: true, txt: 'Passa do limite: já retirou ' + estQ(ja) + ' de ' + estQ(p.limiteQtd) + ' ' + p.unidade + ' nos últimos ' + p.limiteDias + ' dias.' };
+  }
+  return null;
+}
+function estFlTela() {
+  var f = estFl, tipo = f.tipo, d = estD[tipo].d, h = '<h2>Nova entrega</h2><div class="sb" style="font-size:12.5px;color:#888;margin-bottom:6px">' + EST_NOME[tipo] + '</div>';
+  if (f.fim) return estComprovante();
+  if (!f.pessoa) {
+    h += '<div class="sb" style="font-size:13px;margin:6px 0">1. Quem vai receber?</div><div class="busca"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input id="est-fl-busca" placeholder="Nome ou telefone (mín. 3 letras)" autocomplete="off"></div>' +
+      '<div id="est-fl-res">' + resultadosBuscaEst(f.res) + '</div><button class="btn gh" data-a="instNovoAtendido" data-v="estoque" style="margin-top:8px">+ Cadastrar nova pessoa</button>';
+  } else {
+    h += '<div style="display:flex;flex-wrap:wrap;gap:5px;margin:4px 0 8px"><span class="pill p-verde" data-a="estFlTrocar" style="cursor:pointer">' + esc(f.pessoa.nome) + ' · ' + esc(f.pessoa.codigo) + ' ✎</span></div>';
+    var ult = (f.resumo && f.resumo.ultimas) || [];
+    if (ult.length) h += '<div class="sb" style="font-size:11.5px;color:var(--tx2);margin:0 2px 8px;line-height:1.5"><b>Últimas retiradas:</b> ' + ult.map(function (u) {
+      return br(u.data) + ' (' + u.itens.map(function (i) { return estQ(i.qtd) + ' ' + estNomeProd(tipo, i.produtoId); }).join(', ') + ')'; }).join(' · ') + '</div>';
+    else h += '<div class="sb" style="font-size:11.5px;color:var(--tx2);margin:0 2px 8px">Primeira retirada registrada para esta pessoa.</div>';
+    h += '<div class="sb" style="font-size:13px;margin:6px 0">2. O que será entregue?</div>';
+    var temExc = false, bloq = false, exigeRec = false;
+    if (f.itens.length) {
+      h += '<div class="card lp" style="box-shadow:none;background:var(--bg)">' + f.itens.map(function (it, i) {
+        var av = estFlAviso(it), p = estProd(tipo, it.produtoId); if (av && av.excede) { temExc = true; if (!pode('institutoAdmin')) bloq = true; } if (av && av.bloqueia) bloq = true; if (p && p.exigeReceita) exigeRec = true;
+        return '<div class="row"><div class="info"><div class="nm">' + estQ(it.qtd) + ' ' + esc(p ? p.unidade : '') + ' · ' + esc(estNomeProd(tipo, it.produtoId)) + '</div>' +
+          (av ? '<div class="sb" style="color:' + (av.bloqueia ? 'var(--vermelho)' : '#b26a00') + '">' + esc(av.txt) + '</div>' : (p && p.exigeReceita ? '<div class="sb">exige receita</div>' : '')) + '</div>' +
+          '<button class="btn dg sm" data-a="estFlRem" data-v="' + i + '" style="padding:6px 9px">×</button></div>';
+      }).join('') + '</div>';
+    }
+    var disp = d.produtos.filter(function (p) { return p.ativa && p.disponivel > 0; });
+    h += '<div style="display:flex;gap:6px;align-items:flex-end;margin-top:6px"><div style="flex:1;min-width:0"><label style="margin-top:0">Produto</label><select id="est-fl-prod"><option value="">Escolha…</option>' +
+      opts(disp.map(function (p) { return [p.id, p.nome + (p.apresentacao ? ' · ' + p.apresentacao : '') + ' — ' + estQ(p.disponivel) + ' ' + p.unidade]; }), f.prodSel) + '</select></div>' +
+      '<div style="width:86px"><label style="margin-top:0">Qtd</label><input id="est-fl-qtd" type="text" inputmode="decimal" value="' + esc(f.qtdSel) + '" placeholder="1"></div>' +
+      '<button class="btn pr sm" data-a="estFlAdd" style="height:44px">Incluir</button></div>';
+    if (tipo === 'farmacia') {
+      h += '<div class="sb" style="font-size:13px;margin:12px 0 4px">3. Receita ' + (exigeRec ? '<b style="color:var(--vermelho)">(obrigatória)</b>' : '(opcional)') + '</div>';
+      if (f.receita) h += '<div style="display:flex;gap:10px;align-items:center"><img src="' + f.receita + '" alt="Receita" style="width:84px;height:84px;object-fit:cover;border-radius:10px;border:1px solid #ddd"><div style="flex:1"><div class="sb" style="font-size:12.5px">Receita anexada ✓</div><button class="btn gh sm" data-a="estFlRecRem" style="margin-top:4px">Remover / trocar</button></div></div>';
+      else h += '<div class="g2"><button class="btn gh sm" data-a="estFlFoto" data-v="cam">📷 Tirar foto</button><button class="btn gh sm" data-a="estFlFoto" data-v="gal">🖼 Galeria</button></div>';
+      h += '<label>Prescritor / CRM (opcional)</label><input id="est-fl-presc" value="' + esc(f.prescritor) + '" maxlength="80" placeholder="Ex.: Dra. Ana · CRM 12345">';
+    }
+    if (temExc) {
+      h += pode('institutoAdmin') ? '<div class="aviso" style="margin:10px 0 4px;font-size:12.5px;line-height:1.5"><b>Exceção ao limite.</b> Como coordenação, você pode autorizar com justificativa (fica registrada).</div><label>Justificativa da exceção *</label><input id="est-fl-exc" value="' + esc(f.excecao) + '" maxlength="200" placeholder="Ex.: família numerosa, receita contínua">'
+        : '<div class="aviso" style="margin:10px 0 4px;font-size:12.5px;line-height:1.5"><b>Limite excedido.</b> Reduza a quantidade ou peça a autorização da coordenação.</div>';
+    }
+    h += '<label>Observação (opcional)</label><input id="est-fl-obs" value="' + esc(f.obs) + '" maxlength="200">';
+    if (!f.pessoa.autorizou) h += '<label style="display:flex;gap:10px;align-items:flex-start;margin:10px 0 0;font-size:12.5px;color:#7a4b00"><input type="checkbox" id="est-fl-aut" style="width:20px;height:20px;flex:0 0 20px"' + (f.aut ? ' checked' : '') + '> <span>Confirmo que a pessoa <b>autorizou o uso dos dados</b> (LGPD) para esta entrega.</span></label>';
+    h += '<div style="height:12px"></div><button class="btn pr" data-a="estFlConfirmar"' + (f.itens.length && !bloq ? '' : ' disabled') + '>Registrar entrega</button>';
+  }
+  abrirModal(h + '<div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>');
+  if (!f.pessoa && $('est-fl-busca')) setTimeout(function () { try { $('est-fl-busca').focus(); } catch (e) {} }, 250);
+}
+function estFlPessoa(id) {
+  var x = (estFl.res || []).filter(function (r) { return r.id === id; })[0]; if (!x) return;
+  estFlEscolher({ id: x.id, nome: x.nome, codigo: x.codigo, autorizou: x.autorizou });
+}
+function estFlPessoaNova(p) { estFlEscolher({ id: p.id, nome: p.nome, codigo: p.codigo, autorizou: p.autorizou !== false }); }
+function estFlEscolher(p) {
+  var f = estFl; carregando(true, 'Consultando retiradas...');
+  chamar('estPessoaResumo', { tipo: f.tipo, pessoaId: p.id }).then(function (r) { f.pessoa = p; f.resumo = r; f.aut = false; estFlTela(); })
+    .catch(function (e) { toast(e.message, 5000); }).then(function () { carregando(false); });
+}
+function estFlAdd() {
+  estFlLer(); var f = estFl, pid = f.prodSel, q = estNum(f.qtdSel);
+  if (!pid) return toast('Escolha o produto.');
+  if (!(q > 0)) return toast('Informe a quantidade.');
+  var ex = f.itens.filter(function (i) { return i.produtoId === pid; })[0];
+  if (ex) ex.qtd = Math.round((ex.qtd + q) * 1000) / 1000; else f.itens.push({ produtoId: pid, qtd: q });
+  f.prodSel = ''; f.qtdSel = ''; estFlTela();
+}
+function estFlConfirmar() {
+  estFlLer(); var f = estFl, tipo = f.tipo;
+  if (!f.itens.length) return toast('Inclua ao menos um item.');
+  var exc = f.itens.some(function (it) { var a = estFlAviso(it); return a && a.excede; }), rec = f.itens.some(function (it) { var p = estProd(tipo, it.produtoId); return p && p.exigeReceita; });
+  if (exc && (!pode('institutoAdmin') || String(f.excecao).trim().length < 5)) return toast(pode('institutoAdmin') ? 'Informe a justificativa da exceção (mín. 5 letras).' : 'Limite excedido: peça a autorização da coordenação.', 4500);
+  if (tipo === 'farmacia' && rec && !f.receita) return toast('Algum item exige receita: anexe a foto.', 4500);
+  if (!f.pessoa.autorizou && !f.aut) return toast('Confirme a autorização de uso dos dados.');
+  carregando(true, f.receita ? 'Enviando receita...' : 'Registrando...');
+  chamar('estSaida', { tipo: tipo, pessoaId: f.pessoa.id, itens: f.itens, autorizou: f.pessoa.autorizou ? undefined : true, excecao: exc ? f.excecao : '', obs: f.obs,
+    receita: f.receita ? { imagem: f.receita, prescritor: f.prescritor } : undefined }).then(function (r) {
+    f.fim = r.entrega; return carregarEst(tipo, true);
+  }).then(function () { if (estFl && estFl.fim) estFlTela(); })
+    .catch(function (e) { toast(e.message, 6000); carregarEst(tipo, true).then(function () { if (estFl && !estFl.fim) estFlTela(); }); })
+    .then(function () { carregando(false); });
+}
+function estTextoComprovante(c, tipo) {
+  var d = parseData(c.data);
+  return '✅ *' + (tipo === 'farmacia' ? 'Retirada registrada' : 'Entrega registrada') + '* — ' + EST_NOME[tipo] + '\nProtocolo: ' + c.id + '\n\uD83D\uDCC5 ' + brCompleto(c.data) + ' às ' + c.hora + '\n\uD83D\uDC64 ' + c.pessoaNome + ' (' + c.pessoaCodigo + ')\n\n' +
+    c.itens.map(function (i) { return '• ' + estQ(i.qtd) + ' ' + i.unidade + ' · ' + i.nome; }).join('\n') + '\n\n\uD83D\uDE4F ' + igrNome();
+}
+function estComprovante() {
+  var c = estFl.fim, tipo = estFl.tipo;
+  abrirModal('<div class="perfil" style="padding-top:2px"><div class="av" style="background:var(--verde);color:#fff;width:64px;height:64px;font-size:28px;margin:0 auto 8px">✓</div><h2>Entrega registrada!</h2><p>Protocolo <b>' + esc(c.id) + '</b></p></div>' +
+    '<div class="card kvs" style="background:var(--bg);box-shadow:none"><div class="kv"><span>Atendido</span><b>' + esc(c.pessoaNome) + '</b></div>' +
+    c.itens.map(function (i) { return '<div class="kv"><span>' + esc(i.nome) + '</span><b>' + estQ(i.qtd) + ' ' + esc(i.unidade) + '</b></div>'; }).join('') +
+    (c.receita ? '<div class="kv"><span>Receita</span><b>anexada ✓</b></div>' : '') + (c.excecao ? '<div class="kv"><span>Exceção ao limite</span><b>autorizada</b></div>' : '') + '</div>' +
+    '<div class="gap"></div><button class="btn pr" data-a="estComprovante">Enviar comprovante (WhatsApp)</button><div class="gap"></div><button class="btn gh" data-a="estNovaEntrega">Nova entrega</button><div class="gap"></div><button class="btn gh" data-a="fechar">Concluir</button>');
+}
+function estComprovante2() {
+  var f = estFl; if (!f || !f.fim) return;
+  var t = estTextoComprovante(f.fim, f.tipo);
+  if (navigator.share) navigator.share({ text: t }).catch(function () {}); else window.open('https://wa.me/?text=' + encodeURIComponent(t), '_blank');
+}
+
+/* receita: foto da câmera ou da galeria, reduzida antes de enviar */
+function estFlFoto(modo) {
+  var inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; if (modo === 'cam') inp.setAttribute('capture', 'environment');
+  inp.style.display = 'none'; document.body.appendChild(inp);
+  inp.addEventListener('change', function () {
+    var arq = inp.files && inp.files[0]; if (inp.parentNode) inp.parentNode.removeChild(inp);
+    if (arq) processarReceita(arq, function (url) { estFlLer(); if (estFl) { estFl.receita = url; estFlTela(); } });
+  });
+  inp.click();
+}
+function processarReceita(file, pronto) {
+  var fr = new FileReader();
+  fr.onload = function () {
+    var img = new Image();
+    img.onload = function () {
+      var maxL = 1500, q = 0.72, url = '';
+      for (var t = 0; t < 9; t++) {
+        var k = Math.min(1, maxL / Math.max(img.width, img.height)), cv = document.createElement('canvas');
+        cv.width = Math.max(1, Math.round(img.width * k)); cv.height = Math.max(1, Math.round(img.height * k));
+        var cx = cv.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height); cx.drawImage(img, 0, 0, cv.width, cv.height);
+        url = cv.toDataURL('image/jpeg', q);
+        if (url.length < 380000) break;
+        maxL = Math.round(maxL * 0.85); q = Math.max(0.5, q - 0.04);
+      }
+      if (url.length >= 380000) return toast('Não foi possível reduzir esta imagem. Tente outra foto.');
+      pronto(url);
+    };
+    img.onerror = function () { toast('Arquivo de imagem inválido.'); };
+    img.src = fr.result;
+  };
+  fr.readAsDataURL(file);
+}
+
+/* ═════ detalhe de uma entrega, receita e estorno ═════ */
+function estEntregaAbrir(id) {
+  var tipo = modEst(), d = estD[tipo].d, e = estEntregas(d).filter(function (x) { return x.id === id; })[0]; if (!e) return;
+  var h = '<h2>Entrega ' + esc(e.id) + '</h2><div class="sb" style="font-size:12.5px;color:#888;margin-bottom:6px">' + brCompleto(e.data) + ' às ' + esc(e.hora) + ' · ' + EST_NOME[tipo] + '</div>';
+  if (e.estornado) h += '<div class="aviso" style="margin:6px 0;font-size:12.5px"><b>Entrega estornada</b> — os itens voltaram ao estoque.' + (e.estornoMotivo ? '<br>Motivo: ' + esc(e.estornoMotivo) : '') + '</div>';
+  h += '<div class="card kvs" style="background:var(--bg);box-shadow:none">' + (e.pessoaNome ? '<div class="kv"><span>Atendido</span><b>' + esc(e.pessoaNome) + ' · ' + esc(e.pessoaCodigo) + '</b></div>' : '') +
+    Object.keys(e.itens).map(function (k) { return '<div class="kv"><span>' + esc(estNomeProd(tipo, k)) + '</span><b>' + estQ(e.itens[k]) + ' ' + esc(estUn(tipo, k)) + '</b></div>'; }).join('') +
+    '<div class="kv"><span>Lançado por</span><b>' + esc(e.usuarioNome) + '</b></div>' + (e.prescritor ? '<div class="kv"><span>Prescritor</span><b>' + esc(e.prescritor) + '</b></div>' : '') +
+    (e.obs ? '<div class="kv"><span>Observação</span><b>' + esc(e.obs) + '</b></div>' : '') + '</div>';
+  if (e.temReceita && d.perm.receita) h += '<div class="gap"></div><button class="btn gh" data-a="estVerReceita" data-v="' + esc(e.id) + '">Ver receita</button>';
+  if (d.perm.operador && !e.estornado) h += '<div class="gap"></div><button class="btn gh" data-a="estComprovanteDe" data-v="' + esc(e.id) + '">Reenviar comprovante (WhatsApp)</button>';
+  if (estPodeEstornar(d, { usuarioId: e.usuarioId, data: e.data, estornado: e.estornado })) h += '<div class="gap"></div><button class="btn dg" data-a="estEstornarAbrir" data-v="e|' + esc(e.id) + '">Estornar entrega</button>';
+  abrirModal(h + '<div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>');
+}
+function estComprovanteDe(id) {
+  var tipo = modEst(), d = estD[tipo].d, e = estEntregas(d).filter(function (x) { return x.id === id; })[0]; if (!e) return;
+  var c = { id: e.id, data: e.data, hora: e.hora, pessoaNome: e.pessoaNome, pessoaCodigo: e.pessoaCodigo, itens: Object.keys(e.itens).map(function (k) { var p = estProd(tipo, k); return { nome: estNomeProd(tipo, k), unidade: p ? p.unidade : 'un', qtd: e.itens[k] }; }) };
+  var t = estTextoComprovante(c, tipo);
+  if (navigator.share) navigator.share({ text: t }).catch(function () {}); else window.open('https://wa.me/?text=' + encodeURIComponent(t), '_blank');
+}
+function estVerReceita(id) {
+  var tipo = modEst(); carregando(true, 'Abrindo receita...');
+  chamar('estReceita', { tipo: tipo, entregaId: id }).then(function (r) {
+    abrirModal('<h2>Receita · ' + esc(id) + '</h2>' + (r.prescritor ? '<div class="sb" style="font-size:12.5px;color:#888">' + esc(r.prescritor) + '</div>' : '') +
+      '<img src="' + r.img + '" alt="Receita" style="width:100%;border-radius:10px;margin-top:8px;border:1px solid #ddd"><div class="gap"></div><button class="btn gh" data-a="estEntregaAbrir" data-v="' + esc(id) + '">‹ Voltar</button><div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>');
+  }).catch(function (e) { toast(e.message, 5000); }).then(function () { carregando(false); });
+}
+function estMovAbrir(id) {
+  var tipo = modEst(), d = estD[tipo].d, m = d.movimentos.filter(function (x) { return x.id === id; })[0]; if (!m) return;
+  var ent = m.mov === 'entrada', p = estProd(tipo, m.produtoId);
+  var h = '<h2>' + (ent ? 'Entrada' : 'Baixa') + '</h2><div class="sb" style="font-size:12.5px;color:#888;margin-bottom:6px">' + brCompleto(m.data) + ' às ' + esc(m.hora) + '</div>';
+  if (m.estornado) h += '<div class="aviso" style="margin:6px 0;font-size:12.5px"><b>Lançamento estornado.</b>' + (m.estornoMotivo ? '<br>Motivo: ' + esc(m.estornoMotivo) : '') + '</div>';
+  h += '<div class="card kvs" style="background:var(--bg);box-shadow:none"><div class="kv"><span>Produto</span><b>' + esc(estNomeProd(tipo, m.produtoId)) + '</b></div><div class="kv"><span>Quantidade</span><b>' + (ent ? '+' : '−') + estQ(m.qtd) + ' ' + esc(p ? p.unidade : '') + '</b></div>' +
+    '<div class="kv"><span>' + (ent ? 'Origem' : 'Motivo') + '</span><b>' + esc(m.origem || '—') + '</b></div>' + (m.parte ? '<div class="kv"><span>Doador / fornecedor</span><b>' + esc(m.parte) + '</b></div>' : '') +
+    (m.lote ? '<div class="kv"><span>Lote</span><b>' + esc(m.lote) + '</b></div>' : '') + (m.validade ? '<div class="kv"><span>Validade</span><b>' + brCompleto(m.validade) + '</b></div>' : '') +
+    '<div class="kv"><span>Lançado por</span><b>' + esc(m.usuarioNome) + '</b></div>' + (m.obs ? '<div class="kv"><span>Observação</span><b>' + esc(m.obs) + '</b></div>' : '') + '</div>';
+  if (estPodeEstornar(d, m)) h += '<div class="gap"></div><button class="btn dg" data-a="estEstornarAbrir" data-v="m|' + esc(m.id) + '">Estornar lançamento</button>';
+  abrirModal(h + '<div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>');
+}
+function estEstornarAbrir(v) {
+  var p = String(v).split('|'); estForm = { tipo: modEst(), por: p[0], id: p.slice(1).join('|') };
+  abrirModal('<h2>Estornar</h2><div class="aviso" style="margin:8px 0;font-size:12.5px;line-height:1.5">Os itens ' + (p[0] === 'e' ? 'da entrega voltam ao estoque' : 'voltam ao estado anterior') + '. O registro continua no histórico, marcado como estornado.</div>' +
+    '<label>Motivo do estorno *</label><textarea id="es-motivo" rows="3" maxlength="200" placeholder="Ex.: lançado em duplicidade"></textarea>' +
+    '<div style="height:10px"></div><button class="btn dg" data-a="estEstornarOk">Confirmar estorno</button><div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>');
+}
+function estEstornarOk() {
+  var f = estForm, mt = $('es-motivo') ? $('es-motivo').value.trim() : ''; if (!f) return;
+  if (mt.length < 3) return toast('Informe o motivo.');
+  carregando(true, 'Estornando...');
+  var req = { tipo: f.tipo, motivo: mt }; if (f.por === 'e') req.entregaId = f.id; else req.movId = f.id;
+  chamar('estEstornar', req).then(function () { toast('Estornado ✓'); fechar(); return carregarEst(f.tipo, true); })
+    .catch(function (e) { toast(e.message, 5000); }).then(function () { carregando(false); render(); });
+}
+
+/* ═════ exportar CSV (abre no Excel) ═════ */
+function csvCel(v) { v = String(v == null ? '' : v); return /[;"\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+function estExportar(modo) {
+  var tipo = modEst(), d = estD[tipo].d, linhas = [];
+  if (modo === 'estoque') {
+    linhas.push(['Código', 'Produto', 'Apresentação', 'Categoria', 'Unidade', 'Disponível', 'Vencido', 'Mínimo', 'Limite por pessoa', 'Período (dias)', 'Exige receita', 'Situação']);
+    d.produtos.forEach(function (p) { linhas.push([p.codigo, p.nome, p.apresentacao, p.categoria, p.unidade, estQ(p.disponivel), estQ(p.vencido), estQ(p.minimo), estQ(p.limiteQtd), p.limiteDias, p.exigeReceita ? 'sim' : 'não', estStatus(p)[1]]); });
+  } else {
+    var op = d.perm.operador;
+    linhas.push(['Data', 'Hora', 'Movimento', 'Protocolo', 'Produto', 'Quantidade', 'Unidade', 'Lote', 'Validade', 'Origem / motivo', 'Doador / fornecedor'].concat(op ? ['Pessoa', 'Código'] : []).concat(['Lançado por', 'Observação', 'Estornado']));
+    estMovsPeriodo(d).slice().reverse().forEach(function (m) {
+      linhas.push([brCompleto(m.data), m.hora, m.mov === 'entrada' ? 'Entrada' : m.mov === 'saida' ? 'Entrega' : 'Baixa', m.entregaId || '', estNomeProd(tipo, m.produtoId), estQ(m.qtd), estUn(tipo, m.produtoId), m.lote, m.validade ? brCompleto(m.validade) : '', m.origem, m.parte]
+        .concat(op ? [m.pessoaNome || '', m.pessoaCodigo || ''] : []).concat([m.usuarioNome, m.obs, m.estornado ? 'sim' : '']));
+    });
+  }
+  var csv = '\uFEFF' + linhas.map(function (l) { return l.map(csvCel).join(';'); }).join('\r\n');
+  var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = (tipo === 'mercado' ? 'mercado' : 'farmacia') + '_' + (modo === 'estoque' ? 'estoque' : 'movimentacoes') + '_' + d.hoje + '.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  toast('Arquivo gerado ✓');
+}
+
 } catch (err) { mostrarErro((err && err.message) || String(err), 'inicialização'); }
 })();
 

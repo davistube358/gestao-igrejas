@@ -1,7 +1,7 @@
 /* 2Gather — service worker.
    Guarda só a TELA do app (HTML, JS, CSS, ícones) para abrir rápido e sem internet.
    Dados nunca passam por aqui: as chamadas ao servidor (Apps Script) não são guardadas. */
-var VERSAO = '2gather-v37';
+var VERSAO = '2gather-v38';
 var ARQUIVOS = ['./', './index.html', './app.js', './config.js', './manifest.webmanifest',
   './lib/leaflet.js', './lib/leaflet.css',
   './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png'];
