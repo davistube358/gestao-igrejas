@@ -1,6 +1,17 @@
-2Gather v36 — INSTITUTO (várias especialidades e profissionais, agenda pastoral, prontuário cifrado)
+2Gather v37 — Treinamentos/Reuniões + Cursos do Instituto
 
-1) Apps Script: cole o Codigo_v31.txt no Código.gs → menu 2Gather → 1. Configurar / migrar (cria as abas InstAgendas, InstAtendimentos e InstProntuario) → Implantar → Gerenciar implantações → lápis → Nova versão.
-2) GitHub: substitua app.js, index.html e sw.js.
+O QUE MUDOU
+- O módulo "Cursos" (líderes e membros) agora se chama "Treinamentos/Reuniões" (tipos: Reunião e Treinamento; cadastros antigos do tipo "Curso" continuam aparecendo).
+- Instituto → nova aba "Cursos" (ao lado de "Atendimentos"), para inglês, informática etc., com a mesma lógica: recorrência, chamada por data, responsáveis pela chamada (professores) e convite por WhatsApp.
+- Participantes dos cursos: membros da igreja E pessoas da comunidade, buscados na base única (código) ou cadastrados na hora ("+ Cadastrar nova pessoa"), sempre com autorização LGPD. Nome e telefone são lidos da base pelo servidor.
+- Novo acesso: "Instituto: cursos (criar e fazer chamada)" — já vem marcado para Secretaria, Pastor e Master. O acesso antigo passou a se chamar "Treinamentos/Reuniões (criar e fazer chamada)".
+- Cada módulo só enxerga os próprios registros. Professor marcado só como responsável pela chamada vê apenas o curso dele (sem telefones).
+
+COMO ATUALIZAR
+1) Apps Script: Código.gs → apague tudo, cole o Codigo_v32.txt e salve → recarregue a planilha → menu 2Gather → 1. Configurar / migrar (a aba "Reunioes" ganha a coluna "modulo") → Implantar → Gerenciar implantações → lápis → Nova versão.
+2) GitHub: substitua app.js e sw.js (index.html não muda).
 3) NÃO apague a propriedade INST_KEY (Propriedades do script): ela decifra as anotações clínicas. Guarde uma cópia em local seguro.
-4) No app: Instituto → "+ Adicionar profissional" (cria o acesso e a agenda). Repita para cada profissional/especialidade.
+4) Para um professor gerir cursos: Perfil → Usuários → tocar no usuário → marcar "Instituto: cursos (criar e fazer chamada)".
+
+OBSERVAÇÃO
+- Cursos já cadastrados no módulo antigo ficam em Treinamentos/Reuniões. Para tê-los no Instituto, recrie em Instituto → Cursos.

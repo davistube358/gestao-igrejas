@@ -20,8 +20,8 @@ var ICONE_2G = 'icons/icon-192.png';
 // padrão antes da 1ª configuração: no app instalado (PWA) é o 2Gather; na página antiga, o logo embutido
 var LOGO_PADRAO = (window.APP_CONFIG && window.APP_CONFIG.apiUrl) ? ICONE_2G : document.getElementById('h-img').getAttribute('src');
 var LOGO = LOGO_PADRAO;        // ícone usado na barra superior e nas telas internas
-var VERSAO_APP = 36;
-var SERVIDOR_ESPERADO = 31;      // versão do Código.gs que acompanha este app
+var VERSAO_APP = 37;
+var SERVIDOR_ESPERADO = 32;      // versão do Código.gs que acompanha este app
 var EXIGE_HOSPEDADO = true;      // segurança: o app só funciona pelo endereço oficial (dados nunca trafegam pela URL)
 
 /* ───────── armazenamento ───────── */
@@ -610,7 +610,7 @@ function sincronizar(avisar) {
       locaisE.forEach(function (l) { ne = ne.filter(function (e) { return chaveE(e) !== chaveE(l); }); ne.push(l); });
       db.pessoas = np; db.encontros = ne; db.gcs = d.gcs || [];
       db.equipe = d.equipe || []; db.pendentes = d.pendentes || 0; db.alertas = d.alertas || []; db.eventos = d.eventos || [];
-        db.reunioes = d.reunioes || []; db.aulas = d.aulas || []; db.jovens = d.jovens || null; db.waApi = !!d.waApi; db.equipeGC = d.equipeGC || []; db.mural = d.mural || []; db.voluntariosLV = d.voluntariosLV || [];
+        db.reunioes = d.reunioes || []; db.aulas = d.aulas || []; db.equipeInst = d.equipeInst || []; db.jovens = d.jovens || null; db.waApi = !!d.waApi; db.equipeGC = d.equipeGC || []; db.mural = d.mural || []; db.voluntariosLV = d.voluntariosLV || [];
       atualizarConfig(d.config).then(function (mudou) { if (mudou) render(); });
       if (r.usuario && cfg.usuario && r.usuario.id === cfg.usuario.id) { cfg.usuario = r.usuario; setTimeout(verificarConsentimento, 300); }
       cfg.ultima = agora(); salvarCfg(); salvarDB();
@@ -742,7 +742,7 @@ var ABAS_GER = [
   { id: 'cultos', nome: 'Cultos', ic: '<path d="M12 2v5M9.5 4.5h5"/><path d="M4 21V11l8-4 8 4v10"/><path d="M10 21v-5h4v5"/>', perm: function () { return temCultos(); } },
   { id: 'lv', nome: 'Lar de Vida', ic: IC_LAR, perm: function () { return pode('lvDirecionar'); } },
   { id: 'membros', nome: 'Pessoas', ic: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><path d="M11 8a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM7.5 15c.8-1.4 2-2 3.5-2s2.7.6 3.5 2"/>', perm: function () { return pode('consulta'); } },
-  { id: 'cursos', nome: 'Cursos', ic: IC_CURSO, perm: function () { return temCursos(); } },
+  { id: 'cursos', nome: 'Treinamentos', ic: IC_CURSO, perm: function () { return temCursos(); } },
   { id: 'usuarios', nome: 'Usuários', ic: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/>', admin: true },
   { id: 'conta', nome: 'Conta', ic: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>' }
 ];
@@ -883,8 +883,8 @@ function render() {
   validarContexto();
   var g = cfg.modo === 'gc' ? gcPor(cfg.gcAtual) : null;
   $('h-img').src = g ? iconeGC(g.id) : LOGO;
-  var TIT = { instituto: 'Instituto', instagenda: 'Agenda', lvcasas: 'Lar de Vida', relatorios: 'Relatórios', financeiro: 'Financeiro', usuarios: 'Usuários e acessos', avisos: 'Avisos', gcs: 'GCs' };
-  $('h-tit').textContent = TIT[cfg.aba] ? TIT[cfg.aba] : cfg.modo === 'lv' ? igrNome() : cfg.aba === 'config' ? 'Configurações' : cfg.aba === 'cultos' ? 'Cultos e eventos' : cfg.aba === 'membros' ? 'Cadastro de pessoas' : cfg.aba === 'cursos' ? 'Cursos e reuniões' : cfg.modo === 'ger' ? igrNome() : (g ? g.nome : 'Meu GC');
+  var TIT = { instituto: 'Instituto', instcursos: 'Cursos do Instituto', instagenda: 'Agenda', lvcasas: 'Lar de Vida', relatorios: 'Relatórios', financeiro: 'Financeiro', usuarios: 'Usuários e acessos', avisos: 'Avisos', gcs: 'GCs' };
+  $('h-tit').textContent = TIT[cfg.aba] ? TIT[cfg.aba] : cfg.modo === 'lv' ? igrNome() : cfg.aba === 'config' ? 'Configurações' : cfg.aba === 'cultos' ? 'Cultos e eventos' : cfg.aba === 'membros' ? 'Cadastro de pessoas' : cfg.aba === 'cursos' ? 'Treinamentos/Reuniões' : cfg.modo === 'ger' ? igrNome() : (g ? g.nome : 'Meu GC');
   $('h-papel').textContent = PAPEL_NOME[papel()] || '';
   var raizes = abasAtuais().map(function (a) { return a.id; }), naRaiz = raizes.indexOf(cfg.aba) >= 0 && !cursoAberto;
   $('b-voltar').classList.toggle('hide', naRaiz && !(cfg.modo === 'gc' && ehGestor() && cfg.aba === 'painel'));
@@ -899,7 +899,7 @@ function render() {
   var f = {
     bi: rBI, gcs: rGCs, novo: rNovoGC, usuarios: rUsuarios, conta: rConta,
     painel: rPainel, pessoas: rPessoas, chamada: rChamada, alertas: rAlertas, mais: rMaisGC,
-    lv: rLVGer, lar: rLar, instituto: rInstituto, instagenda: rInstAgenda, lvcasas: rLVVol, avisos: rAvisos, relatorios: rRelatorios, financeiro: rFinanceiro, lvnovo: rLVNovo, lvmeus: rLVMeus, cultos: rCultos, config: rConfig, membros: rConsulta, cursos: rCursos
+    lv: rLVGer, lar: rLar, instituto: rInstituto, instcursos: rInstCursos, instagenda: rInstAgenda, lvcasas: rLVVol, avisos: rAvisos, relatorios: rRelatorios, financeiro: rFinanceiro, lvnovo: rLVNovo, lvmeus: rLVMeus, cultos: rCultos, config: rConfig, membros: rConsulta, cursos: rCursos
   }[cfg.aba];
   if (cfg.modo === 'gc' && !g) {
     $('main').innerHTML = '<div class="empty">' + (db.gcs.length ? 'Você ainda não está vinculado a um GC. Fale com a liderança.' : 'Carregando dados do GC...') + '</div>';
@@ -1005,7 +1005,7 @@ function modulosDisponiveis() {
   if (pode('consulta') && cfg.modo !== 'gc') m.push({ id: 'membros', nome: 'Membros', ic: IC_MEM, cor: '#d6572f' });
   else if (cfg.modo === 'gc') m.push({ id: 'pessoas', nome: 'Pessoas', ic: IC_MEM, cor: '#d6572f' });
   if (ger && podeFin()) m.push({ id: 'financeiro', nome: 'Financeiro', ic: IC_FIN, cor: '#c99a1a' });
-  if (ger && temCursos()) m.push({ id: 'cursos', nome: 'Cursos', ic: IC_CURSO, cor: '#0f8a8a' });
+  if (ger && temCursos()) m.push({ id: 'cursos', nome: 'Treinamentos', ic: IC_CURSO, cor: '#0f8a8a' });
   if (ger) m.push({ id: 'relatorios', nome: 'Relatórios', ic: IC_REL, cor: '#5E6470' });
   m.push({ id: 'ministerios', nome: 'Ministérios', ic: IC_MIN, cor: '#9aa0a6', breve: true });
   m.forEach(function (x) {
@@ -1441,7 +1441,7 @@ function blocoConta() {
     (ehAdmin() ? '<button class="btn gh" data-a="aba" data-v="usuarios">Usuários e acessos' + (db.pendentes ? ' · <b style="color:var(--vermelho)">' + db.pendentes + ' aguardando</b>' : '') + '</button><div class="gap"></div>' : '') +
     (podeFin() && cfg.modo !== 'ger' ? '<button class="btn gh" data-a="aba" data-v="financeiro">Consolidado financeiro</button><div class="gap"></div>' : '') +
     (temCultos() && cfg.modo !== 'ger' ? '<button class="btn gh" data-a="aba" data-v="cultos">Cultos e eventos</button><div class="gap"></div>' : '') +
-    (temCursos() && cfg.modo !== 'ger' ? '<button class="btn gh" data-a="aba" data-v="cursos">Cursos e reuniões</button><div class="gap"></div>' : '') +
+    (temCursos() && cfg.modo !== 'ger' ? '<button class="btn gh" data-a="aba" data-v="cursos">Treinamentos/Reuniões</button><div class="gap"></div>' : '') +
     (temInst() && cfg.modo !== 'ger' ? '<button class="btn gh" data-a="aba" data-v="instituto">Instituto</button><div class="gap"></div>' : '') +
     (pode('consulta') && cfg.modo !== 'ger' ? '<button class="btn gh" data-a="aba" data-v="membros">Consultar cadastro de pessoas</button><div class="gap"></div>' : '') +
     (pode('visitantes') && cfg.modo !== 'lv' ? '<button class="btn gh" data-a="aba" data-v="lvnovo">Cadastrar visitante do culto</button><div class="gap"></div>' : '') +
@@ -2516,7 +2516,7 @@ var IC_CULTO = '<path d="M12 2v5M9.5 4.5h5"/><path d="M4 21V11l8-4 8 4v10"/><pat
 var ABA_CULTOS = { id: 'cultos', nome: 'Cultos', ic: IC_CULTO };
 var TIPOS_EVENTO = ['Culto', 'Evento', 'Conferência', 'Santa Ceia', 'Batismo', 'Outro'];
 var SEM_MASTER_C = ['prontuario', 'pacienteNomes'];
-var PERM_ORDEM = ['config', 'eventos', 'visitantes', 'financeiro', 'recados', 'relFin', 'rede', 'gc', 'gcEvento', 'lvDirecionar', 'lvLiberar', 'lvVisitas', 'usuarios', 'consulta', 'cursos', 'instituto', 'institutoAdmin', 'agendaPastoral', 'prontuario', 'pacienteNomes'];
+var PERM_ORDEM = ['config', 'eventos', 'visitantes', 'financeiro', 'recados', 'relFin', 'rede', 'gc', 'gcEvento', 'lvDirecionar', 'lvLiberar', 'lvVisitas', 'usuarios', 'consulta', 'cursos', 'instituto', 'institutoAdmin', 'institutoCursos', 'agendaPastoral', 'prontuario', 'pacienteNomes'];
 var PERM_NOME_C = {
   config: 'Configurações da igreja', eventos: 'Criar e liberar cultos/eventos', visitantes: 'Cadastrar visitantes no culto',
   financeiro: 'Lançar dízimos e ofertas do culto', recados: 'Recados e tema do culto', relFin: 'Relatório financeiro',
@@ -2524,16 +2524,16 @@ var PERM_NOME_C = {
   lvDirecionar: 'Lar de Vida: direcionar visitantes', lvLiberar: 'Lar de Vida: liberar casas',
   lvVisitas: 'Lar de Vida: registrar visitas', usuarios: 'Aprovar usuários e acessos',
   consulta: 'Consultar cadastro de pessoas (telefone, endereço)',
-  cursos: 'Cursos, reuniões e treinamentos',
+  cursos: 'Treinamentos/Reuniões (criar e fazer chamada)', institutoCursos: 'Instituto: cursos (criar e fazer chamada)',
   instituto: 'Instituto: ver agendas e agendar (sem ver nomes)', institutoAdmin: 'Instituto: criar agendas e horários',
   agendaPastoral: 'Agenda pastoral: agendar atendimentos', prontuario: 'Prontuário e atendimentos (somente o profissional)', pacienteNomes: 'Ver nomes dos pacientes nas agendas'
 };
-var TODAS_C = ['config', 'eventos', 'visitantes', 'financeiro', 'recados', 'relFin', 'rede', 'gc', 'gcEvento', 'lvDirecionar', 'lvLiberar', 'usuarios', 'consulta', 'cursos', 'instituto', 'institutoAdmin', 'agendaPastoral'];
+var TODAS_C = ['config', 'eventos', 'visitantes', 'financeiro', 'recados', 'relFin', 'rede', 'gc', 'gcEvento', 'lvDirecionar', 'lvLiberar', 'usuarios', 'consulta', 'cursos', 'instituto', 'institutoAdmin', 'institutoCursos', 'agendaPastoral'];
 var PERM_PADRAO_C = {
   master: TODAS_C, pastor: TODAS_C,
   supervisor: ['visitantes', 'rede', 'gc', 'gcEvento', 'lvDirecionar', 'lvLiberar'],
   lider: ['gc', 'gcEvento', 'lvLiberar'], discipulo: ['gc', 'lvVisitas'],
-  secretaria: ['eventos', 'visitantes', 'recados', 'consulta', 'instituto', 'institutoAdmin', 'agendaPastoral'], tesouraria: ['financeiro', 'relFin'], voluntario: ['visitantes'], voluntarioLV: ['visitantes', 'lvVisitas'],
+  secretaria: ['eventos', 'visitantes', 'recados', 'consulta', 'instituto', 'institutoAdmin', 'institutoCursos', 'agendaPastoral'], tesouraria: ['financeiro', 'relFin'], voluntario: ['visitantes'], voluntarioLV: ['visitantes', 'lvVisitas'],
   voluntarioInst: ['instituto'], profissional: ['instituto', 'prontuario']
 };
 
@@ -2604,7 +2604,7 @@ function abasExtras() {
   if (cfg.modo === 'lv' && pode('visitantes')) x.push('lvnovo', 'lvmeus');
   if (cfg.modo === 'lv' && pode('lvVisitas')) x.push('lvcasas');
   x.push('avisos');
-  if (temInst()) x.push('instituto', 'instagenda');
+  if (temInst()) x.push('instituto', 'instagenda'); if (temInstCursos()) x.push('instcursos');
   if (pode('rede')) x.push('novo');
   if (pode('config')) x.push('config');
   if (pode('visitantes')) x.push('lvnovo', 'lvmeus');
@@ -3497,13 +3497,13 @@ function graficoCultos(titulo, P) {
 var TIPOS_REUNIAO = ['Curso', 'Reunião', 'Treinamento'];
 var RECORRENCIAS = [['unica', 'Única'], ['diaria', 'Diária'], ['semanal', 'Semanal'], ['quinzenal', 'Quinzenal'], ['mensal', 'Mensal']];
 var cursoAberto = '', filtroCurso = 'ativos', rnDraft = null, buscaPart = '';
-function REUS() { return (db.reunioes || []).filter(function (r) { return !r.deleted; }); }
+function REUS(mod) { mod = mod === undefined ? modCursos() : mod; return (db.reunioes || []).filter(function (r) { return !r.deleted && (r.modulo || '') === mod; }); }
 function reuniaoPor(id) { var l = db.reunioes || []; for (var i = 0; i < l.length; i++) if (l[i].id === id) return l[i]; return null; }
 function aulasDe(rid) { return (db.aulas || []).filter(function (a) { return !a.deleted && a.reuniaoId === rid; }).sort(function (a, b) { return a.data < b.data ? -1 : 1; }); }
 function aulaPor(id) { var l = db.aulas || []; for (var i = 0; i < l.length; i++) if (l[i].id === id) return l[i]; return null; }
-function temCursos() { return pode('cursos') || REUS().length > 0; }
+function temCursos() { return pode('cursos') || REUS('').length > 0; }
 function proximaAula(rid) { var hj = hoje(); return aulasDe(rid).filter(function (a) { return a.data >= hj; })[0] || null; }
-function aulasHojeMinhas() { var hj = hoje(); return (db.aulas || []).filter(function (a) { return !a.deleted && a.data === hj && reuniaoPor(a.reuniaoId); }); }
+function aulasHojeMinhas(mod) { mod = mod === undefined ? modCursos() : mod; var hj = hoje(); return (db.aulas || []).filter(function (a) { var r = a.deleted ? null : reuniaoPor(a.reuniaoId); return !!r && a.data === hj && (r.modulo || '') === mod; }); }
 function presencaPart(rid, chave) {
   var p = 0, m = 0;
   aulasDe(rid).forEach(function (a) { var x = (a.presencas || {})[chave]; if (x) { m++; if (x === 'P') p++; } });
@@ -3527,7 +3527,7 @@ function msgConvite(r, p) {
   return txt + '\nContamos com você! 🙏';
 }
 function linkWA(fn, txt) { var f = fone(fn); return f.length >= 10 ? 'https://wa.me/' + (f.length <= 11 ? '55' : '') + f + '?text=' + encodeURIComponent(txt) : ''; }
-function rCursos() {
+function rCursos_v36() {
   if (cursoAberto && reuniaoPor(cursoAberto)) return rCursoDetalhe(reuniaoPor(cursoAberto));
   cursoAberto = '';
   var gere = pode('cursos'), hj = hoje(), h = '';
@@ -3562,8 +3562,8 @@ function rCursos() {
   return h;
 }
 function rCursoDetalhe(r) {
-  var gere = pode('cursos'), hj = hoje(), as = aulasDe(r.id), parts = (r.participantes || []).slice().sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt-BR'); });
-  var h = '<button class="btn gh sm" data-a="rnVoltar" style="margin-bottom:12px">‹ Cursos e reuniões</button>' +
+  var gere = pode(r.modulo === 'inst' ? 'institutoCursos' : 'cursos'), hj = hoje(), as = aulasDe(r.id), parts = (r.participantes || []).slice().sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt-BR'); });
+  var h = '<button class="btn gh sm" data-a="rnVoltar" style="margin-bottom:12px">‹ ' + (r.modulo === 'inst' ? 'Cursos' : 'Treinamentos/Reuniões') + '</button>' +
     '<div class="card"><div style="font-size:11px;color:#888;font-weight:800;letter-spacing:.6px">' + esc((r.tipo || 'Reunião').toUpperCase()) + '</div>' +
     '<div style="font-size:18px;font-weight:800;margin:2px 0 6px">' + esc(r.titulo) + '</div>' +
     '<div style="font-size:13px;color:#555;line-height:1.6">' + (r.tema ? '<b>Tema:</b> ' + esc(r.tema) + '<br>' : '') + '<b>Local:</b> ' + esc(r.local || '—') + '<br>' + quandoTexto(r) +
@@ -3594,18 +3594,18 @@ function rCursoDetalhe(r) {
 }
 function nomesResp(r) {
   var ids = String(r.responsaveis || '').split(',').filter(Boolean), eq = {};
-  (db.equipe || []).forEach(function (u) { eq[u.id] = u.nome; });
+  (db.equipe || []).concat(db.equipeInst || []).forEach(function (u) { eq[u.id] = u.nome; });
   return ids.map(function (id) { return eq[id] || (id === eu().id ? eu().nome : 'líder'); }).join(', ');
 }
 /* formulário */
 function rnForm(r) {
   r = r || {};
-  var eq = (db.equipe || []).filter(function (u) { return u.papel !== 'voluntario'; }).sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt-BR'); });
+  var eq = (modDe(r) === 'inst' ? (db.equipeInst || []) : (db.equipe || [])).filter(function (u) { return u.papel !== 'voluntario'; }).sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt-BR'); });
   var resp = String(r.responsaveis || '').split(',').filter(Boolean);
   var rec = r.recorrencia || 'unica';
-  return '<div class="g2"><div><label>Tipo</label><select id="rn-tipo">' + opts(TIPOS_REUNIAO.map(function (t) { return [t, t]; }), r.tipo || 'Reunião') + '</select></div>' +
+  return '<div class="g2"><div><label>Tipo</label><select id="rn-tipo">' + opts(tiposReuniao(r.tipo, modDe(r)).map(function (t) { return [t, t]; }), r.tipo || (modDe(r) === 'inst' ? 'Curso' : 'Reunião')) + '</select></div>' +
     '<div><label>Recorrência</label><select id="rn-rec">' + opts(RECORRENCIAS, rec) + '</select></div></div>' +
-    '<label>Título *</label><input id="rn-titulo" value="' + esc(r.titulo) + '" placeholder="Ex.: Treinamento de líderes">' +
+    '<label>Título *</label><input id="rn-titulo" value="' + esc(r.titulo) + '" placeholder="' + (modDe(r) === 'inst' ? 'Ex.: Inglês básico' : 'Ex.: Treinamento de líderes') + '">' +
     '<label>Tema / assunto</label><input id="rn-tema" value="' + esc(r.tema) + '">' +
     '<label>Local</label><input id="rn-local" value="' + esc(r.local) + '" placeholder="Ex.: Templo — sala 2">' +
     '<div class="g2"><div><label>' + (rec === 'unica' ? 'Data *' : '1º encontro *') + '</label><input id="rn-data" type="date" value="' + esc(r.data || hoje()) + '"></div>' +
@@ -3613,7 +3613,7 @@ function rnForm(r) {
     '<div id="rn-recwrap" class="' + (rec === 'unica' ? 'hide' : '') + '"><div class="g2"><div><label>Até a data</label><input id="rn-ate" type="date" value="' + esc(r.ate) + '"></div>' +
     '<div><label>ou nº de encontros</label><input id="rn-qtd" type="number" min="1" max="60" inputmode="numeric" value="' + esc(r.qtd) + '" placeholder="ex.: 8"></div></div>' +
     '<div style="font-size:11px;color:#999;margin-top:4px">O app gera uma chamada para cada data (máximo 60). Datas sem chamada são ajustadas se você mudar a recorrência.</div></div>' +
-    '<label>Quem pode fazer a chamada (além de quem tem acesso a Cursos)</label><div style="border:1.5px solid #e2e2e2;border-radius:11px;padding:2px 10px;max-height:180px;overflow-y:auto">' +
+    '<label>Quem pode fazer a chamada (além de quem tem acesso a ' + (modDe(r) === 'inst' ? 'Cursos do Instituto' : 'Treinamentos/Reuniões') + ')</label><div style="border:1.5px solid #e2e2e2;border-radius:11px;padding:2px 10px;max-height:180px;overflow-y:auto">' +
     (eq.length ? eq.map(function (u) {
       return '<label style="display:flex;align-items:center;gap:10px;margin:0;padding:8px 2px;border-bottom:1px solid #f2f2f2;font-size:13px;color:#222;font-weight:600">' +
         '<input type="checkbox" class="rn-resp" value="' + esc(u.id) + '" style="width:19px;height:19px;flex:0 0 19px"' + (resp.indexOf(u.id) >= 0 ? ' checked' : '') + '>' +
@@ -3630,7 +3630,7 @@ function lerRnForm() {
            recorrencia: rec, ate: rec === 'unica' ? '' : v('rn-ate'), qtd: rec === 'unica' ? '' : v('rn-qtd'), responsaveis: resp.join(','), obs: v('rn-obs') };
 }
 function rnNovo() {
-  abrirModal('<h2>Novo curso, reunião ou treinamento</h2>' + rnForm(null) +
+  abrirModal('<h2>' + (modCursos() === 'inst' ? 'Novo curso' : 'Nova reunião ou treinamento') + '</h2>' + rnForm(null) +
     '<div style="font-size:11.5px;color:#888;margin-top:10px">Depois de salvar, você escolhe os participantes e envia os convites pelo WhatsApp.</div>' +
     '<div style="height:14px"></div><button class="btn pr" data-a="rnSalvar">Salvar e escolher participantes</button><div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>');
 }
@@ -3653,7 +3653,7 @@ function rnSalvar(id) {
   if (!f.titulo) return toast('Informe o título.');
   if (!f.data) return toast('Informe a data.');
   if (f.recorrencia !== 'unica' && !f.ate && !f.qtd) return toast('Informe até quando ou quantos encontros.');
-  if (f.ate && f.ate < f.data) return toast('A data final é antes do 1º encontro.');
+  if (f.ate && f.ate < f.data) return toast('A data final é antes do 1º encontro.'); f.modulo = modCursos();
   if (id) f.id = id;
   salvarReuniaoSrv(f, id ? 'Atualizado ✓' : null).then(function (r) {
     fechar(); cursoAberto = r.id; render();
@@ -3661,7 +3661,7 @@ function rnSalvar(id) {
   }).catch(function () {});
 }
 function rnExcluir(id) {
-  if (!confirm('Excluir este curso/reunião e todas as chamadas?')) return;
+  if (!confirm('Excluir ' + ((reuniaoPor(id) || {}).modulo === 'inst' ? 'este curso' : 'este treinamento/reunião') + ' e todas as chamadas?')) return;
   salvarReuniaoSrv({ id: id, deleted: true }, 'Excluído').then(function () { fechar(); cursoAberto = ''; db.reunioes = db.reunioes.filter(function (x) { return x.id !== id; }); salvarDB(); render(); }).catch(function () {});
 }
 /* participantes */
@@ -3678,7 +3678,7 @@ function candidatosPart() {
   });
   return out.sort(function (a, b) { return a.nome.localeCompare(b.nome, 'pt-BR'); });
 }
-function rnPart(id) {
+function rnPart(id) { if ((reuniaoPor(id) || {}).modulo === 'inst') return rnPartInst(id);
   var r = reuniaoPor(id); if (!r) return;
   partSel = {}; (r.participantes || []).forEach(function (p) { partSel[p.chave] = p; });
   buscaPart = '';
@@ -3805,9 +3805,9 @@ function auSalvar() {
     toast('Chamada salva · ' + p + ' presente(s) ✓');
   }).catch(function (e) { toast(e.message, 4500); }).then(function () { carregando(false); });
 }
-function blocoCursosHoje() {
-  var l = aulasHojeMinhas(); if (!l.length) return '';
-  return '<div class="card" style="border-left:5px solid var(--azul)"><h3 style="margin-bottom:4px">Cursos e reuniões de hoje</h3>' + l.map(function (a) {
+function blocoCursosHoje(mod) {
+  var l = aulasHojeMinhas(mod === undefined ? '' : mod); if (!l.length) return '';
+  return '<div class="card" style="border-left:5px solid var(--azul)"><h3 style="margin-bottom:4px">' + (mod === 'inst' ? 'Cursos de hoje' : 'Treinamentos e reuniões de hoje') + '</h3>' + l.map(function (a) {
     var r = reuniaoPor(a.reuniaoId), n = Object.keys(a.presencas || {}).length;
     return '<div class="row cl" data-a="rnChamada" data-v="' + esc(a.id) + '"><div class="info"><div class="nm">' + esc(r.titulo) + (a.inicio ? ' · ' + esc(a.inicio) : '') + '</div>' +
       '<div class="sb">' + esc(r.local || '') + '</div></div><span class="pill ' + (n ? 'p-verde' : 'p-amarelo') + '">' + (n ? 'chamada feita' : 'fazer chamada') + '</span></div>';
@@ -4841,11 +4841,12 @@ var IC_INST = '<path d="M12 21s-7-4.4-9-9.2C1.8 8.6 3.6 5 7 5c2 0 3.4 1.1 5 3 1.
 var instD = { t: 0, carregando: false, agendas: [], ags: [], pac: {}, profissionais: [], perm: {}, hoje: '' };
 var instSel = { agenda: '', data: '' }, instFl = null, instCd = null, instAgForm = null, instBuscaT = null;
 function instLimpar() { instD = { t: 0, carregando: false, agendas: [], ags: [], pac: {}, profissionais: [], perm: {}, hoje: '' }; instSel = { agenda: '', data: '' }; instFl = null; instCd = null; instAgForm = null; }
-function temInst() { return pode('instituto') || pode('agendaPastoral') || pode('prontuario'); }
+function temInst() { return pode('instituto') || pode('agendaPastoral') || pode('prontuario') || temInstCursos(); }
 function agendaPor(id) { return instD.agendas.filter(function (a) { return a.id === id; })[0] || null; }
 function podeAgendarNa(ag) { return ag && (ag.dono || (ag.tipo === 'pastoral' ? pode('agendaPastoral') : pode('instituto'))); }
 /** Dados do Instituto ficam só na memória (nunca no armazenamento do aparelho): são dados sensíveis. */
 function carregarInst(forcar) {
+  if (!(pode('instituto') || pode('agendaPastoral') || pode('prontuario') || pode('institutoCursos'))) { instD.t = instD.t || Date.now(); return Promise.resolve(); }
   if (instD.carregando || (!forcar && instD.t && Date.now() - instD.t < 45000)) return Promise.resolve();
   instD.carregando = true;
   return chamar('instDados', {}).then(function (r) {
@@ -4916,11 +4917,11 @@ function profissionaisDe(lista) {
 var ESPECIALIDADES_SUG = ['Clínica geral', 'Pediatria', 'Ginecologia', 'Cardiologia', 'Psicologia', 'Odontologia', 'Nutrição', 'Fisioterapia', 'Enfermagem', 'Oftalmologia', 'Dermatologia', 'Ortopedia', 'Fonoaudiologia', 'Serviço social'];
 
 /* ═════ página inicial do Instituto ═════ */
-function rInstituto() {
+function rInstituto() { if (!temInstSaude() && temInstCursos()) { cfg.aba = 'instcursos'; salvarCfg(); return rInstCursos(); }
   if (!temInst()) return '<div class="empty">Sem acesso.</div>';
   carregarInst();
   if (!instD.t) return '<div class="card"><div class="empty">Carregando agendas…</div></div>';
-  var h = '<div class="ini-ola" style="font-size:24px">Instituto</div><div class="ini-sub">Atendimentos de saúde, atendimento pastoral e ações sociais.</div>';
+  var h = '<div class="ini-ola" style="font-size:24px">Instituto</div><div class="ini-sub">Atendimentos de saúde, atendimento pastoral e ações sociais.</div>' + instTabs('instituto');
   var minhas = instD.agendas.filter(function (a) { return a.dono; }), hj = hoje();
   if (minhas.length) {
     var lista = instD.ags.filter(function (a) { return a.data === hj && a.status !== 'cancelado' && minhas.some(function (m) { return m.id === a.agendaId; }); }).sort(function (a, b) { return a.hora < b.hora ? -1 : 1; });
@@ -4939,7 +4940,7 @@ function rInstituto() {
   var gr = gruposEsp(instD.agendas), nProf = profissionaisDe(instD.agendas).length;
   h += '<div class="stats">' + statCard('Atendimentos hoje', visiveis) + statCard('Horários livres hoje', livresHoje) +
     statCard('Especialidades', gr.length, nProf + (nProf === 1 ? ' profissional' : ' profissionais')) + statCard('Agendas ativas', instD.agendas.filter(function (a) { return a.ativa; }).length) + '</div>';
-  // filtro por especialidade
+  h += blocoCursosHoje('inst'); // filtro por especialidade
   h += '<div class="sec sec-l"><span>Agendas</span>' + (instD.perm.admin ? '<a data-a="instAgendaForm" data-v="">+ Nova agenda</a>' : '') + '</div>';
   if (gr.length > 1) h += '<div class="chips"><button data-a="instFiltroEsp" data-v="" class="' + (!instFiltroEsp ? 'on' : '') + '">Todas <span>' + instD.agendas.length + '</span></button>' +
     gr.map(function (g) { return '<button data-a="instFiltroEsp" data-v="' + esc(g.chave) + '" class="' + (instFiltroEsp === g.chave ? 'on' : '') + '">' + esc(g.nome) + ' <span>' + g.agendas.length + '</span></button>'; }).join('') + '</div>';
@@ -4971,7 +4972,7 @@ function rInstituto() {
     '<button class="mod" data-a="instNovoAtendido"><span class="mi" style="background:#fff!important;color:#E5484D"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span><span class="mn">Novo atendido</span></button>' +
     '<button class="mod breve" data-a="instEmBreve" data-v="Mercado solidário"><span class="mi" style="background:#fff!important;color:#C9930A"><svg viewBox="0 0 24 24"><path d="M6 6h15l-1.5 9h-12z"/><path d="M6 6L5 3H2"/><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/></svg></span><span class="mn">Mercado</span><span class="mb">em breve</span></button>' +
     '<button class="mod breve" data-a="instEmBreve" data-v="Farmácia solidária"><span class="mi" style="background:#fff!important;color:#16A36A"><svg viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="12" rx="2"/><path d="M8 9V6a4 4 0 0 1 8 0v3M12 12v6M9 15h6"/></svg></span><span class="mn">Farmácia</span><span class="mb">em breve</span></button>' +
-    (temCursos() ? '<button class="mod" data-a="aba" data-v="cursos"><span class="mi" style="background:#fff!important;color:#0F8A8A"><svg viewBox="0 0 24 24">' + IC_CURSO + '</svg></span><span class="mn">Cursos</span></button>' : '') + '</div>';
+    (temInstCursos() ? '<button class="mod" data-a="aba" data-v="instcursos"><span class="mi" style="background:#fff!important;color:#0F8A8A"><svg viewBox="0 0 24 24">' + IC_CURSO + '</svg></span><span class="mn">Cursos</span></button>' : '') + '</div>';
   h += '<div class="card" style="font-size:11.5px;color:var(--tx2);line-height:1.55;background:#FFF8E6"><b>Privacidade:</b> os nomes dos pacientes e as anotações do atendimento aparecem <b>somente para o profissional responsável</b> pela agenda. ' +
     'Secretaria, voluntários, pastor e master veem apenas “horário ocupado” e o protocolo.</div>';
   return h;
@@ -5165,7 +5166,7 @@ function instRemConfirmar(hora) {
 
 /* ═════ cadastro de atendido (base única) ═════ */
 function instNovoAtendido(origem) {
-  instCd = { igreja: null, res: [], origem: origem === 'fluxo' ? 'fluxo' : '' };
+  instCd = { igreja: null, res: [], origem: origem === 'fluxo' ? 'fluxo' : origem === 'curso' ? 'curso' : '' };
   fotoNovaP = null; fpAlvo = { pid: '', direto: false};
   instCdTela();
 }
@@ -5196,7 +5197,7 @@ function resultadosBuscaCd(l) {
 function instCdConcluir(p, msg) {
   toast(msg || 'Atendido vinculado ✓ ' + p.codigo, 4000);
   if (instCd && instCd.origem === 'fluxo' && instFl) { instFl.pessoa = { id: p.id, nome: p.nome, codigo: p.codigo, autorizou: p.autorizou !== false }; instCd = null; instFluxo(); }
-  else { instCd = null; fechar(); }
+  else if (instCd && instCd.origem === 'curso' && partInstCtx) { instCd = null; partInstNovo(p); } else { instCd = null; fechar(); }
 }
 function instCdSalvar() {
   var v = function (id) { var e = $(id); return e ? e.value.trim() : ''; };
@@ -5618,6 +5619,8 @@ var ACOES = {
   padraoServidor: function () { salvarServidor(URL_PADRAO); },
   novaPessoa: function () { abrirPessoa(null); }, abrirPessoa: function (v) { abrirPessoa(v); }, salvarPessoa: function () { salvarPessoa(); }, modulo: abrirModulo,
     instProfForm: instProfForm, instProfSalvar: instProfSalvar,
+    instTab: function (v) { if (v !== cfg.aba) { cursoAberto = ''; irAba(v); } },
+    partInstAdd: partInstAdd, partInstRem: partInstRem, partInstSalvar: partInstSalvar,
     instProfAgenda: function (v) { var p = v.split('|'); instAgendaDe(p[0], p[1], p[2]); },
     instAgendaProf: function (v) { var pr = profissionaisDe(instD.agendas).filter(function (x) { return x.id === v; })[0]; instAgendaForm('', { profissionalId: v, nome: pr ? pr.nome + ' — ' : '' }); },
     instFiltroEsp: function (v) { instFiltroEsp = v || ''; render(); },
@@ -5726,6 +5729,7 @@ document.addEventListener('input', function (ev) {
   if (ev.target.id === 'pf-user') ev.target.dataset.manual = '1';
   if (ev.target.id === 'fl-busca' && instFl) instBuscar(ev.target.value, function (l) { instFl.res = l; if ($('fl-res')) $('fl-res').innerHTML = resultadosBusca(l); });
   if (ev.target.id === 'cd-busca' && instCd) instBuscar(ev.target.value, function (l) { instCd.res = l; if ($('cd-res')) $('cd-res').innerHTML = resultadosBuscaCd(l); });
+  if (ev.target.id === 'busca-partinst' && partInstCtx) instBuscar(ev.target.value, function (l) { if (partInstCtx) { partInstCtx.res = l; if ($('pi-res')) $('pi-res').innerHTML = partInstResultados(); } });
   if (ev.target.id === 'busca-add') { buscaAdd = ev.target.value.toLowerCase(); pintarAdd(); }
   if (ev.target.id === 'busca-gc') { buscaGC = ev.target.value.toLowerCase(); var pos2 = ev.target.selectionStart; render(); var el2 = $('busca-gc'); el2.focus(); el2.setSelectionRange(pos2, pos2); }
 });
@@ -5818,6 +5822,141 @@ else mostrarTela('s-login');
 
 window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }, sincronizar: sincronizar, metricas: metricas, pendentes: pendentesLocais };
 
+
+/* ═══════════════════ v37: TREINAMENTOS/REUNIÕES × CURSOS DO INSTITUTO ═══════════════════
+   Treinamentos/Reuniões = membros e lideranças (antigo módulo "Cursos").
+   Cursos do Instituto   = inglês, informática etc.: membros da igreja e pessoas da comunidade
+                           (base única de pessoas, com código e autorização LGPD). */
+function modCursos() { return cfg.aba === 'instcursos' ? 'inst' : ''; }
+function modDe(r) { return r && r.id ? (r.modulo || '') : modCursos(); }
+function temInstCursos() { return pode('institutoCursos') || REUS('inst').length > 0; }
+function temInstSaude() { return pode('instituto') || pode('agendaPastoral') || pode('prontuario'); }
+function tiposReuniao(cur, mod) {
+  if ((mod === undefined ? modCursos() : mod) === 'inst') return ['Curso'];
+  var l = ['Reunião', 'Treinamento'];
+  if (cur && l.indexOf(cur) < 0) l.push(cur);      // cadastros antigos do tipo "Curso" continuam visíveis
+  return l;
+}
+function instTabs(cur) {
+  if (!(temInstCursos() && temInstSaude())) return '';     // abas só quando a pessoa tem os dois lados
+  return '<div class="tabs">' + [['instituto', 'Atendimentos'], ['instcursos', 'Cursos']].map(function (x) {
+    return '<button data-a="instTab" data-v="' + x[0] + '" class="' + (cur === x[0] ? 'on' : '') + '">' + x[1] + '</button>';
+  }).join('') + '</div>';
+}
+function rInstCursos() {
+  if (!temInstCursos()) return '<div class="empty">Sem acesso.</div>';
+  var r0 = cursoAberto ? reuniaoPor(cursoAberto) : null;
+  return (r0 && r0.modulo === 'inst' ? '' : instTabs('instcursos')) + rCursos();
+}
+/** Lista de treinamentos/reuniões (aba Treinamentos) ou de cursos (aba Cursos do Instituto): mesma lógica. */
+function rCursos() {
+  var mod = modCursos(), inst = mod === 'inst', r0 = cursoAberto ? reuniaoPor(cursoAberto) : null;
+  if (r0 && (r0.modulo || '') === mod) return rCursoDetalhe(r0);
+  cursoAberto = '';
+  var gere = pode(inst ? 'institutoCursos' : 'cursos'), hj = hoje(), h = '';
+  var hojeL = aulasHojeMinhas(mod);
+  if (hojeL.length) h += '<div class="card" style="border-left:5px solid var(--dourado)"><h3>Chamadas de hoje</h3>' + hojeL.map(function (a) {
+    var r = reuniaoPor(a.reuniaoId), n = Object.keys(a.presencas || {}).length;
+    return '<div class="row cl" data-a="rnChamada" data-v="' + esc(a.id) + '"><div class="info"><div class="nm">' + esc(r.titulo) + (a.inicio ? ' · ' + esc(a.inicio) : '') + '</div>' +
+      '<div class="sb">' + esc(r.local || '') + ' · ' + (r.participantes || []).length + ' participante(s)</div></div>' +
+      '<span class="pill ' + (n ? 'p-verde' : 'p-amarelo') + '">' + (n ? 'chamada feita' : 'fazer chamada') + '</span></div>';
+  }).join('') + '</div>';
+  if (gere) h += '<button class="btn" data-a="rnNovo">' + (inst ? '+ Novo curso' : '+ Nova reunião ou treinamento') + '</button><div class="gap"></div>';
+  var l = REUS(mod).filter(function (r) {
+    var ult = aulasDe(r.id).slice(-1)[0], fim = ult ? ult.data : r.data;
+    return filtroCurso === 'ativos' ? fim >= hj : fim < hj;
+  }).sort(function (a, b) { var pa = proximaAula(a.id), pb = proximaAula(b.id); return String(pa ? pa.data : a.data).localeCompare(String(pb ? pb.data : b.data)); });
+  h += '<div class="tabs">' + [['ativos', 'Em andamento'], ['encerrados', 'Encerrados']].map(function (x) {
+    return '<button data-a="filtroCurso" data-v="' + x[0] + '" class="' + (filtroCurso === x[0] ? 'on' : '') + '">' + x[1] + '</button>'; }).join('') + '</div>';
+  if (!l.length) return h + '<div class="card"><div class="empty">' + (filtroCurso === 'ativos' ? (gere ? 'Nenhum ' + (inst ? 'curso' : 'treinamento ou reunião') + ' em andamento.' : 'Você não é responsável por nenhuma chamada em andamento.') : 'Nenhum encerrado.') + '</div></div>';
+  l.forEach(function (r) {
+    var as = aulasDe(r.id), feitas = as.filter(function (a) { return Object.keys(a.presencas || {}).length; }), prox = proximaAula(r.id);
+    var tp = 0, tm = 0; feitas.forEach(function (a) { for (var k in a.presencas) { tm++; if (a.presencas[k] === 'P') tp++; } });
+    var pend = gere ? (r.participantes || []).filter(function (p) { return !p.enviadoEm; }).length : 0;
+    h += '<div class="card cl" data-a="rnAbrir" data-v="' + esc(r.id) + '" style="cursor:pointer">' +
+      '<div style="display:flex;justify-content:space-between;gap:8px"><div style="min-width:0"><div style="font-size:11px;color:#888;font-weight:800;letter-spacing:.6px">' + esc((r.tipo || 'Reunião').toUpperCase()) + '</div>' +
+      '<div style="font-size:16px;font-weight:800;margin-top:2px">' + esc(r.titulo) + '</div></div>' +
+      (prox ? '<span class="pill p-dour">' + (prox.data === hj ? 'hoje' : 'próx. ' + br(prox.data)) + '</span>' : '<span class="pill p-cinza">encerrado</span>') + '</div>' +
+      '<div style="font-size:12.5px;color:#555;margin-top:6px;line-height:1.55">' + (r.tema ? '<b>Tema:</b> ' + esc(r.tema) + '<br>' : '') +
+      '<b>Local:</b> ' + esc(r.local || '—') + '<br>' + quandoTexto(r) + '</div>' +
+      '<div class="mini"><div><b>' + (r.participantes || []).length + '</b><span>participantes</span></div><div><b>' + feitas.length + '/' + as.length + '</b><span>chamadas</span></div>' +
+      '<div><b>' + (tm ? pct(tp / tm) : '—') + '</b><span>presença</span></div><div><b style="color:' + (pend ? 'var(--vermelho)' : '') + '">' + (gere ? pend : '—') + '</b><span>convites a enviar</span></div></div></div>';
+  });
+  return h;
+}
+/* ── participantes dos cursos do Instituto: busca na base única (membros e comunidade) ── */
+var partInstCtx = null;
+function rnPartInst(id) {
+  var r = reuniaoPor(id); if (!r) return;
+  partSel = {}; (r.participantes || []).forEach(function (p) { partSel[p.chave] = p; });
+  partInstCtx = { id: id, res: [] };
+  partInstTela();
+}
+function partInstTela() {
+  var r = partInstCtx && reuniaoPor(partInstCtx.id); if (!r) return;
+  abrirModal('<h2>Participantes do curso</h2><div class="sb" style="font-size:12.5px;color:#888">' + esc(r.titulo) + '</div>' +
+    '<div class="aviso" style="margin:10px 0 6px;font-size:12px;line-height:1.45">Podem participar <b>membros da igreja</b> e <b>pessoas da comunidade</b>. Todos ficam na base única de pessoas (com código) e precisam ter autorização de uso dos dados (LGPD).</div>' +
+    '<div class="busca"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input id="busca-partinst" placeholder="Nome ou telefone (mín. 3 letras)" autocomplete="off"></div>' +
+    '<div id="pi-res">' + partInstResultados() + '</div>' +
+    '<button class="btn gh sm" data-a="instNovoAtendido" data-v="curso" style="margin-top:6px">+ Cadastrar nova pessoa</button>' +
+    '<div class="sec" style="margin-left:0">Selecionados (<span id="pi-cont">' + Object.keys(partSel).length + '</span>)</div>' +
+    '<div id="pi-sel" class="card lp" style="box-shadow:none;border:1px solid #eee;max-height:30vh;overflow-y:auto">' + partInstSelecionados() + '</div>' +
+    '<div style="height:12px"></div><button class="btn pr" data-a="partInstSalvar">Salvar participantes</button><div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>');
+}
+function partInstResultados() {
+  var res = (partInstCtx && partInstCtx.res) || [];
+  if (!res.length) return '<div style="font-size:12px;color:var(--tx3);padding:8px 2px">Digite ao menos 3 letras do nome ou 4 dígitos do telefone. Quem ainda não tem cadastro: toque em “Cadastrar nova pessoa”.</div>';
+  return '<div class="card lp" style="box-shadow:none;background:var(--bg)">' + res.map(function (x) {
+    var ja = !!partSel['p:' + x.id];
+    return '<div class="row' + (ja ? '' : ' cl') + '"' + (ja ? '' : ' data-a="partInstAdd" data-v="' + esc(x.id) + '"') + '><div class="av" style="' + corAvatar(x.nome) + '">' + ini(x.nome) + '</div>' +
+      '<div class="info"><div class="nm">' + esc(x.nome) + '</div><div class="sb">' + esc(x.codigo) + (x.bairro ? ' · ' + esc(x.bairro) : '') + (x.fone4 ? ' · tel. final ' + esc(x.fone4) : '') + '</div></div>' +
+      (ja ? '<span class="pill p-verde">adicionado ✓</span>' : '<span class="pill ' + (x.igreja ? 'p-dour' : 'p-cinza') + '">' + (x.igreja ? 'da igreja' : 'comunidade') + '</span>') + '</div>';
+  }).join('') + '</div>';
+}
+function partInstSelecionados() {
+  var l = Object.keys(partSel).map(function (k) { return partSel[k]; }).sort(function (a, b) { return String(a.nome).localeCompare(String(b.nome), 'pt-BR'); });
+  if (!l.length) return '<div class="empty" style="padding:12px">Ninguém selecionado ainda.</div>';
+  return l.map(function (p) {
+    return '<div class="row"><div class="av" style="' + corAvatar(p.nome) + '">' + ini(p.nome) + '</div><div class="info"><div class="nm">' + esc(p.nome) + '</div>' +
+      '<div class="sb">' + (p.convidadoEm ? 'já no curso' : '<b style="color:var(--verde)">novo</b>') + (p.origem === 'instituto' ? ' · comunidade' : '') + '</div></div>' +
+      '<button class="btn dg sm" data-a="partInstRem" data-v="' + esc(p.chave) + '" style="padding:6px 9px">×</button></div>';
+  }).join('');
+}
+function partInstAtualizar() {
+  if ($('pi-res')) $('pi-res').innerHTML = partInstResultados();
+  if ($('pi-sel')) $('pi-sel').innerHTML = partInstSelecionados();
+  if ($('pi-cont')) $('pi-cont').textContent = Object.keys(partSel).length;
+}
+function partInstAdd(id) {
+  var x = ((partInstCtx && partInstCtx.res) || []).filter(function (r) { return r.id === id; })[0]; if (!x) return;
+  var novo = { chave: 'p:' + x.id, nome: x.nome, apelido: '', fone: '', origem: x.igreja ? 'pessoa' : 'instituto', codigo: x.codigo };
+  if (x.autorizou === false) {
+    if (!confirm(x.nome + ' ainda não tem a autorização de uso dos dados (LGPD) registrada.\n\nConfirme que a pessoa autorizou o uso dos dados para este curso. Incluir?')) return;
+    novo.autorizadoAgora = true;
+  }
+  partSel[novo.chave] = novo; partInstAtualizar();
+}
+function partInstNovo(p) {
+  if (!partInstCtx) return fechar();
+  var novo = { chave: 'p:' + p.id, nome: p.nome, apelido: '', fone: '', origem: 'pessoa', codigo: p.codigo };
+  if (p.autorizou === false) {
+    if (!confirm(p.nome + ' ainda não tem a autorização de uso dos dados (LGPD) registrada.\n\nConfirme que a pessoa autorizou o uso dos dados para este curso. Incluir?')) { partInstTela(); return; }
+    novo.autorizadoAgora = true;
+  }
+  partSel[novo.chave] = novo; partInstTela();
+}
+function partInstRem(chave) { delete partSel[chave]; partInstAtualizar(); }
+function partInstSalvar() {
+  if (!partInstCtx) return;
+  var id = partInstCtx.id, r = reuniaoPor(id), antes = {}, lista = [], aut = [];
+  (r ? r.participantes || [] : []).forEach(function (p) { antes[p.chave] = 1; });
+  Object.keys(partSel).forEach(function (k) { var p = partSel[k]; lista.push({ chave: p.chave }); if (p.autorizadoAgora) aut.push(p.chave.slice(2)); });
+  var novos = lista.filter(function (p) { return !antes[p.chave]; }).map(function (p) { return p.chave; });
+  salvarReuniaoSrv({ id: id, participantes: lista, autorizados: aut }, null).then(function (rr) {
+    partInstCtx = null; fechar(); render();
+    if (novos.length) rnConvites(rr.id, novos); else toast('Participantes salvos ✓');
+  }).catch(function () {});
+}
 } catch (err) { mostrarErro((err && err.message) || String(err), 'inicialização'); }
 })();
 
