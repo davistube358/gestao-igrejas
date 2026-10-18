@@ -20,8 +20,8 @@ var ICONE_2G = 'icons/icon-192.png';
 // padrão antes da 1ª configuração: no app instalado (PWA) é o 2Gather; na página antiga, o logo embutido
 var LOGO_PADRAO = (window.APP_CONFIG && window.APP_CONFIG.apiUrl) ? ICONE_2G : document.getElementById('h-img').getAttribute('src');
 var LOGO = LOGO_PADRAO;        // ícone usado na barra superior e nas telas internas
-var VERSAO_APP = 34;
-var SERVIDOR_ESPERADO = 29;      // versão do Código.gs que acompanha este app
+var VERSAO_APP = 35;
+var SERVIDOR_ESPERADO = 30;      // versão do Código.gs que acompanha este app
 var EXIGE_HOSPEDADO = true;      // segurança: o app só funciona pelo endereço oficial (dados nunca trafegam pela URL)
 
 /* ───────── armazenamento ───────── */
@@ -81,7 +81,7 @@ function toast(msg, ms) { var t = $('toast'); t.textContent = msg; t.style.displ
 function carregando(on, txt) { $('carregando').classList.toggle('on', !!on); $('carregando-txt').textContent = txt || 'Carregando...'; }
 
 var DIAS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
-var PAPEL_NOME = { master: 'Master', pastor: 'Pastor', supervisor: 'Supervisor', lider: 'Líder', discipulo: 'Discípulo', secretaria: 'Secretaria', tesouraria: 'Tesouraria', voluntario: 'Voluntário' };
+var PAPEL_NOME = { master: 'Master', pastor: 'Pastor', supervisor: 'Supervisor', lider: 'Líder', discipulo: 'Discípulo', secretaria: 'Secretaria', tesouraria: 'Tesouraria', voluntario: 'Voluntário', voluntarioLV: 'Voluntário Lar de Vida' };
 var ETAPAS = ['1. Visitou', '2. Frequentando', '3. Membro da igreja', '4. Batizado', '5. Em discipulado', '6. Em formação de líder'];
 var CANAIS = ['Evangelismo', 'Convite de membros', 'GC', 'Redes sociais', 'Outros'];
 
@@ -610,7 +610,7 @@ function sincronizar(avisar) {
       locaisE.forEach(function (l) { ne = ne.filter(function (e) { return chaveE(e) !== chaveE(l); }); ne.push(l); });
       db.pessoas = np; db.encontros = ne; db.gcs = d.gcs || [];
       db.equipe = d.equipe || []; db.pendentes = d.pendentes || 0; db.alertas = d.alertas || []; db.eventos = d.eventos || [];
-        db.reunioes = d.reunioes || []; db.aulas = d.aulas || []; db.jovens = d.jovens || null; db.waApi = !!d.waApi; db.equipeGC = d.equipeGC || []; db.mural = d.mural || [];
+        db.reunioes = d.reunioes || []; db.aulas = d.aulas || []; db.jovens = d.jovens || null; db.waApi = !!d.waApi; db.equipeGC = d.equipeGC || []; db.mural = d.mural || []; db.voluntariosLV = d.voluntariosLV || [];
       atualizarConfig(d.config).then(function (mudou) { if (mudou) render(); });
       if (r.usuario && cfg.usuario && r.usuario.id === cfg.usuario.id) { cfg.usuario = r.usuario; setTimeout(verificarConsentimento, 300); }
       cfg.ultima = agora(); salvarCfg(); salvarDB();
@@ -620,7 +620,7 @@ function sincronizar(avisar) {
       validarContexto();
       try { notificarNovos(); } catch (eN) {}
       render();
-      return buscarFotos();
+      return buscarFotos().then(enviarFotosPend).then(buscarFotosPessoas).then(function (m) { if (m) render(); });
     })
     .catch(function (e) {
       pintarStatus('Sem conexão — dados salvos no aparelho');
@@ -765,12 +765,13 @@ function abasAtuais() {
   if (cfg.modo === 'lv') {
     var A = [];
     if (pode('visitantes')) A.push({ id: 'lvnovo', nome: 'Início', ic: IC_INICIO });
-    if (temCultos()) A.push({ id: 'cultos', nome: 'Agenda', ic: IC_AGENDA });
+    if (pode('lvVisitas')) A.push({ id: 'lvcasas', nome: 'Lar de Vida', ic: IC_LAR });
+    if (temCultos() && !pode('lvVisitas')) A.push({ id: 'cultos', nome: 'Agenda', ic: IC_AGENDA });
     A.push({ id: 'avisos', nome: 'Avisos', ic: IC_AVISOS });
     if (pode('visitantes')) A.push({ id: 'lvmeus', nome: 'Cadastros', ic: IC_LISTA });
     else if (pode('consulta')) A.push({ id: 'membros', nome: 'Pessoas', ic: IC_PESSOAS });
-    A.push({ id: 'conta', nome: 'Perfil', ic: IC_PERFIL });
-    return A.slice(0, 5);
+    A = A.slice(0, 4); A.push({ id: 'conta', nome: 'Perfil', ic: IC_PERFIL });
+    return A;
   }
   if (cfg.modo === 'ger') {
     var G = [{ id: 'bi', nome: 'Início', ic: IC_INICIO }];
@@ -785,7 +786,7 @@ function abasAtuais() {
           { id: 'pessoas', nome: 'Pessoas', ic: IC_PESSOAS }, { id: 'alertas', nome: 'Avisos', ic: IC_AVISOS },
           { id: 'mais', nome: 'Perfil', ic: IC_PERFIL }];
 }
-function inicioId() { return cfg.modo === 'lv' ? (pode('visitantes') ? 'lvnovo' : 'conta') : cfg.modo === 'ger' ? 'bi' : 'painel'; }
+function inicioId() { return cfg.modo === 'lv' ? (pode('visitantes') ? 'lvnovo' : pode('lvVisitas') ? 'lvcasas' : 'conta') : cfg.modo === 'ger' ? 'bi' : 'painel'; }
 function validarContexto() {
   if (!pode('rede') && !pode('gc')) { cfg.modo = 'lv'; }
   else if (pode('rede') && cfg.modo === 'lv') { cfg.modo = 'ger'; }
@@ -881,7 +882,7 @@ function render() {
   validarContexto();
   var g = cfg.modo === 'gc' ? gcPor(cfg.gcAtual) : null;
   $('h-img').src = g ? iconeGC(g.id) : LOGO;
-  var TIT = { relatorios: 'Relatórios', financeiro: 'Financeiro', usuarios: 'Usuários e acessos', avisos: 'Avisos', gcs: 'GCs' };
+  var TIT = { lvcasas: 'Lar de Vida', relatorios: 'Relatórios', financeiro: 'Financeiro', usuarios: 'Usuários e acessos', avisos: 'Avisos', gcs: 'GCs' };
   $('h-tit').textContent = TIT[cfg.aba] ? TIT[cfg.aba] : cfg.modo === 'lv' ? igrNome() : cfg.aba === 'config' ? 'Configurações' : cfg.aba === 'cultos' ? 'Cultos e eventos' : cfg.aba === 'membros' ? 'Cadastro de pessoas' : cfg.aba === 'cursos' ? 'Cursos e reuniões' : cfg.modo === 'ger' ? igrNome() : (g ? g.nome : 'Meu GC');
   $('h-papel').textContent = PAPEL_NOME[papel()] || '';
   var raizes = abasAtuais().map(function (a) { return a.id; }), naRaiz = raizes.indexOf(cfg.aba) >= 0 && !cursoAberto;
@@ -897,7 +898,7 @@ function render() {
   var f = {
     bi: rBI, gcs: rGCs, novo: rNovoGC, usuarios: rUsuarios, conta: rConta,
     painel: rPainel, pessoas: rPessoas, chamada: rChamada, alertas: rAlertas, mais: rMaisGC,
-    lv: rLVGer, lar: rLar, avisos: rAvisos, relatorios: rRelatorios, financeiro: rFinanceiro, lvnovo: rLVNovo, lvmeus: rLVMeus, cultos: rCultos, config: rConfig, membros: rConsulta, cursos: rCursos
+    lv: rLVGer, lar: rLar, lvcasas: rLVVol, avisos: rAvisos, relatorios: rRelatorios, financeiro: rFinanceiro, lvnovo: rLVNovo, lvmeus: rLVMeus, cultos: rCultos, config: rConfig, membros: rConsulta, cursos: rCursos
   }[cfg.aba];
   if (cfg.modo === 'gc' && !g) {
     $('main').innerHTML = '<div class="empty">' + (db.gcs.length ? 'Você ainda não está vinculado a um GC. Fale com a liderança.' : 'Carregando dados do GC...') + '</div>';
@@ -1278,7 +1279,7 @@ function carregarUsuarios(forcar) {
   }).catch(function (e) { toast(e.message, 4000); }).then(function () { carregandoUsr = false; });
 }
 function papeisPermitidos() {
-  var l = ['supervisor', 'lider', 'discipulo', 'secretaria', 'tesouraria', 'voluntario'];
+  var l = ['supervisor', 'lider', 'discipulo', 'secretaria', 'tesouraria', 'voluntario', 'voluntarioLV'];
   if (papel() === 'master') l = ['master', 'pastor'].concat(l);
   return l.map(function (p) { return [p, PAPEL_NOME[p]]; });
 }
@@ -1297,7 +1298,7 @@ function rUsuarios() {
   if (!pend.length) h += '<div class="card"><div class="empty">Nenhum cadastro pendente. 🙌</div></div>';
   pend.forEach(function (u) {
     var papelSug = u.papelSolicitado === 'pastor' && papel() !== 'master' ? 'lider' : (u.papelSolicitado || 'discipulo');
-    h += '<div class="card"><div class="row" style="padding-top:0"><div class="av">' + ini(u.nome) + '</div><div class="info"><div class="nm">' + esc(u.nome) + '</div>' +
+    h += '<div class="card"><div class="row" style="padding-top:0">' + avatarU(u) + '<div class="info"><div class="nm">' + esc(u.nome) + '</div>' +
       '<div class="sb">@' + esc(u.usuario) + (u.fone ? ' · ' + esc(u.fone) : '') + (u.email ? ' · ' + esc(u.email) : '') + '<br>Pediu: <b>' + esc(PAPEL_NOME[u.papelSolicitado] || '—') + '</b> em <b>' + esc(u.gcSolicitado ? gcNome(u.gcSolicitado) : 'nenhum GC') + '</b> · ' + dataHoraLocal(u.criadoEm) + '</div>' +
       (u.obs ? '<div class="sb" style="font-style:italic">"' + esc(u.obs) + '"</div>' : '') + '</div></div>' +
       '<div class="g2"><div><label>Nível de acesso</label><select id="ap-papel-' + u.id + '">' + opts(papeisPermitidos(), papelSug) + '</select></div>' +
@@ -1312,7 +1313,7 @@ function rUsuarios() {
   h += '<div class="sec">Usuários (' + ativos.length + ')</div><div class="card">';
   h += ativos.length ? ativos.map(function (u) {
     var st = u.status === 'ativo' ? '' : '<span class="pill ' + (u.status === 'recusado' ? 'p-cinza' : 'p-vermelho') + '">' + esc(u.status) + '</span>';
-    return '<div class="row cl" data-a="editarUsuario" data-v="' + u.id + '"><div class="av">' + ini(u.nome) + '</div><div class="info"><div class="nm">' + esc(u.nome) + '</div>' +
+    return '<div class="row cl" data-a="editarUsuario" data-v="' + u.id + '">' + avatarU(u) + '<div class="info"><div class="nm">' + esc(u.nome) + '</div>' +
       '<div class="sb">@' + esc(u.usuario) + ' · ' + (u.gcId ? esc(gcNome(u.gcId)) : 'todos os GCs') + (u.ultimoAcesso ? ' · último acesso ' + dataHoraLocal(u.ultimoAcesso) : '') + '</div></div>' +
       (st || '<span class="pill p-preto">' + esc(PAPEL_NOME[u.papel] || '—') + (u.acessos && Object.keys(u.acessos).length ? ' +' : '') + '</span>') + '</div>';
   }).join('') : '<div class="empty">Nenhum usuário.</div>';
@@ -1431,7 +1432,7 @@ function redefinirSenha(id) {
 /* conta */
 function blocoConta() {
   var u = eu();
-  return '<div class="card"><div class="row" style="padding-top:0"><div class="av">' + ini(u.nome) + '</div><div class="info"><div class="nm">' + esc(u.nome) + '</div>' +
+  return '<div class="card"><div class="row" style="padding-top:0"><div class="fp-click" ' + (u.pessoaId ? 'data-a="fotoDireta" data-v="' + esc(u.pessoaId) + '"' : '') + '>' + avatarU(u) + (u.pessoaId ? '<span>📷</span>' : '') + '</div><div class="info"><div class="nm">' + esc(u.nome) + '</div>' +
     '<div class="sb">@' + esc(u.usuario) + ' · ' + esc(PAPEL_NOME[u.papel] || '') + (u.gcId ? ' · ' + esc(gcNome(u.gcId)) : '') + '</div></div></div>' +
     (pode('config') ? '<button class="btn pr" data-a="aba" data-v="config">Configurações da igreja</button><div class="gap"></div>' : '') +
     (ehAdmin() ? '<button class="btn gh" data-a="aba" data-v="usuarios">Usuários e acessos' + (db.pendentes ? ' · <b style="color:var(--vermelho)">' + db.pendentes + ' aguardando</b>' : '') + '</button><div class="gap"></div>' : '') +
@@ -1536,7 +1537,7 @@ function rPessoas() {
       var pill = { emdia: ['p-verde', 'em dia'], atencao: ['p-amarelo', '1 falta'], contatar: ['p-vermelho', st.faltas + ' faltas'], inativo: ['p-cinza', String(p.status).toLowerCase()],
                    visita: ['p-dour', 'visitante ' + visitasDe(p) + '/' + VISITAS_PARA_ATIVO] }[st.s] || ['p-cinza', ''];
       var sub = [s2.mar ? pct(s2.pct) + ' presença' : 'sem chamada', separarBairroCidade(p.bairro, p.cidade).bairro, p.lvStatus === 'acompanhando' ? 'Lar de Vida ' + lvVis(p).length + '/' + LV_SEMANAS : ''].filter(Boolean).join(' · ');
-      return '<div class="row cl" data-a="fichaPessoa" data-v="' + esc(p.id) + '"><div class="av" style="' + corAvatar(p.nome) + '">' + ini(p.nome) + '</div><div class="info"><div class="nm">' + esc(p.nome) +
+      return '<div class="row cl" data-a="fichaPessoa" data-v="' + esc(p.id) + '">' + avatarP(p) + '<div class="info"><div class="nm">' + esc(p.nome) +
         (p.apelido ? ' <span class="apel">“' + esc(p.apelido) + '”</span>' : '') + '</div><div class="sb">' + esc(sub) + '</div></div>' +
         '<span class="pill ' + pill[0] + '">' + pill[1] + '</span></div>';
     }).join('') + '</div></div>';
@@ -1554,8 +1555,10 @@ function abrirPessoa(id, ctx) {
   var ro = !editaPessoas(), dis = ro ? ' disabled' : '';
   var g = function (k, d) { return esc(p ? (p[k] || '') : (d || '')); };
   var end = separarBairroCidade(p ? p.bairro : '', p ? p.cidade : '');
+  fotoNovaP = null; fpAlvo = { pid: id || '', direto: false };
   abrirModal('<h2>' + (p ? (ro ? esc(p.nome) : 'Editar pessoa') : (ctx.addChamada ? 'Visitante — 1ª visita' : 'Nova pessoa')) + '</h2>' +
     (p && p.origem ? '<span class="pill p-dour">' + esc(p.origem) + '</span>' : '') + (p ? lvResumoPill(p) + pillIgreja(p) : '') +
+    (ro ? '' : campoFotoPessoa(id || '')) +
     '<label>Nome completo *</label><input id="f-nome" value="' + g('nome') + '"' + dis + '>' +
     '<label>Como gostaria de ser chamado(a) / apelido</label><input id="f-apelido" value="' + g('apelido') + '" placeholder="Ex.: Juninho, Dona Cida"' + dis + '>' +
     '<div class="g2"><div><label>Tipo</label><select id="f-tipo"' + dis + '>' + opts([['Membro', 'Membro'], ['Visitante', 'Visitante'], ['Criança/Adolescente', 'Criança/Adolescente']], p ? p.tipo : 'Visitante') + '</select></div>' +
@@ -1607,7 +1610,7 @@ function salvarPessoa(forcar) {
   gravarPessoaGC(o, ant);
 }
 function gravarPessoaGC(o, ant) {
-  lvAjustarPendencia(o);
+  lvAjustarPendencia(o); aplicarFotoNova(o.id);
   db.pessoas = db.pessoas.filter(function (x) { return x.id !== o.id; }).concat([o]);
   if (!ant && ctxPessoa.addChamada) { incluirNaChamada(o.id, true); toast(nomeChamado(o) + ' cadastrado(a) e marcado(a) presente na chamada ✓'); }
   ctxPessoa = {};
@@ -1718,7 +1721,7 @@ function corpoChamada(id, d, e) {
     var m = (e && e.presencas[p.id]) || '';
     var etiqueta = p.status === 'Em visita' ? '<span class="pill p-dour">' + (p.prim === d ? '1ª visita' : 'visita ' + Math.min(visitasDe(p) + (m === 'P' ? 0 : 1), VISITAS_PARA_ATIVO) + '/' + VISITAS_PARA_ATIVO) + '</span>'
       : (p.tipo === 'Visitante' ? '<span class="pill p-dour">visitante</span>' : '');
-    return '<div class="chamada"><div class="av" style="' + corAvatar(p.nome) + '">' + ini(p.nome) + '</div><div class="nm2"><b>' + esc(p.apelido ? p.apelido + ' · ' + p.nome : p.nome) + '</b>' + etiqueta + '</div>' +
+    return '<div class="chamada">' + avatarP(p) + '<div class="nm2"><b>' + esc(p.apelido ? p.apelido + ' · ' + p.nome : p.nome) + '</b>' + etiqueta + '</div>' +
       '<div class="tg">' + ['P', 'F', 'J'].map(function (x) { return '<button class="' + x.toLowerCase() + (m === x ? ' on' : '') + '" data-a="marcar" data-v="' + esc(p.id) + '" data-m="' + x + '">' + x + '</button>'; }).join('') +
       '<button class="rm" data-a="remChamada" data-v="' + esc(p.id) + '" title="Tirar da chamada deste dia">×</button></div></div>';
   }).join('') : '<div class="empty">' + (l.length ? 'Ninguém neste filtro.' : 'Ninguém na lista deste encontro.') + '</div>';
@@ -1775,7 +1778,7 @@ function pintarAdd() {
     .sort(function (a, b) { var va = a.status === 'Em visita' ? 0 : 1, vb = b.status === 'Em visita' ? 0 : 1; return va - vb || a.nome.localeCompare(b.nome, 'pt-BR'); });
   el.innerHTML = cand.length ? cand.map(function (p) {
     var sub = p.status === 'Em visita' ? 'Visitante · ' + visitasDe(p) + ' de ' + VISITAS_PARA_ATIVO + ' visitas' : esc(p.tipo) + ' · ' + esc(p.status);
-    return '<div class="row cl" data-a="incluirChamada" data-v="' + esc(p.id) + '"><div class="av">' + ini(p.nome) + '</div><div class="info"><div class="nm">' + esc(p.nome) +
+    return '<div class="row cl" data-a="incluirChamada" data-v="' + esc(p.id) + '">' + avatarP(p) + '<div class="info"><div class="nm">' + esc(p.nome) +
       (p.apelido ? ' <span style="color:#a87700;font-weight:600">“' + esc(p.apelido) + '”</span>' : '') + '</div><div class="sb">' + sub + '</div></div><span class="pill p-verde">+ incluir</span></div>';
   }).join('') : '<div class="empty">Todos já estão na chamada deste dia.</div>';
 }
@@ -1802,7 +1805,7 @@ function linhaContato(p, tipo, encs) {
   var s = statusDe(p, encs), st = statsDe(p, encs);
   var sub = tipo === 'aniversario' ? 'Faz ' + (new Date().getFullYear() - parseInt(p.nasc.slice(0, 4), 10)) + ' anos dia ' + p.nasc.slice(8, 10)
     : s.faltas + ' falta' + (s.faltas > 1 ? 's seguidas' : '') + ' · ' + (st.mar ? pct(st.pct) + ' presença' : '—');
-  return '<div class="row"><div class="av">' + ini(p.nome) + '</div><div class="info"><div class="nm">' + esc(p.nome) + (p.apelido ? ' <span style="color:#a87700;font-weight:600">“' + esc(p.apelido) + '”</span>' : '') + '</div><div class="sb">' + sub + '</div></div>' +
+  return '<div class="row">' + avatarP(p) + '<div class="info"><div class="nm">' + esc(p.nome) + (p.apelido ? ' <span style="color:#a87700;font-weight:600">“' + esc(p.apelido) + '”</span>' : '') + '</div><div class="sb">' + sub + '</div></div>' +
     (l ? '<a class="wa" href="' + l + '" target="_blank" rel="noopener">Enviar</a>' : '<span class="pill p-cinza">sem nº</span>') + '</div>';
 }
 function rAlertas() {
@@ -1890,7 +1893,7 @@ var nomes = String((g && g.discipulosNomes) || '').split(', ');
 return ids.map(function (id, i) { return { id: id, nome: nomes[i] || 'Discípulo' }; });
 }
 function lvAguardando(gcId) { return PES(gcId).filter(function (p) { return p.lvStatus === 'pendente'; }); }
-function lvFila() { return PES().filter(function (p) { return !p.gcId && p.status !== 'Inativo'; }); }
+function lvFila() { return PES().filter(function (p) { return !p.gcId && p.status !== 'Inativo' && p.origem !== 'usuário do app' && p.origem !== 'instituto'; }); }
 function lvBadgeGC() {
 if (cfg.modo !== 'gc') return 0;
 var g = gcPor(gcA()); if (!g) return 0;
@@ -2032,7 +2035,7 @@ var pill = atr ? ['p-vermelho', 'atrasada'] : n >= LV_SEMANAS ? ['p-verde', 'enc
 var f = fone(p.fone);
 var wa = f ? 'https://wa.me/' + (f.length <= 11 ? '55' : '') + f + '?text=' + encodeURIComponent('Oi, ' + nomeChamado(p) + '! Aqui é ' + pri(eu().nome) + ', do ' + gcNome(p.gcId) + '. Posso passar aí essa semana para te visitar?') : '';
 var h = '<div class="card lvc' + (atr ? ' atr' : '') + '"><div class="row" style="padding:0;border:none">' +
-  '<div class="av" style="' + corAvatar(p.nome) + '">' + ini(p.nome) + '</div><div class="info"><div class="nm">' + esc(p.nome) + (p.apelido ? ' <span style="color:#a87700;font-weight:600">“' + esc(p.apelido) + '”</span>' : '') + '</div>' +
+  '' + avatarP(p) + '<div class="info"><div class="nm">' + esc(p.nome) + (p.apelido ? ' <span style="color:#a87700;font-weight:600">“' + esc(p.apelido) + '”</span>' : '') + '</div>' +
   '<div class="sb">Discípulo: <b>' + esc(p.lvDiscipuloNome || '—') + '</b> · início ' + br(p.lvInicio) + ' · ' + n + ' de ' + LV_SEMANAS + ' visitas</div></div>' +
   (lvPrazo(p) ? lvPrazoPill(p) : '<span class="pill ' + pill[0] + '">' + pill[1] + '</span>') + '</div>' + lvDots(p) +
   '<div class="sb" style="font-size:11.5px;color:#777;line-height:1.5">' + esc([enderecoTexto(p), end.cidade].filter(Boolean).join(' · ') || 'endereço não informado') +
@@ -2050,11 +2053,13 @@ if (wa) h += '<a class="wa" href="' + wa + '" target="_blank" rel="noopener">Wha
 return h + '</div></div>';
 }
 function opcoesDiscipulos(g, sel, ignorarId) {
-var ds = discipulosDoGC(g);
-return '<option value="">— escolher discípulo —</option>' + ds.map(function (d) {
+var ds = discipulosDoGC(g), vs = (db.voluntariosLV || []).filter(function (v) { return !ds.some(function (d) { return d.id === v.id; }); });
+var op = function (d) {
   var n = lvCasasDe(d.id).filter(function (p) { return p.id !== ignorarId; }).length, cheio = n >= LV_CASAS;
   return '<option value="' + esc(d.id) + '"' + (cheio ? ' disabled' : '') + (sel === d.id ? ' selected' : '') + '>' + esc(d.nome) + ' (' + n + '/' + LV_CASAS + ' casas)' + (cheio ? ' — lotado' : '') + '</option>';
-}).join('');
+};
+return '<option value="">— escolher quem vai visitar —</option>' + (ds.length ? '<optgroup label="Discípulos do GC">' + ds.map(op).join('') + '</optgroup>' : '') +
+  (vs.length ? '<optgroup label="Voluntários do Lar de Vida">' + vs.map(op).join('') + '</optgroup>' : '');
 }
 
 /* ── aba Lar de Vida do GC (líder e discípulos) ── */
@@ -2080,7 +2085,7 @@ if (gere) {
   if (!ds.length && ag.length) h += '<div class="aviso">Este GC ainda não tem discípulos no cadastro. Peça ao supervisor para incluí-los em <b>Editar GC</b>.</div>';
   h += ag.length ? ag.map(function (p) {
     var end = separarBairroCidade(p.bairro, p.cidade);
-    return '<div class="card"><div class="row" style="padding:0;border:none"><div class="av">' + ini(p.nome) + '</div><div class="info"><div class="nm">' + esc(p.nome) +
+    return '<div class="card"><div class="row" style="padding:0;border:none">' + avatarP(p) + '<div class="info"><div class="nm">' + esc(p.nome) +
       (p.apelido ? ' <span style="color:#a87700;font-weight:600">“' + esc(p.apelido) + '”</span>' : '') + '</div>' +
       '<div class="sb">' + esc([enderecoTexto(p), end.cidade].filter(Boolean).join(' · ') || 'endereço não informado') + (p.fone ? ' · ' + esc(p.fone) : '') + '</div></div>' +
       (p.origem ? '<span class="pill p-dour">' + esc(p.origem) + '</span>' : '') + '</div>' +
@@ -2092,7 +2097,7 @@ if (gere) {
   }).join('') : '<div class="card"><div class="empty">Ninguém aguardando. Quem marcar “aceita visita” no cadastro aparece aqui.</div></div>';
 } else if (ag.length) {
   h += '<div class="sec">Aguardando o líder liberar (' + ag.length + ')</div><div class="card">' + ag.map(function (p) {
-    return '<div class="row"><div class="av">' + ini(p.nome) + '</div><div class="info"><div class="nm">' + esc(p.nome) + '</div><div class="sb">' + esc(separarBairroCidade(p.bairro, p.cidade).bairro) + '</div></div></div>';
+    return '<div class="row">' + avatarP(p) + '<div class="info"><div class="nm">' + esc(p.nome) + '</div><div class="sb">' + esc(separarBairroCidade(p.bairro, p.cidade).bairro) + '</div></div></div>';
   }).join('') + '</div>';
 }
 var outros = gere ? ac : ac.filter(function (p) { return p.lvDiscipuloId !== me; });
@@ -2107,7 +2112,7 @@ if (gere && discipulosDoGC(g).length) {
 if (enc.length) {
   h += '<div class="sec">Encerrados (' + enc.length + ')</div><div class="card">' + enc.slice(0, 15).map(function (p) {
     var real = lvVis(p).filter(function (x) { return x.realizada === 'Sim'; }).length;
-    return '<div class="row cl" data-a="lvHistorico" data-v="' + esc(p.id) + '"><div class="av">' + ini(p.nome) + '</div><div class="info"><div class="nm">' + esc(p.nome) + '</div>' +
+    return '<div class="row cl" data-a="lvHistorico" data-v="' + esc(p.id) + '">' + avatarP(p) + '<div class="info"><div class="nm">' + esc(p.nome) + '</div>' +
       '<div class="sb">' + br(p.lvEncerradoEm) + ' · ' + real + ' de ' + LV_SEMANAS + ' visitas realizadas · ' + esc(p.lvDiscipuloNome || '') + '</div></div>' +
       '<span class="pill ' + (p.lvResultado === 'Ficou' ? 'p-verde' : 'p-cinza') + '">' + esc(p.lvResultado || '—') + '</span></div>';
   }).join('') + '</div>';
@@ -2119,11 +2124,10 @@ return h;
 function lvLiberar(pid) {
 var p = pessoaPor(pid), g = gcPor(gcA()), sel = $('lvd-' + pid) ? $('lvd-' + pid).value : '';
 if (!p) return;
-if (!sel) return toast('Escolha o discípulo que vai visitar.');
+if (!sel) return toast('Escolha quem vai visitar (discípulo ou voluntário do Lar de Vida).');
 if (!ehDecisor() && !p.excecaoPor && !gcCompativel(g, p)) return toast('Esta pessoa não é compatível com o ' + g.nome + ' (sexo/idade). Fale com o pastor para redirecionar.', 5000);
 if (lvCasasDe(sel).length >= LV_CASAS) return toast('Este discípulo já tem ' + LV_CASAS + ' casas.');
-var d = discipulosDoGC(g).filter(function (x) { return x.id === sel; })[0];
-p.lvStatus = 'acompanhando'; p.lvDiscipuloId = sel; p.lvDiscipuloNome = d ? d.nome : '';
+p.lvStatus = 'acompanhando'; p.lvDiscipuloId = sel; p.lvDiscipuloNome = nomeResponsavelLV(g, sel);
 p.lvInicio = ($('lvi-' + pid) && $('lvi-' + pid).value) || hoje(); p.lvLiberadoPor = eu().nome; p.lvVisitas = [];
 p.lvResultado = ''; p.lvEncerradoEm = ''; p.lvObsFinal = '';
 p.updatedAt = agora(); p._pend = true;
@@ -2142,8 +2146,7 @@ function lvConfirmarTroca(pid) {
 var p = pessoaPor(pid), sel = $('lv-novo').value, g = gcPor(p.gcId);
 if (!sel) return toast('Escolha o discípulo.');
 if (sel !== p.lvDiscipuloId && lvCasasDe(sel).length >= LV_CASAS) return toast('Este discípulo já tem ' + LV_CASAS + ' casas.');
-var d = discipulosDoGC(g).filter(function (x) { return x.id === sel; })[0];
-p.lvDiscipuloId = sel; p.lvDiscipuloNome = d ? d.nome : ''; p.updatedAt = agora(); p._pend = true;
+p.lvDiscipuloId = sel; p.lvDiscipuloNome = nomeResponsavelLV(g, sel); p.updatedAt = agora(); p._pend = true;
 salvarDB(); fechar(); render(); sincAuto(); toast('Discípulo alterado ✓');
 }
 function lvRegistrar(pid) {
@@ -2222,7 +2225,7 @@ fila.forEach(function (p) {
   var enc = p.supRespId === PASTOR ? '<div class="aviso r" style="margin:10px 0 0"><b>Fila do pastor:</b> ' + esc(p.filaMotivo || 'decisão do pastor') + '</div>'
     : p.supRespId ? '<div style="font-size:12px;color:#1f6b40;margin-top:6px"><b>Encaminhado a:</b> ' + esc(p.supRespNome || 'supervisor') + (p.gcSugeridoId ? ' · GC sugerido: ' + esc(gcNome(p.gcSugeridoId)) : '') + '</div>'
     : '<div style="font-size:12px;color:#999;margin-top:6px">Encaminhamento em cálculo — sincronize.</div>';
-  h += '<div class="card"><div class="row" style="padding:0;border:none"><div class="av">' + ini(p.nome) + '</div><div class="info"><div class="nm">' + esc(p.nome) +
+  h += '<div class="card"><div class="row" style="padding:0;border:none">' + avatarP(p) + '<div class="info"><div class="nm">' + esc(p.nome) +
     (p.apelido ? ' <span style="color:#a87700;font-weight:600">“' + esc(p.apelido) + '”</span>' : '') + '</div>' +
     '<div class="sb">' + esc(p.sexo || 'sexo não informado') + (idadeDe(p) !== null ? ' · ' + idadeDe(p) + ' anos' : '') + ' · ' +
       esc([enderecoTexto(p), end.cidade].filter(Boolean).join(' · ') || 'endereço não informado') + (p.fone ? ' · ' + esc(p.fone) : '') + '</div></div>' +
@@ -2291,7 +2294,7 @@ salvarDB(); sincronizar(false); toast('Reencaminhando ao supervisor do GC compat
 function lvForm(p) {
 var g = function (k, d) { return esc(p ? (p[k] || '') : (d || '')); };
 var end = separarBairroCidade(p ? p.bairro : '', p ? p.cidade : '');
-return '<label>Nome completo *</label><input id="v-nome" value="' + g('nome') + '">' +
+return campoFotoPessoa(p ? p.id : '') + '<label>Nome completo *</label><input id="v-nome" value="' + g('nome') + '">' +
   '<label>Como gostaria de ser chamado(a) / apelido</label><input id="v-apelido" value="' + g('apelido') + '" placeholder="Ex.: Juninho, Dona Cida">' +
   '<div class="g2"><div><label>WhatsApp</label><input id="v-fone" type="tel" inputmode="numeric" value="' + g('fone') + '"></div>' +
   '<div><label>Nascimento</label><input id="v-nasc" type="date" value="' + g('nasc') + '"></div></div>' +
@@ -2390,6 +2393,7 @@ if (!ant) {
   if (evA) { o.eventoId = evA.id; if (modo === 'visitante') o.prim = evA.data; }
 }
 o.updatedAt = agora(); o._pend = true;
+aplicarFotoNova(o.id);
 if (modo !== 'membro') lvAjustarPendencia(o);
 db.pessoas = db.pessoas.filter(function (x) { return x.id !== o.id; }).concat([o]);
 lvPendente = null;
@@ -2496,7 +2500,7 @@ var l = PES().filter(function (p) { return p.criadoPor === eu().id; }).sort(func
 var h = '<div class="sec">Meus cadastros (' + l.length + ')</div><div class="card">';
 h += l.length ? l.map(function (p) {
   var s = p.origem === 'membro igreja' ? ['p-verde', 'membro · ' + gcNome(p.gcId)] : lvSituacaoTexto(p), edita = !p.gcId;
-  return '<div class="row' + (edita ? ' cl" data-a="lvEditar" data-v="' + esc(p.id) : '') + '"><div class="av">' + ini(p.nome) + '</div><div class="info"><div class="nm">' + esc(p.nome) + '</div>' +
+  return '<div class="row' + (edita ? ' cl" data-a="lvEditar" data-v="' + esc(p.id) : '') + '">' + avatarP(p) + '<div class="info"><div class="nm">' + esc(p.nome) + '</div>' +
     '<div class="sb">' + br(p.prim) + (p.eventoId && eventoPor(p.eventoId) ? ' · ' + esc(eventoPor(p.eventoId).titulo) : '') + ' · ' + esc(separarBairroCidade(p.bairro, p.cidade).bairro) + ' · ' + (p.aceitaVisita === 'Sim' ? 'aceita visita' : 'sem visita') + '</div></div>' +
     '<span class="pill ' + s[0] + '">' + esc(s[1]) + '</span></div>';
 }).join('') : '<div class="empty">Você ainda não cadastrou visitantes.</div>';
@@ -2522,7 +2526,7 @@ var PERM_PADRAO_C = {
   master: TODAS_C, pastor: TODAS_C,
   supervisor: ['visitantes', 'rede', 'gc', 'gcEvento', 'lvDirecionar', 'lvLiberar'],
   lider: ['gc', 'gcEvento', 'lvLiberar'], discipulo: ['gc', 'lvVisitas'],
-  secretaria: ['eventos', 'visitantes', 'recados', 'consulta'], tesouraria: ['financeiro', 'relFin'], voluntario: ['visitantes']
+  secretaria: ['eventos', 'visitantes', 'recados', 'consulta'], tesouraria: ['financeiro', 'relFin'], voluntario: ['visitantes'], voluntarioLV: ['visitantes', 'lvVisitas']
 };
 
 /* ── logo e dados da igreja (cache local) ── */
@@ -2590,6 +2594,7 @@ function abasExtras() {
   if (podeFin()) x.push('financeiro');
   if (cfg.modo === 'gc') x.push('lar');
   if (cfg.modo === 'lv' && pode('visitantes')) x.push('lvnovo', 'lvmeus');
+  if (cfg.modo === 'lv' && pode('lvVisitas')) x.push('lvcasas');
   x.push('avisos');
   if (pode('rede')) x.push('novo');
   if (pode('config')) x.push('config');
@@ -3367,7 +3372,7 @@ function rConsulta() {
   h += l.length ? l.slice(0, 150).map(function (p) {
     var end = separarBairroCidade(p.bairro, p.cidade), idade = idadeDe(p), st = p.gcId ? statsDe(p) : null, ult = p.gcId ? ultimaPresenca(p) : '';
     var aniv = fM.ordem === 'aniversario' && p.nasc ? ' · aniv. ' + p.nasc.slice(8, 10) + '/' + p.nasc.slice(5, 7) : '';
-    return '<div class="row cl" data-a="fichaPessoa" data-v="' + esc(p.id) + '"><div class="av" style="' + corAvatar(p.nome) + '">' + ini(p.nome) + '</div><div class="info">' +
+    return '<div class="row cl" data-a="fichaPessoa" data-v="' + esc(p.id) + '">' + avatarP(p) + '<div class="info">' +
       '<div class="nm">' + esc(p.nome) + (p.apelido ? ' <span style="color:#a87700;font-weight:600">“' + esc(p.apelido) + '”</span>' : '') + '</div>' +
       '<div class="sb">' + esc(p.fone || 'sem telefone') + ' · ' + esc(end.bairro || 'sem bairro') + ' · ' + esc(p.gcId ? gcNome(p.gcId) : 'sem GC') + '</div>' +
       '<div class="sb">' + (idade !== null ? idade + ' anos' : 'idade —') + aniv +
@@ -3399,7 +3404,7 @@ function fichaPessoa(id) {
   var ie = ETAPAS.indexOf(p.jornada);
   if (ie >= 0) tl.push(['ok', 'Jornada: ' + esc(p.jornada.replace(/^\d+\.\s*/, '')), 'etapa atual']);
   if (ie >= 0 && ie < ETAPAS.length - 1) tl.push(['', esc(ETAPAS[ie + 1].replace(/^\d+\.\s*/, '')), 'próxima etapa']);
-  abrirModal('<div class="perfil"><div class="av" style="' + corAvatar(p.nome) + '">' + ini(p.nome) + '</div><h2>' + esc(p.nome) + '</h2>' +
+  abrirModal('<div class="perfil"><div class="fp-click" data-a="fotoDireta" data-v="' + esc(p.id) + '" title="Trocar foto">' + avatarP(p) + '<span>📷</span></div><h2>' + esc(p.nome) + '</h2>' +
     (p.apelido ? '<div class="apel">“' + esc(p.apelido) + '”</div>' : '') +
     '<p>' + esc([p.status === 'Em visita' ? 'Visitante' : p.status === 'Ativo' ? (p.tipo || 'Membro') : p.status, g ? g.nome : (p.gcId ? '' : 'sem GC'), p.prim ? 'desde ' + br(p.prim) : ''].filter(Boolean).join(' · ')) + '</p>' +
     '<div class="pills">' + (p.origem ? '<span class="pill p-cinza">' + esc(p.origem) + '</span>' : '') + lvResumoPill(p) + pillIgreja(p) + '</div></div>' +
@@ -3413,11 +3418,13 @@ function fichaPessoa(id) {
       statCard('Presença no GC', s2 && s2.mar ? pct(s2.pct) : '—', s2 && s2.mar ? s2.mar + ' encontro(s) marcados' : (p.gcId ? 'sem chamada ainda' : 'sem GC'), s2 && s2.mar ? 'up' : '') +
       statCard('Visitas ao culto', +p.visitasIgreja || 0, p.visitaIgrejaEm ? '1ª em ' + br(p.visitaIgrejaEm) : 'nenhuma registrada') + '</div>' +
     '<div class="sec">Dados</div><div class="card kvs">' +
-      kv('Telefone', esc(p.fone)) + kv('Endereço', esc([rua, end.bairro].filter(Boolean).join(' · '))) + kv('Cidade', esc(end.cidade)) +
+      kv('Código', esc(p.codigo || 'gerado ao sincronizar')) + kv('Telefone', esc(p.fone)) + kv('Endereço', esc([rua, end.bairro].filter(Boolean).join(' · '))) + kv('Cidade', esc(end.cidade)) +
       kv('Nascimento', p.nasc ? br(p.nasc) + (idade !== null ? ' · ' + idade + ' anos' : '') : '') + kv('Sexo', esc(p.sexo)) +
       kv('Líder do GC', esc(g ? g.liderNome : '')) + kv('Como conheceu', esc(textoCanal(p))) + kv('Convidado por', esc(p.conv)) +
       kv('Aceita visita', esc(p.aceitaVisita)) + kv('Frequenta igreja', p.frequentaIgreja === 'Sim' ? esc(p.igrejaQual || 'sim') : '') +
       kv('Observações', esc(p.obs)) +
+      kv('Cadastrado por', esc((p.criadoPorNome || (p.criadoPor === eu().id ? eu().nome : '') || '—') + (p.criadoEm ? ' em ' + brCompleto(String(p.criadoEm).slice(0, 10)) : (p.prim ? ' · 1ª participação ' + brCompleto(p.prim) : '')))) +
+      (p.usuarioId ? kv('Acesso ao app', 'usuário vinculado') : '') +
       kv('Uso dos dados', p.anonimizadoEm ? 'anonimizado em ' + br(String(p.anonimizadoEm).slice(0, 10)) : textoConsent(p)) + '</div>' +
     (tl.length ? '<div class="sec">Jornada</div><div class="card"><div class="tl">' + tl.map(function (x) {
       return '<div class="' + x[0] + '"><b>' + x[1] + '</b><small>' + x[2] + '</small></div>'; }).join('') + '</div></div>' : '') +
@@ -3567,7 +3574,7 @@ function rCursoDetalhe(r) {
   if (gere && pend.length) h += '<div class="aviso r" data-a="rnConvites" data-v="' + esc(r.id) + '" style="cursor:pointer"><b>' + pend.length + ' convite(s) ainda não enviado(s).</b> Toque para enviar pelo WhatsApp.</div>';
   h += '<div class="card">' + (parts.length ? parts.map(function (p) {
     var st = presencaPart(r.id, p.chave);
-    return '<div class="row"><div class="av">' + ini(p.nome) + '</div><div class="info"><div class="nm">' + esc(p.nome) + (p.apelido ? ' <span style="color:#a87700;font-weight:600">“' + esc(p.apelido) + '”</span>' : '') + '</div>' +
+    return '<div class="row">' + avatarP(p) + '<div class="info"><div class="nm">' + esc(p.nome) + (p.apelido ? ' <span style="color:#a87700;font-weight:600">“' + esc(p.apelido) + '”</span>' : '') + '</div>' +
       '<div class="sb">' + (st.m ? st.p + ' de ' + st.m + ' · ' + pct(st.p / st.m) + ' presença' : 'sem chamada ainda') +
       (gere ? ' · ' + (p.enviadoEm ? 'convite enviado ' + br(p.enviadoEm.slice(0, 10)) : '<b style="color:var(--vermelho)">convite pendente</b>') : '') + '</div></div>' +
       (gere && linkWA(p.fone, '') ? '<a class="wa" data-a="rnEnviar" data-v="' + esc(r.id) + '|' + esc(p.chave) + '" href="' + linkWA(p.fone, msgConvite(r, p)) + '" target="_blank" rel="noopener">' + (p.enviadoEm ? 'Reenviar' : 'Convidar') + '</a>'
@@ -3718,7 +3725,7 @@ function rnConvites(id, chaves) {
     esc(msgConvite(r, l[0])) + '</div></details>' +
     '<div class="card" style="box-shadow:none;border:1px solid #eee;max-height:46vh;overflow-y:auto">' + l.map(function (p) {
       var w = linkWA(p.fone, msgConvite(r, p));
-      return '<div class="row" id="cv-' + esc(p.chave.replace(':', '_')) + '"><div class="av">' + ini(p.nome) + '</div><div class="info"><div class="nm">' + esc(p.nome) + '</div>' +
+      return '<div class="row" id="cv-' + esc(p.chave.replace(':', '_')) + '">' + avatarP(p) + '<div class="info"><div class="nm">' + esc(p.nome) + '</div>' +
         '<div class="sb">' + esc(p.fone || 'sem telefone') + (p.enviadoEm ? ' · já enviado' : '') + '</div></div>' +
         (w ? '<a class="wa" data-a="rnEnviar" data-v="' + esc(r.id) + '|' + esc(p.chave) + '" href="' + w + '" target="_blank" rel="noopener">Enviar</a>' : '<span class="pill p-cinza">sem nº</span>') + '</div>';
     }).join('') + '</div><div class="gap"></div><button class="btn gh" data-a="fechar">Concluir</button>');
@@ -4096,7 +4103,7 @@ function msgIndividual(id) {
   abrirModal('<h2>Enviar um a um</h2><div style="font-size:12.5px;color:#666;line-height:1.5;margin:4px 0 10px">Toque em <b>Enviar</b>: o WhatsApp abre com o texto personalizado. ' +
     (e.temImg ? 'A imagem não vai pelo link — para mandar a arte, use “Compartilhar”.' : '') + '</div>' +
     '<div class="card" style="box-shadow:none;border:1px solid #eee;max-height:52vh;overflow-y:auto">' + (msgLista.length ? msgLista.map(function (p) {
-      return '<div class="row"><div class="av">' + ini(p.nome) + '</div><div class="info"><div class="nm">' + esc(p.nome) + '</div><div class="sb">' + esc(p.fone) + '</div></div>' +
+      return '<div class="row">' + avatarP(p) + '<div class="info"><div class="nm">' + esc(p.nome) + '</div><div class="sb">' + esc(p.fone) + '</div></div>' +
         '<a class="wa" target="_blank" rel="noopener" href="https://wa.me/' + p.fone + '?text=' + encodeURIComponent(textoPessoal(e, p.apelido || pri(p.nome))) + '" data-a="waFeito">Enviar</a></div>';
     }).join('') : '<div class="empty">Ninguém com autorização e telefone neste público.</div>') + '</div>' +
     '<div class="gap"></div><button class="btn pr" data-a="msgFeito" data-v="' + esc(id) + '">Concluir e marcar como enviada</button><div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>');
@@ -4174,7 +4181,7 @@ function avisarEscalaModal(data, lista) {
     '<div class="card" style="box-shadow:none;border:1px solid #eee">' + lista.map(function (x) {
       var p = eq.filter(function (q) { return q.id === x.uid; })[0] || { nome: 'Pessoa', fone: '' }, f = fone(p.fone);
       var w = f ? 'https://wa.me/' + (f.length <= 11 ? '55' : '') + f + '?text=' + encodeURIComponent(textoEscala(e, x.funcao, p.nome)) : '';
-      return '<div class="row"><div class="av">' + ini(p.nome) + '</div><div class="info"><div class="nm">' + esc(p.nome) + '</div><div class="sb">' + nomeFuncao(x.funcao) + '</div></div>' +
+      return '<div class="row">' + avatarP(p) + '<div class="info"><div class="nm">' + esc(p.nome) + '</div><div class="sb">' + nomeFuncao(x.funcao) + '</div></div>' +
         (w ? '<a class="wa" target="_blank" rel="noopener" href="' + w + '" data-a="waFeito">Enviar</a>' : '<span class="pill p-cinza">sem nº</span>') + '</div>';
     }).join('') + '</div><div class="gap"></div><button class="btn gh" data-a="fechar">Concluir</button>');
 }
@@ -4484,7 +4491,7 @@ function inicioVoluntario() {
     h += '<div class="sec sec-l"><span>Cadastrados hoje</span><a data-a="nav" data-v="lvmeus">Ver todos</a></div><div class="card" style="padding:4px 16px">' +
       meusHoje.slice(0, 6).map(function (p) {
         var vol = +p.visitasIgreja >= 2;
-        return '<div class="row"><div class="av">' + ini(p.nome) + '</div><div class="info"><div class="nm">' + esc(p.nome) + '</div><div class="sb">' +
+        return '<div class="row">' + avatarP(p) + '<div class="info"><div class="nm">' + esc(p.nome) + '</div><div class="sb">' +
           esc(separarBairroCidade(p.bairro, p.cidade).bairro || '—') + (p.aceitaVisita === 'Sim' ? ' · aceita visita' : '') + '</div></div>' +
           '<span class="pill ' + (vol ? 'p-dour' : 'p-verde') + '">' + (vol ? p.visitasIgreja + 'ª visita' : 'novo') + '</span></div>';
       }).join('') + '</div>';
@@ -4702,6 +4709,122 @@ function notifAtivar() {
     if (p === 'granted') { marcarVistos(); toast('Notificações ativadas ✓'); try { new Notification(igrNome(), { body: 'Você vai receber os avisos por aqui.', icon: MODO_PWA ? 'icons/icon-192.png' : undefined }); } catch (e) {} }
     render();
   });
+}
+
+/* ═══════════════════ v35: FOTOS DAS PESSOAS, CÓDIGO, VOLUNTÁRIO LAR DE VIDA ═══════════════════ */
+var K_FOTOSP = 'gcbv5_fotosp', K_FOTOPEND = 'gcbv5_fotopend';
+var fotosP = lerJSON(K_FOTOSP, {}), fotoPend = lerJSON(K_FOTOPEND, {}), fpAlvo = null, fotoNovaP = null;
+function salvarFotosP() { lsSet(K_FOTOSP, JSON.stringify(fotosP)); lsSet(K_FOTOPEND, JSON.stringify(fotoPend)); }
+function fotoP(id) { return id && fotosP[id] && fotosP[id].data ? fotosP[id].data : ''; }
+/** Avatar da pessoa: foto (se houver) ou iniciais coloridas. */
+function avatarP(p, extra) {
+  var f = p && fotoP(p.id);
+  return f ? '<img class="av" src="' + f + '" alt=""' + (extra || '') + '>'
+           : '<div class="av" style="' + corAvatar(p && p.nome) + '"' + (extra || '') + '>' + ini(p && p.nome) + '</div>';
+}
+function avatarU(u) { return u.pessoaId && fotoP(u.pessoaId) ? '<img class="av" src="' + fotoP(u.pessoaId) + '" alt="">' : '<div class="av" style="' + corAvatar(u.nome) + '">' + ini(u.nome) + '</div>'; }
+/** Busca no servidor as fotos novas ou alteradas (em lote). */
+function buscarFotosPessoas() {
+  var falta = PES().filter(function (p) { return p.temFoto && (!fotosP[p.id] || fotosP[p.id].v !== p.fotoV) && !fotoPend[p.id]; }).map(function (p) { return p.id; });
+  var mudou = false;
+  PES().forEach(function (p) { if (!p.temFoto && fotosP[p.id] && !fotoPend[p.id]) { delete fotosP[p.id]; mudou = true; } });
+  if (mudou) salvarFotosP();
+  if (!falta.length) return Promise.resolve(mudou);
+  return chamar('fotosPessoas', { ids: falta.slice(0, 80) }).then(function (r) {
+    (r.itens || []).forEach(function (x) { fotosP[x.id] = { v: x.fotoV, data: x.foto }; });
+    salvarFotosP(); return true;
+  }).catch(function () { return mudou; });
+}
+/** Envia as fotos tiradas/escolhidas que ainda não subiram (o cadastro precisa existir no servidor). */
+function enviarFotosPend() {
+  var ids = Object.keys(fotoPend), p = Promise.resolve();
+  ids.forEach(function (id) {
+    p = p.then(function () {
+      return chamar('salvarFotoPessoa', { id: id, foto: fotoPend[id] }).then(function (r) {
+        if (fotoPend[id] === '__remover__') delete fotosP[id]; else fotosP[id] = { v: r.fotoV, data: fotoPend[id] };
+        delete fotoPend[id]; salvarFotosP();
+      }).catch(function (e) { if (!/não encontrado/i.test(e.message)) { delete fotoPend[id]; salvarFotosP(); toast(e.message, 4000); } });
+    });
+  });
+  return p;
+}
+/** Reduz a foto no aparelho (recorte quadrado, até 360 px) antes de enviar. */
+function processarFotoPessoa(file, pronto) {
+  if (!file) return;
+  var fr = new FileReader();
+  fr.onload = function () {
+    var img = new Image();
+    img.onload = function () {
+      var m = Math.min(img.width, img.height), sx = (img.width - m) / 2, sy = (img.height - m) / 2, l = 360, q = 0.8, url = '';
+      for (var t = 0; t < 7; t++) {
+        var cv = document.createElement('canvas'); cv.width = l; cv.height = l;
+        var cx = cv.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, l, l); cx.drawImage(img, sx, sy, m, m, 0, 0, l, l);
+        url = cv.toDataURL('image/jpeg', q);
+        if (url.length < 45000) break;
+        l = Math.round(l * 0.85); q = Math.max(0.55, q - 0.05);
+      }
+      if (url.length >= 45000) return toast('Não foi possível reduzir esta foto. Tente outra.');
+      pronto(url);
+    };
+    img.onerror = function () { toast('Arquivo de imagem inválido.'); };
+    img.src = fr.result;
+  };
+  fr.readAsDataURL(file);
+}
+/** Campo de foto dos formulários: prévia + Tirar foto (câmera) + Galeria. */
+function campoFotoPessoa(pid) {
+  var f = fotoNovaP && fotoNovaP !== '__remover__' ? fotoNovaP : (fotoNovaP === '__remover__' ? '' : fotoP(pid));
+  return '<label>Foto</label><div class="fp-campo"><div class="fp-prev" id="fp-prev" style="' + (f ? "background-image:url('" + f + "')" : '') + '">' + (f ? '' : '📷') + '</div>' +
+    '<div class="fp-bts"><button class="btn gh sm" data-a="fpCam">📷 Tirar foto</button><button class="btn gh sm" data-a="fpGal">🖼️ Galeria</button>' +
+    (f ? '<button class="btn gh sm" data-a="fpRem" style="color:var(--vermelho)">Remover</button>' : '') +
+    '<div style="font-size:10.5px;color:var(--tx3);margin-top:4px;line-height:1.35">A foto aparece para quem cuida da pessoa (GC, supervisor e Lar de Vida). O uso da imagem faz parte da autorização LGPD.</div></div></div>';
+}
+function pintarFotoCampo(url) {
+  var p = $('fp-prev'); if (!p) return;
+  p.style.backgroundImage = url ? "url('" + url + "')" : ''; p.textContent = url ? '' : '📷';
+}
+/** Guarda a foto escolhida no formulário para o cadastro salvo (sobe depois da sincronização). */
+function aplicarFotoNova(pid) {
+  if (!fotoNovaP || !pid) { fotoNovaP = null; return; }
+  fotoPend[pid] = fotoNovaP;
+  if (fotoNovaP === '__remover__') delete fotosP[pid]; else fotosP[pid] = { v: 'local', data: fotoNovaP };
+  fotoNovaP = null; salvarFotosP();
+}
+/** Trocar a foto direto pela ficha / perfil. */
+function trocarFotoDireta(pid) {
+  fpAlvo = { pid: pid, direto: true };
+  abrirModal('<h2>Foto</h2><div style="text-align:center;margin:10px 0">' + avatarP(pessoaPor(pid) || { id: pid, nome: eu().nome }, ' style="width:110px;height:110px;margin:0 auto;font-size:34px"') + '</div>' +
+    '<button class="btn pr" data-a="fpCam">📷 Tirar foto agora</button><div class="gap"></div><button class="btn gh" data-a="fpGal">🖼️ Escolher da galeria</button><div class="gap"></div>' +
+    (fotoP(pid) ? '<button class="btn dg" data-a="fpRem">Remover foto</button><div class="gap"></div>' : '') + '<button class="btn gh" data-a="fechar">Cancelar</button>');
+}
+function fotoEscolhida(url) {
+  if (fpAlvo && fpAlvo.direto) {
+    var pid = fpAlvo.pid; fpAlvo = null; fechar();
+    fotoPend[pid] = url; if (url === '__remover__') delete fotosP[pid]; else fotosP[pid] = { v: 'local', data: url };
+    salvarFotosP(); render();
+    carregando(true, 'Enviando foto...');
+    enviarFotosPend().then(function () { carregando(false); render(); toast(url === '__remover__' ? 'Foto removida' : 'Foto salva ✓'); });
+    return;
+  }
+  fotoNovaP = url; pintarFotoCampo(url === '__remover__' ? '' : url);
+}
+/* ── voluntário do Lar de Vida ── */
+function nomeResponsavelLV(g, id) {
+  var d = discipulosDoGC(g).filter(function (x) { return x.id === id; })[0] || (db.voluntariosLV || []).filter(function (x) { return x.id === id; })[0];
+  return d ? d.nome : '';
+}
+function rLVVol() {
+  var me = eu().id, casas = lvCasasDe(me).sort(function (a, b) { return String(lvPrazo(a)).localeCompare(String(lvPrazo(b))); });
+  var enc = PES().filter(function (p) { return p.lvDiscipuloId === me && p.lvStatus === 'encerrado'; });
+  var atr = casas.filter(lvAtrasada).length;
+  var h = '<div class="ini-ola" style="font-size:22px">Lar de Vida</div><div class="ini-sub">Suas casas: uma visita por semana, durante ' + LV_SEMANAS + ' semanas. Registre a data, se a pessoa estava em casa e o tema.</div>' +
+    '<div class="stats">' + statCard('Casas comigo', casas.length + '/' + LV_CASAS) + statCard('Visitas atrasadas', atr, atr ? 'registre o quanto antes' : 'tudo em dia', atr ? 'dn' : 'up') + '</div>';
+  h += '<div class="sec">Minhas casas</div>' + (casas.length ? casas.map(function (p) { return lvCard(p, true, false); }).join('')
+    : '<div class="card"><div class="empty">Nenhuma casa liberada para você ainda.<br>O líder do GC escolhe você ao liberar as visitas.</div></div>');
+  if (enc.length) h += '<div class="sec">Encerradas (' + enc.length + ')</div><div class="card lp">' + enc.map(function (p) {
+    return '<div class="row cl" data-a="lvHistorico" data-v="' + esc(p.id) + '">' + avatarP(p) + '<div class="info"><div class="nm">' + esc(p.nome) + '</div><div class="sb">' + br(p.lvEncerradoEm) + ' · ' + esc(gcNome(p.gcId)) + '</div></div>' +
+      '<span class="pill ' + (p.lvResultado === 'Ficou' ? 'p-verde' : 'p-cinza') + '">' + esc(p.lvResultado || '—') + '</span></div>'; }).join('') + '</div>';
+  return h;
 }
 
 /* ── encontros agendados (futuros) ── */
@@ -4968,6 +5091,8 @@ var ACOES = {
   sincronizar: function () { sincronizar(true); }, servidor: servidor, salvarServidor: function () { salvarServidor(); },
   padraoServidor: function () { salvarServidor(URL_PADRAO); },
   novaPessoa: function () { abrirPessoa(null); }, abrirPessoa: function (v) { abrirPessoa(v); }, salvarPessoa: function () { salvarPessoa(); }, modulo: abrirModulo,
+    fpCam: function () { $('fp-cam').click(); }, fpGal: function () { $('fp-gal').click(); }, fpRem: function () { fotoEscolhida('__remover__'); },
+    fotoDireta: function (v) { trocarFotoDireta(v); },
     muralTipo: function (v) { var t = $('mural-txt') ? $('mural-txt').value : ''; muralTipo = v; render(); if ($('mural-txt')) $('mural-txt').value = t; },
     muralFiltro: function (v) { muralFiltro = v; render(); },
     muralPostar: function () { var t = ($('mural-txt').value || '').trim(); if (t.length < 3) return toast('Escreva a mensagem.'); muralAcao('muralPostar', { tipo: muralTipo, texto: t }, 'Publicado no mural ✓'); },
@@ -5061,6 +5186,7 @@ document.addEventListener('change', function (ev) {
   if (id === 'f-freqig' || id === 'v-freqig') { var qi = $(id.charAt(0) + '-igrejawrap'); if (qi) qi.classList.toggle('hide', ev.target.value !== 'Sim'); }
   if (id === 'v-real') { var ew = $('lv-estavawrap'); if (ew) ew.classList.toggle('hide', ev.target.value !== 'Sim'); }
   if (id === 'f-tipo' && !editP && $('f-status')) $('f-status').value = ev.target.value === 'Visitante' ? 'Em visita' : 'Ativo';
+  if (id === 'fp-cam' || id === 'fp-gal') { processarFotoPessoa(ev.target.files[0], fotoEscolhida); ev.target.value = ''; }
   if (id === 'foto-input') { processarFoto(ev.target.files[0]); ev.target.value = ''; }
   if (id === 'icone-input') { processarIcone(ev.target.files[0], 256, function (u) { cfgDraft = lerCfgForm(); iconeNovo = u; render(); }); ev.target.value = ''; }
   if (id === 'iconegc-input') { processarIcone(ev.target.files[0], 192, function (u) { iconeGCNovo = u; pintarIconeGC(u); }); ev.target.value = ''; }

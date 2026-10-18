@@ -421,6 +421,20 @@ nav .bdg{top:2px;background:var(--vermelho)}
 #main details summary{color:var(--tx2)}
 .evcard,.card.cl{transition:transform .1s}
 .card.cl:active{transform:scale(.99)}
+
+/* ═════════ v35 · fotos das pessoas ═════════ */
+img.av{object-fit:cover;border-radius:50%;background:var(--bg);display:block;flex:0 0 auto}
+.row img.av{width:42px;height:42px}
+.chamada img.av{width:38px;height:38px}
+.perfil img.av{width:84px;height:84px;margin:0 auto 10px}
+.fp-click{position:relative;display:inline-block;cursor:pointer}
+.perfil .fp-click{display:block;width:84px;margin:0 auto 10px}.perfil .fp-click .av{margin:0}
+.fp-click span{position:absolute;right:-2px;bottom:-2px;background:#fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 1px 4px rgba(0,0,0,.18)}
+.row .fp-click span{width:20px;height:20px;font-size:10px}
+.fp-campo{display:flex;gap:12px;align-items:center}
+.fp-prev{width:76px;height:76px;flex:0 0 76px;border-radius:50%;background:var(--bg) center/cover no-repeat;display:flex;align-items:center;justify-content:center;font-size:26px;border:2px dashed var(--ln)}
+.fp-bts{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.fp-bts .btn.sm{padding:8px 10px}
 </style>
 </head>
 <body>
@@ -475,7 +489,8 @@ nav .bdg{top:2px;background:var(--vermelho)}
       <option value="pastor">Pastor</option>
       <option value="secretaria">Secretaria</option>
       <option value="tesouraria">Tesouraria</option>
-      <option value="voluntario">Voluntário (Lar de Vida — cadastro de visitantes)</option>
+      <option value="voluntario">Voluntário (cadastro de visitantes no culto)</option>
+      <option value="voluntarioLV">Voluntário Lar de Vida (visita casas)</option>
     </select>
     <label>Observação (opcional)</label>
     <textarea id="c-obs" rows="2" placeholder="Ex.: sou co-líder do GC Centro"></textarea>
@@ -517,6 +532,8 @@ nav .bdg{top:2px;background:var(--vermelho)}
 <input type="file" id="icone-input" accept="image/*" class="hide">
 <input type="file" id="iconegc-input" accept="image/*" class="hide">
 <input type="file" id="msg-input" accept="image/*" class="hide">
+<input type="file" id="fp-cam" accept="image/*" capture="environment" class="hide">
+<input type="file" id="fp-gal" accept="image/*" class="hide">
 
 <script src="config.js"></script>
 <script src="app.js"></script>
