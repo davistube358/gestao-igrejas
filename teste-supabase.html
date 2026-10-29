@@ -323,17 +323,32 @@ function cadastrar() {
   edge('cadastro', d).then(function () { $('c-ok').classList.remove('hide'); $('c-senha').value = ''; }).catch(function (e) { aviso('c-erro', erroTxt(e)); }).then(function () { $('b-cadastrar').disabled = false; });
 }
 
-var A = {
-  entrar: entrar, sair: sair, irCadastro: irCadastro, irLogin: function () { mostrar('t-login'); }, cadastrar: cadastrar, senhaNova: senhaNova,
-  tab: function (id) { tab(id); }, listarPedidos: listarPedidos, aprovar: aprovar,
-  corrigir: function (id) { decidir('request_access_correction', id); }, recusar: function (id) { decidir('reject_access_request', id); },
-  criarPessoa: criarPessoa, abrirFicha: abrirFicha, trocarSenha: trocarSenha, listarResets: listarResets, redefinir: redefinir
-};
-document.addEventListener('click', function (ev) {
-  var t = ev.target.closest && ev.target.closest('[data-act]'); if (!t) return;
-  var a = t.getAttribute('data-act');
-  if (At.getAttribute('data-id'), t;
-});
+var ACOES = {};
+ACOES.entrar = entrar;
+ACOES.sair = sair;
+ACOES.irCadastro = irCadastro;
+ACOES.irLogin = function () { mostrar('t-login'); };
+ACOES.cadastrar = cadastrar;
+ACOES.senhaNova = senhaNova;
+ACOES.tab = function (id) { tab(id); };
+ACOES.listarPedidos = listarPedidos;
+ACOES.aprovar = aprovar;
+ACOES.corrigir = function (id) { decidir('request_access_correction', id); };
+ACOES.recusar = function (id) { decidir('reject_access_request', id); };
+ACOES.criarPessoa = criarPessoa;
+ACOES.abrirFicha = abrirFicha;
+ACOES.trocarSenha = trocarSenha;
+ACOES.listarResets = listarResets;
+ACOES.redefinir = redefinir;
+
+function clicou(ev) {
+  var alvo = ev.target.closest ? ev.target.closest('[data-act]') : null;
+  if (!alvo) return;
+  var nome = alvo.getAttribute('data-act');
+  var fn = ACOES[nome];
+  if (typeof fn === 'function') fn(alvo.getAttribute('data-id'), alvo);
+}
+document.addEventListener('click', clicou);
 $('l-senha').addEventListener('keydown', function (e) { if (e.key === 'Enter') entrar(); });
 })();
 </script>
