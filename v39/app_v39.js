@@ -28,7 +28,7 @@ var V39 = window.V39_CONFIG || {};
 var SB_URL = V39.supabaseUrl || APP.supabaseUrl || '';
 var SB_ANON_KEY = String(V39.supabaseAnonKey || V39.supabaseKey || V39.publishableKey || APP.supabaseAnonKey || APP.supabaseKey || APP.publishableKey || '').trim();
 var sb = null, sbSessao = null, sbContexto = null;
-var V39_BUILD='39-context-contract-fixed-20261031-9';
+var V39_BUILD='39-context-profile-fixed-20261031-10';
 console.info('[2Gather v39]',V39_BUILD,'schema=app');
 function sbDiagnostico(){return {url:!!SB_URL,key:!!SB_ANON_KEY,lib:!!(window.supabase&&typeof window.supabase.createClient==='function'),configOk:!!(window.V39_CONFIG_STATUS&&window.V39_CONFIG_STATUS.ok),host:location.hostname,path:location.pathname};}
 function v39Ambiente(){return String(location.pathname||'').indexOf('/v39/')===0;}
@@ -71,10 +71,21 @@ function v39NormalizarContexto(valor){
   var igreja=v39Primeiro(x.active_church||x.church||acesso.church||{});
   igrejaId=igrejaId||igreja.id||igreja.church_id||'';
   var perfis=Array.isArray(x.profiles)?x.profiles:(Array.isArray(x.access_profiles)?x.access_profiles:[]);
-  var perfil=v39Obj(x.active_profile||x.primary_profile||x.profile||{});
+  if(!perfis.length&&Array.isArray(acesso.profiles))perfis=acesso.profiles;
+  if(!perfis.length&&Array.isArray(acesso.access_profiles))perfis=acesso.access_profiles;
+  var perfil=v39Obj(x.active_profile||x.primary_profile||x.profile||acesso.active_profile||acesso.primary_profile||acesso.profile||{});
   if(typeof perfil==='string')perfil={code:perfil};
   if(!perfil.code&&!perfil.profile_code&&!perfil.profile_key&&perfis.length){
     perfil=v39Primeiro(perfis.filter(function(p){return p.is_primary===true||p.primary===true;})[0]||perfis[0]);
+  }
+  if(!perfil.code&&!perfil.profile_code&&!perfil.profile_key){
+    var codigo=x.active_profile_code||x.primary_profile_code||x.profile_code||x.profile_key||x.role||acesso.active_profile_code||acesso.primary_profile_code||acesso.profile_code||acesso.profile_key||acesso.role||'';
+    if(codigo)perfil={code:codigo};
+  }
+  if(!perfil.code&&!perfil.profile_code&&!perfil.profile_key&&x.user){
+    var xu=v39Primeiro(x.user);
+    var ucodigo=xu.active_profile_code||xu.primary_profile_code||xu.profile_code||xu.profile_key||xu.role||'';
+    if(ucodigo)perfil={code:ucodigo};
   }
   var permissoes=x.effective_permissions;
   if(permissoes==null)permissoes=x.permissions;
@@ -91,7 +102,7 @@ function sbValidarContexto(valor){
   if(!(n.perfil.code||n.perfil.profile_code||n.perfil.profile_key||n.raw.active_profile_code||n.raw.profile_code||n.raw.profile_key||n.raw.role))faltam.push('perfil');
   /* permissions pode legitimamente ser [] ou {}, portanto validamos presença normalizada, não quantidade */
   if(n.permissoes==null)faltam.push('permissões');
-  if(faltam.length){console.error('[v39 contexto bruto]',valor);throw new Error('Contexto de acesso incompleto: '+faltam.join(', ')+'.');}
+  if(faltam.length){console.error('[v39 contexto bruto]',valor);console.error('[v39 perfil diagnostico]',{profiles:n.raw.profiles,access_profiles:n.raw.access_profiles,user:n.raw.user,churches:n.raw.churches,access:n.acesso});throw new Error('Contexto de acesso incompleto: '+faltam.join(', ')+'.');}
   return n;
 }
 function sbCarregarContexto(){
