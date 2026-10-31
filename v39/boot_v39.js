@@ -1,0 +1,1 @@
+if('serviceWorker' in navigator&&location.pathname.indexOf('/v39/')===0){window.addEventListener('load',function(){navigator.serviceWorker.register('./sw_v39.js',{scope:'./'}).catch(console.warn);});}
