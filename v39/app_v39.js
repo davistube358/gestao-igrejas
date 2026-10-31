@@ -28,7 +28,7 @@ var V39 = window.V39_CONFIG || {};
 var SB_URL = V39.supabaseUrl || APP.supabaseUrl || '';
 var SB_ANON_KEY = String(V39.supabaseAnonKey || V39.supabaseKey || V39.publishableKey || APP.supabaseAnonKey || APP.supabaseKey || APP.publishableKey || '').trim();
 var sb = null, sbSessao = null, sbContexto = null;
-var V39_BUILD='39-permission-map-20261031-14';
+var V39_BUILD='39-worship-attendance-20261031-15';
 console.info('[2Gather v39]',V39_BUILD,'schema=app');
 function sbDiagnostico(){return {url:!!SB_URL,key:!!SB_ANON_KEY,lib:!!(window.supabase&&typeof window.supabase.createClient==='function'),configOk:!!(window.V39_CONFIG_STATUS&&window.V39_CONFIG_STATUS.ok),host:location.hostname,path:location.pathname};}
 function v39Ambiente(){return String(location.pathname||'').indexOf('/v39/')===0;}
@@ -391,10 +391,42 @@ function v39CarregarEncontros(){if(!sbDisponivel())return Promise.resolve(db.enc
 function v39SalvarEncontro(e){return sbRpc('save_gc_meeting',{p_growth_group_id:e.gcId,p_meeting_id:e.id||null,p_payload:v39PayloadEncontro(e),p_reason:'frontend_v39'}).then(function(r){var out=v39Encontro(r);return sbRpc('save_gc_attendance',{p_meeting_id:out.id,p_items:v39Attendance(e),p_reason:'frontend_v39'}).then(function(){out.presencas=e.presencas||{};out.lista=e.lista||{add:[],rem:[]};return out;});});}
 
 /* ------------------- v39: Cultos ------------------- */
-function v39Culto(x){x=x||{};var e=x.worship_service||x.service||x;return{id:e.id||x.worship_service_id||'',tipo:e.service_type||e.type||x.type||'Culto',data:e.service_date||e.date||x.date||'',titulo:e.title||e.name||x.title||'Culto',inicio:e.start_time||x.start_time||'',fim:e.end_time||x.end_time||'',pregador:e.preacher_name||x.preacher_name||'',tituloPalavra:e.sermon_title||x.sermon_title||'',liberado:e.registration_open===true||x.registration_open===true,antes:e.registration_minutes_before||x.registration_minutes_before||'',depois:e.registration_minutes_after||x.registration_minutes_after||'',obs:e.notes||x.notes||'',tema:e.theme||x.theme||'',recados:e.announcements||x.announcements||'',dizimo:e.tithe_amount||x.tithe_amount||'',oferta:e.offering_amount||x.offering_amount||'',outras:e.other_income_amount||x.other_income_amount||'',presentes:e.attendance_count||x.attendance_count||'',status:e.status||x.status||'',updatedAt:e.updated_at||'',deleted:false,_v39:true};}
-function v39PayloadCulto(e){var o={};if(e.tipo!==undefined)o.service_type=e.tipo;if(e.data!==undefined)o.service_date=e.data;if(e.titulo!==undefined)o.title=e.titulo;if(e.inicio!==undefined)o.start_time=e.inicio||null;if(e.fim!==undefined)o.end_time=e.fim||null;if(e.pregador!==undefined)o.preacher_name=e.pregador||null;if(e.tituloPalavra!==undefined)o.sermon_title=e.tituloPalavra||null;if(e.liberado!==undefined)o.registration_open=!!e.liberado;if(e.antes!==undefined)o.registration_minutes_before=e.antes===''?null:+e.antes;if(e.depois!==undefined)o.registration_minutes_after=e.depois===''?null:+e.depois;if(e.obs!==undefined)o.notes=e.obs||null;if(e.tema!==undefined)o.theme=e.tema||null;if(e.recados!==undefined)o.announcements=e.recados||null;if(e.dizimo!==undefined)o.tithe_amount=valor(e.dizimo)||0;if(e.oferta!==undefined)o.offering_amount=valor(e.oferta)||0;if(e.outras!==undefined)o.other_income_amount=valor(e.outras)||0;if(e.presentes!==undefined)o.attendance_count=e.presentes===''?null:+e.presentes;if(e.deleted)o.status='cancelled';return o;}
+function v39Culto(x){x=x||{};var e=x.worship_service||x.service||x;return{id:e.id||x.worship_service_id||'',tipo:e.service_type||e.type||x.type||'Culto',data:e.service_date||e.date||x.date||'',titulo:e.title||e.name||x.title||'Culto',inicio:e.starts_at||e.start_time||x.starts_at||x.start_time||'',fim:e.ends_at||e.end_time||x.ends_at||x.end_time||'',pregador:e.preacher_name_text||e.preacher_name||x.preacher_name_text||x.preacher_name||'',tituloPalavra:e.scripture_reference||e.sermon_title||x.scripture_reference||x.sermon_title||'',liberado:e.registration_open===true||x.registration_open===true,antes:e.registration_minutes_before||x.registration_minutes_before||'',depois:e.registration_minutes_after||x.registration_minutes_after||'',obs:e.notes||x.notes||'',tema:e.theme||x.theme||'',recados:e.announcements||x.announcements||'',dizimo:e.tithe_amount||x.tithe_amount||'',oferta:e.offering_amount||x.offering_amount||'',outras:e.other_income_amount||x.other_income_amount||'',presentes:e.attendance_count||x.attendance_count||'',status:e.status||x.status||'',updatedAt:e.updated_at||'',deleted:false,_v39:true};}
+function v39PayloadCulto(e){var o={};if(e.tipo!==undefined)o.service_type=e.tipo;if(e.data!==undefined)o.service_date=e.data;if(e.titulo!==undefined)o.title=e.titulo;if(e.inicio!==undefined)o.starts_at=e.inicio||null;if(e.fim!==undefined)o.ends_at=e.fim||null;if(e.pregador!==undefined)o.preacher_name_text=e.pregador||null;if(e.tituloPalavra!==undefined)o.scripture_reference=e.tituloPalavra||null;if(e.liberado!==undefined)o.registration_open=!!e.liberado;if(e.antes!==undefined)o.registration_minutes_before=e.antes===''?null:+e.antes;if(e.depois!==undefined)o.registration_minutes_after=e.depois===''?null:+e.depois;if(e.obs!==undefined)o.notes=e.obs||null;if(e.tema!==undefined)o.theme=e.tema||null;if(e.recados!==undefined)o.announcements=e.recados||null;if(e.dizimo!==undefined)o.tithe_amount=valor(e.dizimo)||0;if(e.oferta!==undefined)o.offering_amount=valor(e.oferta)||0;if(e.outras!==undefined)o.other_income_amount=valor(e.outras)||0;if(e.presentes!==undefined)o.attendance_count=e.presentes===''?null:+e.presentes;if(e.deleted)o.status='cancelled';return o;}
 function v39ListarCultos(){if(!sbDisponivel()||!v39ChurchId())return Promise.resolve(db.eventos||[]);return sbRpc('list_worship_services',{p_church_id:v39ChurchId(),p_date_from:null,p_date_to:null,p_status:null}).then(function(r){db.eventos=v39Itens(r).map(v39Culto);salvarDB();return db.eventos;});}
 function v39SalvarCulto(e){return sbRpc('save_worship_service',{p_church_id:v39ChurchId(),p_worship_service_id:e.id||null,p_payload:v39PayloadCulto(e),p_reason:'frontend_v39'}).then(v39Culto);}
+var v39CultoDetalheAtual=null;
+function v39ObterCulto(id){return sbRpc('get_worship_service',{p_worship_service_id:id});}
+function v39SalvarPresencaCulto(id,itens,motivo){return sbRpc('save_worship_attendance',{p_worship_service_id:id,p_items:itens||[],p_reason:motivo||null});}
+function v39StatusCultoUI(s){return s==='present'?'P':s==='absent'?'F':s==='justified'?'J':s==='not_recorded'?'N':'';}
+function v39StatusCultoDB(s){return s==='P'?'present':s==='F'?'absent':s==='J'?'justified':s==='N'?'not_recorded':'';}
+function v39TipoCultoLabel(t){return t==='visitor'?'Visitante':t==='guest'?'Convidado':t==='volunteer'?'Voluntário':'Regular';}
+function v39AbrirChamadaCulto(id){
+  if(!sbDisponivel())return toast('Chamada individual disponível somente na v39.',4000);
+  carregando(true,'Carregando chamada...');
+  v39ObterCulto(id).then(function(d){
+    d=d||{};v39CultoDetalheAtual=d;
+    var w=d.worship_service||{},att=Array.isArray(d.attendance)?d.attendance:[],asg=Array.isArray(d.assignments)?d.assignments:[],map={};
+    att.forEach(function(a){map[a.person_id]=a;});
+    var pessoas=(db.pessoas||[]).filter(function(p){return p&&!p.deleted&&p.status!=='merged';}).slice().sort(function(a,b){return String(a.nome||'').localeCompare(String(b.nome||''));});
+    var rows=pessoas.map(function(p){var a=map[p.id]||{},st=v39StatusCultoUI(a.attendance_status),tp=a.participant_type||((p.tipo||'').toLowerCase().indexOf('visit')>=0?'visitor':'regular');return '<div class="row" style="align-items:flex-start"><div class="av">'+ini(p.nome||'?')+'</div><div class="info"><div class="nm">'+esc(p.apelido||p.nome||'Pessoa')+'</div><div class="sb">'+esc(p.codigo||p.personCode||'')+'</div><div class="g2" style="margin-top:7px"><select class="w-att" data-person="'+esc(p.id)+'" data-existing="'+(a.attendance_id?'1':'0')+'"><option value=""'+(!st?' selected':'')+'>Não marcar</option><option value="P"'+(st==='P'?' selected':'')+'>Presente</option><option value="F"'+(st==='F'?' selected':'')+'>Faltou</option><option value="J"'+(st==='J'?' selected':'')+'>Justificada</option><option value="N"'+(st==='N'?' selected':'')+'>Não registrado</option></select><select class="w-type" data-person="'+esc(p.id)+'"><option value="regular"'+(tp==='regular'?' selected':'')+'>Regular</option><option value="visitor"'+(tp==='visitor'?' selected':'')+'>Visitante</option><option value="guest"'+(tp==='guest'?' selected':'')+'>Convidado</option><option value="volunteer"'+(tp==='volunteer'?' selected':'')+'>Voluntário</option></select></div><input class="w-note" data-person="'+esc(p.id)+'" value="'+esc(a.notes||'')+'" placeholder="Observação individual" style="margin-top:7px"></div></div>';}).join('');
+    var assignments=asg.length?'<div class="sec" style="margin-left:0">Escala / designações (somente leitura)</div><div class="card" style="box-shadow:none;border:1px solid #eee">'+asg.map(function(a){return '<div class="row"><div class="info"><div class="nm">'+esc(a.full_name||'Pessoa')+'</div><div class="sb">'+esc(a.assignment_type||'Designação')+(a.title?' · '+esc(a.title):'')+(a.status?' · '+esc(a.status):'')+'</div>'+(a.instructions?'<div class="sb">'+esc(a.instructions)+'</div>':'')+'</div></div>';}).join('')+'</div>':'<div class="aviso" style="margin-top:10px">Nenhuma designação cadastrada para este culto.</div>';
+    abrirModal('<h2>Chamada do culto</h2><div class="sb">'+esc(w.title||eventoPor(id)&&eventoPor(id).titulo||'Culto')+'</div><div id="w-count" class="aviso" style="margin-top:10px">'+att.filter(function(a){return a.attendance_status==='present';}).length+' presente(s) registrado(s)</div>'+assignments+'<div class="sec" style="margin-left:0">Presença individual</div><div style="max-height:48vh;overflow:auto">'+(rows||'<div class="empty">Nenhuma pessoa disponível.</div>')+'</div><label>Justificativa da correção (obrigatória se o culto estiver concluído)</label><textarea id="w-reason" rows="2" placeholder="Motivo da correção, quando aplicável"></textarea><div class="gap"></div><button class="btn pr" data-a="evSalvarChamada" data-v="'+esc(id)+'">Salvar chamada</button><div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>');
+  }).catch(function(e){toast((e&&e.message)||'Não foi possível carregar a chamada.',5000);}).then(function(){carregando(false);});
+}
+function v39SalvarChamadaCultoUI(id){
+  var statuses=document.querySelectorAll('.w-att'),itens=[];
+  for(var i=0;i<statuses.length;i++){
+    var s=statuses[i],pid=s.getAttribute('data-person'),st=v39StatusCultoDB(s.value),existing=s.getAttribute('data-existing')==='1';
+    if(!st&&!existing)continue;if(!st)st='not_recorded';
+    var tp=document.querySelector('.w-type[data-person="'+pid+'"]'),no=document.querySelector('.w-note[data-person="'+pid+'"]');
+    itens.push({person_id:pid,attendance_status:st,participant_type:tp?tp.value:'regular',was_added_during_roll_call:!existing,notes:no&&no.value.trim()?no.value.trim():null});
+  }
+  var reason=$('w-reason')?$('w-reason').value.trim():'';
+  carregando(true,'Salvando chamada...');
+  v39SalvarPresencaCulto(id,itens,reason||null).then(function(r){var e=eventoPor(id);if(e)e.presentes=String(itens.filter(function(x){return x.attendance_status==='present';}).length);salvarDB();fechar();render();toast('Chamada do culto salva · '+(r&&r.processed!=null?r.processed:itens.length)+' registro(s) processado(s)');}).catch(function(e){toast((e&&e.message)||'Não foi possível salvar a chamada.',5500);}).then(function(){carregando(false);});
+}
+
 
 /* ------------------- v39: GCs ------------------- */
 function v39GC(x){
@@ -3236,7 +3268,7 @@ function evFicha(id) {
     (vis.length ? '<div class="sec" style="margin-left:0">Visitantes cadastrados (' + vis.length + ')</div><div class="card" style="box-shadow:none;border:1px solid #eee">' + vis.map(function (x) {
       return '<div class="row"><div class="av">' + ini(x.nome) + '</div><div class="info"><div class="nm">' + esc(x.nome) + '</div><div class="sb">' + esc(separarBairroCidade(x.bairro).bairro || '—') +
         ' · ' + (x.aceitaVisita === 'Sim' ? 'aceita visita' : 'sem visita') + (x.gc ? ' · já no GC' : '') + '</div></div></div>'; }).join('') + '</div>' : '') +
-    '<div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>');
+    '<div class="gap"></div>' + (sbDisponivel() ? '<button class="btn pr" data-a="evChamadaCulto" data-v="' + esc(id) + '">Presença individual e escala</button><div class="gap"></div>' : '') + '<button class="btn gh" data-a="fechar">Fechar</button>');
 }
 function evSemana() {
   var cultos = (igr.config || {}).cultos || [], d0 = parseData(hoje()), novos = [];
@@ -6107,7 +6139,7 @@ var ACOES = {
     lvFiltro: function (v) { lvFiltroSel = v; render(); },
     filtroCulto: function (v) { filtroCulto = v; render(); }, evNovo: evNovo, evEditar: evEditar, evSalvar: evSalvar, evLiberar: evLiberar,
     evExcluir: evExcluir, evValores: evValores, evSalvarValores: evSalvarValores, evRecados: evRecados, evSalvarRecados: evSalvarRecados,
-    evFicha: evFicha, evSemana: evSemana, escolherLogo: function () { $('logo-input').click(); },
+    evFicha: evFicha, evChamadaCulto: v39AbrirChamadaCulto, evSalvarChamada: v39SalvarChamadaCultoUI, evSemana: evSemana, escolherLogo: function () { $('logo-input').click(); },
     removerLogo: function () { cfgDraft = lerCfgForm(); logoNovo = '__remover__'; render(); },
     escolherIcone: function () { $('icone-input').click(); },
     removerIcone: function () { cfgDraft = lerCfgForm(); iconeNovo = '__remover__'; render(); },
