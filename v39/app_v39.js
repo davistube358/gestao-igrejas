@@ -28,7 +28,7 @@ var V39 = window.V39_CONFIG || {};
 var SB_URL = V39.supabaseUrl || APP.supabaseUrl || '';
 var SB_ANON_KEY = String(V39.supabaseAnonKey || V39.supabaseKey || V39.publishableKey || APP.supabaseAnonKey || APP.supabaseKey || APP.publishableKey || '').trim();
 var sb = null, sbSessao = null, sbContexto = null;
-var V39_BUILD='39-person-gc-back-20261031-16';
+var V39_BUILD='39-access-security-20261031-17';
 console.info('[2Gather v39]',V39_BUILD,'schema=app');
 function sbDiagnostico(){return {url:!!SB_URL,key:!!SB_ANON_KEY,lib:!!(window.supabase&&typeof window.supabase.createClient==='function'),configOk:!!(window.V39_CONFIG_STATUS&&window.V39_CONFIG_STATUS.ok),host:location.hostname,path:location.pathname};}
 function v39Ambiente(){return String(location.pathname||'').indexOf('/v39/')===0;}
@@ -301,6 +301,15 @@ function v39AlterarPerfil(u,perfil){return sbRpc('change_user_profile',{p_user_a
 function v39Suspender(u,motivo){return sbRpc('suspend_user_account',{p_user_account_id:u.id,p_church_id:v39ChurchId(),p_reason:motivo||'frontend_v39'});}
 function v39Reativar(u,motivo){return sbRpc('reactivate_user_account',{p_user_account_id:u.id,p_church_id:v39ChurchId(),p_reason:motivo||'frontend_v39'});}
 function v39Rejeitar(q,motivo){return sbRpc('reject_access_request',{p_access_request_id:q.id,p_reason:motivo||'Recusado no frontend v39'});}
+function v39SuspenderGlobal(u,motivo){return sbRpc('suspend_user_account_global',{p_user_account_id:u.id,p_reason:motivo||'frontend_v39_global'});}
+function v39ReativarGlobal(u,motivo){return sbRpc('reactivate_user_account_global',{p_user_account_id:u.id,p_reason:motivo||'frontend_v39_global'});}
+function v39ListarPedidosReset(){return sbRpc('list_password_reset_requests',{p_church_id:v39ChurchId()});}
+function v39MarcarReset(u){return sbRpc('edge_mark_password_reset',{p_user_account_id:u.id,p_actor_user_account_id:eu().id});}
+function v39CorrigirLogin(u,novoUsuario){return sbRpc('edge_correct_login_identity',{p_user_account_id:u.id,p_username:novoUsuario,p_email_changed:false,p_actor_user_account_id:eu().id});}
+function v39SuspenderGlobalUI(id){var u=(usuariosCache||[]).filter(function(x){return x.id===id;})[0];if(!u||!v39PodeSuspenderGlobal())return toast('Sem permissão para suspensão global.',4000);var m=prompt('Motivo da suspensão global de @'+u.usuario+':');if(m===null)return;if(!m.trim())return toast('Informe o motivo.');if(!confirm('Suspender globalmente @'+u.usuario+' em todas as igrejas e encerrar as sessões?'))return;carregando(true,'Suspendendo globalmente...');v39SuspenderGlobal(u,m.trim()).then(function(){return v39EncerrarSessoesUsuario(u.id);}).then(function(){toast('Conta suspensa globalmente e sessões encerradas.');fechar();usuariosCache=null;carregarUsuarios(true);}).catch(function(e){toast(e.message,5000);}).then(function(){carregando(false);});}
+function v39ReativarGlobalUI(id){var u=(usuariosCache||[]).filter(function(x){return x.id===id;})[0];if(!u||!v39PodeReativar())return toast('Sem permissão para reativação.',4000);var m=prompt('Motivo da reativação global de @'+u.usuario+':');if(m===null)return;if(!m.trim())return toast('Informe o motivo.');carregando(true,'Reativando globalmente...');v39ReativarGlobal(u,m.trim()).then(function(){toast('Conta reativada globalmente.');fechar();usuariosCache=null;carregarUsuarios(true);}).catch(function(e){toast(e.message,5000);}).then(function(){carregando(false);});}
+function v39AbrirPedidosReset(){if(!v39PodeRedefinirSenha())return toast('Sem permissão para visualizar pedidos de redefinição.',4000);carregando(true,'Carregando pedidos...');v39ListarPedidosReset().then(function(r){var a=v39Itens(r),h='<h2>Pedidos de redefinição de senha</h2><div class="aviso">A v39 não permite que o administrador defina a senha de outra pessoa. O fluxo seguro registra o pedido e a pessoa conclui a troca pelo processo de recuperação.</div><div class="gap"></div>';h+=a.length?a.map(function(x){return '<div class="row"><div class="info"><div class="nm">'+esc(x.full_name||x.username||'Usuário')+'</div><div class="sb">@'+esc(x.username||'')+' · solicitado em '+esc(dataHoraLocal(x.requested_at)||'')+(x.expires_at?' · expira '+esc(dataHoraLocal(x.expires_at)):'')+'</div></div></div>';}).join(''):'<div class="empty">Nenhum pedido pendente.</div>';h+='<div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>';abrirModal(h);}).catch(function(e){toast(e.message,5000);}).then(function(){carregando(false);});}
+
 
 /* ------------------- v39: Instituto / Lar de Vida ------------------- */
 var v39Inst={courses:[],offerings:[],enrollments:[],sessions:[],attendance:[],loaded:false};
@@ -1776,19 +1785,22 @@ function rUsuarios() {
     }).join('') + '</div>';
   }
   if (papel() === 'master') h += '<button class="btn pr" data-a="auditoria">Registro de auditoria</button><div class="gap"></div>';
+  if(sbDisponivel()&&v39PodeRedefinirSenha())h+='<button class="btn gh" data-a="pedidosReset">Pedidos de redefinição de senha</button><div class="gap"></div>';
   h += '<button class="btn gh" data-a="recarregarUsuarios">Atualizar lista</button>';
   return h;
 }
 function salvarUsuarioSrv(dados, msg) {
   var u=(usuariosCache||[]).filter(function(x){return x.id===dados.id;})[0];
-  var ops=[];
-  if(sbDisponivel() && u && !u._request){
-    if(dados.papel && dados.papel!==u.papel) ops.push(v39AlterarPerfil(u,dados.papel));
-    if(dados.status && dados.status!==u.status) ops.push((dados.status==='ativo'||dados.status==='active')?v39Reativar(u,'Alteração no frontend v39'):v39Suspender(u,'Alteração no frontend v39'));
+  if(sbDisponivel()&&u&&!u._request){
+    var ops=[];
+    if(dados.papel&&dados.papel!==u.papel)ops.push(v39AlterarPerfil(u,dados.papel));
+    if(dados.status&&dados.status!==u.status)ops.push((dados.status==='ativo'||dados.status==='active')?v39Reativar(u,'Alteração no frontend v39'):v39Suspender(u,'Alteração no frontend v39'));
+    if(dados.gcId&&dados.gcId!==u.gcId&&u.pessoaId)ops.push(v39AssociarPessoaGC(u.pessoaId,dados.gcId,'frontend_v39_user_gc'));
+    carregando(true,'Salvando...');
+    return Promise.all(ops).then(function(){toast(msg||'Usuário atualizado ✓');fechar();usuariosCache=null;carregarUsuarios(true);}).catch(function(e){toast(e.message,4500);}).then(function(){carregando(false);});
   }
-  var op=(sbDisponivel()&&u&&!u._request&&!dados.gcId&&!dados.acessos)?Promise.all(ops):chamar('salvarUsuario',{usuario:dados});
   carregando(true,'Salvando...');
-  return op.then(function(){toast(msg||'Usuário atualizado ✓');fechar();usuariosCache=null;carregarUsuarios(true);}).catch(function(e){toast(e.message,4500);}).then(function(){carregando(false);});
+  return chamar('salvarUsuario',{usuario:dados}).then(function(){toast(msg||'Usuário atualizado ✓');fechar();usuariosCache=null;carregarUsuarios(true);}).catch(function(e){toast(e.message,4500);}).then(function(){carregando(false);});
 }
 function aprovar(id) {
   if(sbDisponivel()&&!v39PodeAprovarSolicitacoes()){toast('Sem permissão para aprovar solicitações.',4000);return;}
@@ -1810,14 +1822,14 @@ function editarUsuario(id) {
     '<label>GC vinculado</label><select id="eu-gc">' + gcsOpts(u.gcId) + '</select>' +
     '<label>Situação</label><select id="eu-status"' + (proprio ? ' disabled' : '') + '>' + opts([['ativo', 'Ativo'], ['bloqueado', 'Bloqueado'], ['recusado', 'Recusado']], u.status) + '</select>' +
     (u.papel === 'master' ? '<div class="aviso" style="margin-top:12px">O nível <b>Master</b> tem acesso total a todas as ações, independentemente dos acessos marcados.</div>'
-      : blocoAcessos(u, proprio || (u.papel === 'pastor' && papel() !== 'master'))) +
+      : (u._v39 ? '<div class="aviso" style="margin-top:12px">As permissões efetivas são definidas pelo perfil no Supabase.</div>' : blocoAcessos(u, proprio || (u.papel === 'pastor' && papel() !== 'master')))) +
     '<div style="height:16px"></div><button class="btn pr" data-a="salvarUsuario" data-v="' + u.id + '">Salvar</button><div class="gap"></div>' +
-    '<button class="btn gh" data-a="redefinirSenha" data-v="' + u.id + '">Redefinir senha</button><div class="gap"></div>' +
-    (proprio ? '' : '<button class="btn gh" data-a="encerrarSessoes" data-v="' + u.id + '">Encerrar sessões (desconectar dos aparelhos)</button><div class="gap"></div>')) +
+    '<button class="btn gh" data-a="redefinirSenha" data-v="' + u.id + '">Solicitar redefinição de senha</button><div class="gap"></div>' +
+    (proprio ? '' : '<button class="btn gh" data-a="encerrarSessoes" data-v="' + u.id + '">Encerrar sessões (desconectar dos aparelhos)</button><div class="gap"></div>' + (v39PodeSuspenderGlobal() ? '<button class="btn dg" data-a="suspenderGlobal" data-v="' + u.id + '">Suspender globalmente</button><div class="gap"></div>' : '') + (v39PodeReativar() ? '<button class="btn gh" data-a="reativarGlobal" data-v="' + u.id + '">Reativar globalmente</button><div class="gap"></div>' : ''))) +
     '<div style="font-size:11px;color:#999;margin:2px 0 10px">' + (u.consentEm ? 'Aceitou a política de privacidade em ' + dataHoraLocal(u.consentEm) : 'Ainda não aceitou a política de privacidade.') + '</div>' +
     (papel() === 'master' ? '<div class="sec" style="margin-left:0">Cadastro (somente master)</div>' +
-      '<button class="btn gh" data-a="corrigirUsuario" data-v="' + u.id + '">Corrigir nome, usuário, telefone ou e-mail</button><div class="gap"></div>' +
-      (proprio ? '' : '<button class="btn dg" data-a="excluirUsuario" data-v="' + u.id + '">Excluir usuário</button><div class="gap"></div>') : '') +
+      '<button class="btn gh" data-a="corrigirUsuario" data-v="' + u.id + '">Corrigir usuário de acesso</button><div class="gap"></div>' +
+      (proprio || sbDisponivel() ? '' : '<button class="btn dg" data-a="excluirUsuario" data-v="' + u.id + '">Excluir usuário</button><div class="gap"></div>') : '') +
     '<button class="btn gh" data-a="fechar">Fechar</button>');
 }
 function corrigirUsuario(id) {
@@ -1833,6 +1845,14 @@ function corrigirUsuario(id) {
     '<button class="btn gh" data-a="fechar">Cancelar</button>');
 }
 function salvarCorrecao(id, btn) {
+  if(sbDisponivel()){
+    var u=(usuariosCache||[]).filter(function(x){return x.id===id;})[0];if(!u)return toast('Usuário não encontrado.');
+    if(!v39PodeCorrigirLogin())return toast('Sem permissão para corrigir login.',4000);
+    var novo=$('cu-usuario').value.trim().toLowerCase();if(!/^[a-z0-9._-]{3,30}$/.test(novo))return toast('Usuário: 3 a 30 caracteres, sem espaços ou acentos.');
+    if(novo===u.usuario)return toast('O usuário de acesso não foi alterado.');
+    carregando(true,'Corrigindo login...');
+    return v39CorrigirLogin(u,novo).then(function(){return v39EncerrarSessoesUsuario(u.id);}).then(function(){toast('Usuário de acesso corrigido; sessões encerradas.',5000);fechar();usuariosCache=null;carregarUsuarios(true);}).catch(function(e){toast(e.message,5000);}).then(function(){carregando(false);});
+  }
   var orig = btn.getAttribute('data-orig'), login = $('cu-usuario').value.trim().toLowerCase(), d = { id: id, nome: $('cu-nome').value.trim(), usuario: login, fone: $('cu-fone').value.trim(), email: $('cu-email').value.trim() };
   if (!d.nome) return toast('Informe o nome.');
   if (!/^[a-z0-9._-]{3,30}$/.test(login)) return toast('Usuário: 3 a 30 caracteres, sem espaços ou acentos.');
@@ -1872,13 +1892,14 @@ function salvarUsuario(id) {
   salvarUsuarioSrv(d, 'Usuário atualizado ✓');
 }
 function redefinirSenha(id) {
-  var u = (usuariosCache || []).filter(function (x) { return x.id === id; })[0]; if (!u) return;
-  var s = prompt('Nova senha provisória para @' + u.usuario + ' (mínimo 6 caracteres).\nInforme a pessoa e peça para trocar em Conta.');
-  if (s === null) return;
-  if (s.length < 6) { toast('A senha precisa ter pelo menos 6 caracteres.'); return; }
-  carregando(true, 'Redefinindo...');
-  chamar('redefinirSenha', { id: id, h: hashSenha(u.usuario, s) }).then(function () { toast('Senha redefinida ✓'); fechar(); })
-    .catch(function (e) { toast(e.message, 4500); }).then(function () { carregando(false); });
+  var u=(usuariosCache||[]).filter(function(x){return x.id===id;})[0];if(!u)return;
+  if(sbDisponivel()){
+    if(!v39PodeRedefinirSenha())return toast('Sem permissão para solicitar redefinição.',4000);
+    if(!confirm('Registrar pedido de redefinição para @'+u.usuario+' e encerrar as sessões atuais?'))return;
+    carregando(true,'Registrando pedido...');
+    return v39MarcarReset(u).then(function(){return v39EncerrarSessoesUsuario(u.id);}).then(function(){toast('Pedido registrado. Oriente a pessoa a usar “Esqueci a senha”.',5000);fechar();}).catch(function(e){toast(e.message,5000);}).then(function(){carregando(false);});
+  }
+  var sn=prompt('Nova senha provisória para @'+u.usuario+' (mínimo 6 caracteres).');if(sn===null)return;if(sn.length<6)return toast('A senha precisa ter pelo menos 6 caracteres.');carregando(true,'Redefinindo...');chamar('redefinirSenha',{id:id,h:hashSenha(u.usuario,sn)}).then(function(){toast('Senha redefinida ✓');fechar();}).catch(function(e){toast(e.message,4500);}).then(function(){carregando(false);});
 }
 
 /* conta */
@@ -6079,7 +6100,7 @@ var ACOES = {
   escolherFoto: function () { $('foto-input').click(); },
   removerFoto: function () { fotoNova = '__remover__'; var p = $('g-fotoprev'); if (p) { p.style.backgroundImage = ''; p.style.border = ''; p.style.color = ''; } },
   filtroGC: function (v) { filtroGC = v; render(); }, filtroP: function (v) { filtroP = v; render(); },
-  aprovar: aprovar, recusar: recusar, corrigirUsuario: corrigirUsuario, excluirUsuario: excluirUsuario, salvarCorrecao: salvarCorrecao, editarUsuario: editarUsuario, salvarUsuario: salvarUsuario, redefinirSenha: redefinirSenha,
+  aprovar: aprovar, recusar: recusar, corrigirUsuario: corrigirUsuario, excluirUsuario: excluirUsuario, salvarCorrecao: salvarCorrecao, editarUsuario: editarUsuario, salvarUsuario: salvarUsuario, redefinirSenha: redefinirSenha, pedidosReset: v39AbrirPedidosReset, suspenderGlobal: v39SuspenderGlobalUI, reativarGlobal: v39ReativarGlobalUI,
   recarregarUsuarios: function () { usuariosCache = null; render(); carregarUsuarios(true); },
   trocarSenha: trocarSenha, confirmarSenha: confirmarSenha, sair: function () { sair(true); },
   sincronizar: function () { sincronizar(true); }, servidor: servidor, salvarServidor: function () { salvarServidor(); },
