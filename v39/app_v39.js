@@ -28,7 +28,7 @@ var V39 = window.V39_CONFIG || {};
 var SB_URL = V39.supabaseUrl || APP.supabaseUrl || '';
 var SB_ANON_KEY = String(V39.supabaseAnonKey || V39.supabaseKey || V39.publishableKey || APP.supabaseAnonKey || APP.supabaseKey || APP.publishableKey || '').trim();
 var sb = null, sbSessao = null, sbContexto = null;
-var V39_BUILD='39-context-profile-fixed-20261031-10';
+var V39_BUILD='39-permissions-bridge-20261031-11';
 console.info('[2Gather v39]',V39_BUILD,'schema=app');
 function sbDiagnostico(){return {url:!!SB_URL,key:!!SB_ANON_KEY,lib:!!(window.supabase&&typeof window.supabase.createClient==='function'),configOk:!!(window.V39_CONFIG_STATUS&&window.V39_CONFIG_STATUS.ok),host:location.hostname,path:location.pathname};}
 function v39Ambiente(){return String(location.pathname||'').indexOf('/v39/')===0;}
@@ -110,6 +110,33 @@ function sbCarregarContexto(){
     var n=sbValidarContexto(valor);sbContexto=n.raw;return n;
   });
 }
+/* v39: ponte estrita entre codigos do Supabase e capacidades legadas da interface v38.
+   A ponte apenas libera a navegacao da UI. O banco/RPC/RLS continua sendo a fonte de verdade. */
+function v39MapaPermissoes(permissoes){
+  var raw={}, compat={};
+  if(Array.isArray(permissoes)) permissoes.forEach(function(pr){
+    if(typeof pr==='string'){raw[pr]=true;return;}
+    pr=pr||{};var cod=pr.code||pr.permission_code||pr.permission||pr.codigo;
+    if(cod) raw[cod]=pr.allowed!==false&&pr.effect!=='deny';
+  });
+  else if(permissoes&&typeof permissoes==='object') Object.keys(permissoes).forEach(function(k){raw[k]=permissoes[k]===true||permissoes[k]==='allow';});
+  function any(codes){return codes.some(function(c){return raw[c]===true;});}
+  compat.usuarios=any(['access.view','access.user.view','access.request.view']);
+  compat.consulta=any(['people.view']);
+  compat.visitantes=any(['people.create','people.update']);
+  return {raw:raw,compat:compat};
+}
+function v39TemPermissao(codigo){var u=eu();return !!(u&&u.rawPerms&&u.rawPerms[codigo]);}
+function v39PodeVerUsuarios(){return v39TemPermissao('access.view')||v39TemPermissao('access.user.view');}
+function v39PodeVerSolicitacoes(){return v39TemPermissao('access.request.view');}
+function v39PodeAprovarSolicitacoes(){return v39TemPermissao('access.request.approve');}
+function v39PodeAlterarPerfil(){return v39TemPermissao('access.user.change_profile');}
+function v39PodeSuspender(){return v39TemPermissao('access.user.suspend');}
+function v39PodeSuspenderGlobal(){return v39TemPermissao('access.user.suspend_global');}
+function v39PodeReativar(){return v39TemPermissao('access.user.reactivate');}
+function v39PodeCorrigirLogin(){return v39TemPermissao('auth.user.correct_login');}
+function v39PodeRedefinirSenha(){return v39TemPermissao('auth.user.reset_password');}
+window.__2GATHER_PERMISSIONS=function(){var u=eu()||{};return {build:V39_BUILD,papel:u.papel||'',raw:Object.assign({},u.rawPerms||{}),compat:Object.assign({},u.perms||{}),acoes:{verUsuarios:v39PodeVerUsuarios(),verSolicitacoes:v39PodeVerSolicitacoes(),aprovar:v39PodeAprovarSolicitacoes(),alterarPerfil:v39PodeAlterarPerfil(),suspender:v39PodeSuspender(),suspenderGlobal:v39PodeSuspenderGlobal(),reativar:v39PodeReativar(),corrigirLogin:v39PodeCorrigirLogin(),redefinirSenha:v39PodeRedefinirSenha()}};};
 function sbAplicarContexto(valor){
   var n=(valor&&valor.raw&&valor.conta)?valor:sbValidarContexto(valor),x=n.raw,u=n.conta,p=n.pessoa,i=n.igreja,pr=n.perfil;
   var mapasPerm=(typeof v39MapaPermissoes==='function')?v39MapaPermissoes(n.permissoes):{raw:n.permissoes||{},compat:n.permissoes||{}};
@@ -5932,7 +5959,7 @@ function pwaAvisoNovaVersao(sw) {
 }
 function pwaIniciar() {
   window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); pwaPrompt = e; if (cfg.aba === 'conta' || cfg.aba === 'mais') render(); });
-  if (!MODO_PWA || !('serviceWorker' in navigator)) return;
+  if (!MODO_PWA || !('serviceWorker' in navigator) || v39Ambiente()) return;   // v39: o registro e feito por boot_v39.js (sw_v39.js)
   var recarregando = false;
   navigator.serviceWorker.addEventListener('controllerchange', function () { if (!recarregando) { recarregando = true; location.reload(); } });
   navigator.serviceWorker.register('sw.js').then(function (reg) {
