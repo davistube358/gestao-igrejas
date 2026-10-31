@@ -5811,10 +5811,13 @@ function aplicarConsent(o, valor, resp) {
 /* ═══════════════════ PWA: instalação, atualização, novo endereço ═══════════════════ */
 var pwaPrompt = null, pwaNovoSW = null;
 function pwaOrigemOk() {
-  // v39 pode operar exclusivamente via Supabase, sem apiUrl legado do Apps Script.
-  // Portanto MODO_PWA nao pode ser o pre-requisito para validar uma origem hospedada.
+  // v39 de teste: /v39/ em Cloudflare Pages e localhost sao origens validas
+  // independentemente do backend legado ou do estado do cliente Supabase.
+  var host = String(location.hostname || '').toLowerCase();
+  var path = String(location.pathname || '');
+  if (path.indexOf('/v39/') === 0 && (/\.pages\.dev$/.test(host) || host === 'localhost' || host === '127.0.0.1')) return true;
   var ok = APP.origens || [];
-  var hospedado = ok.indexOf(location.origin) >= 0 || /\.pages\.dev$/.test(location.hostname) || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  var hospedado = ok.indexOf(location.origin) >= 0 || /\.pages\.dev$/.test(host) || host === 'localhost' || host === '127.0.0.1';
   if (sbDisponivel()) return hospedado;
   if (!MODO_PWA) return false;
   return hospedado;
