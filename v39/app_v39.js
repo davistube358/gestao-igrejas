@@ -28,7 +28,7 @@ var V39 = window.V39_CONFIG || {};
 var SB_URL = V39.supabaseUrl || APP.supabaseUrl || '';
 var SB_ANON_KEY = String(V39.supabaseAnonKey || V39.supabaseKey || V39.publishableKey || APP.supabaseAnonKey || APP.supabaseKey || APP.publishableKey || '').trim();
 var sb = null, sbSessao = null, sbContexto = null;
-var V39_BUILD='39-worship-attendance-20261031-15';
+var V39_BUILD='39-person-gc-back-20261031-16';
 console.info('[2Gather v39]',V39_BUILD,'schema=app');
 function sbDiagnostico(){return {url:!!SB_URL,key:!!SB_ANON_KEY,lib:!!(window.supabase&&typeof window.supabase.createClient==='function'),configOk:!!(window.V39_CONFIG_STATUS&&window.V39_CONFIG_STATUS.ok),host:location.hostname,path:location.pathname};}
 function v39Ambiente(){return String(location.pathname||'').indexOf('/v39/')===0;}
@@ -465,7 +465,16 @@ function v39ListarPessoas(){
 function v39ObterPessoa(id){return sbRpc('get_person',{p_church_id:v39ChurchId(),p_person_id:id}).then(v39Pessoa);}
 function v39CriarPessoa(o){return sbRpc('create_person',{p_church_id:v39ChurchId(),p_payload:v39PayloadPessoa(o)}).then(v39Pessoa);}
 function v39AtualizarPessoa(o){return sbRpc('update_person',{p_church_id:v39ChurchId(),p_person_id:o.id,p_expected_updated_at:o.updatedAt||null,p_payload:v39PayloadPessoa(o)}).then(v39Pessoa);}
-function v39SalvarPessoa(o,ant){return ant?v39AtualizarPessoa(o):v39CriarPessoa(o);}
+function v39SalvarPessoa(o,ant){
+  var alvo=o.gcId||'', anterior=ant&&ant.gcId||'';
+  var salvar=ant?v39AtualizarPessoa(o):v39CriarPessoa(o);
+  return salvar.then(function(p){
+    if(alvo && alvo!==anterior && p&&p.id){
+      return v39AssociarPessoaGC(p.id,alvo,ant?'frontend_v39_transfer_person':'frontend_v39_assign_person').then(function(){p.gcId=alvo;return p;});
+    }
+    return p;
+  });
+}
 var EXIGE_HOSPEDADO = true;      // segurança: o app só funciona pelo endereço oficial (dados nunca trafegam pela URL)
 
 /* ───────── armazenamento ───────── */
@@ -1318,7 +1327,7 @@ function render() {
   $('h-tit').textContent = TIT[cfg.aba] ? TIT[cfg.aba] : cfg.modo === 'lv' ? igrNome() : cfg.aba === 'config' ? 'Configurações' : cfg.aba === 'cultos' ? 'Cultos e eventos' : cfg.aba === 'membros' ? 'Cadastro de pessoas' : cfg.aba === 'cursos' ? 'Treinamentos/Reuniões' : cfg.modo === 'ger' ? igrNome() : (g ? g.nome : 'Meu GC');
   $('h-papel').textContent = PAPEL_NOME[papel()] || '';
   var raizes = abasAtuais().map(function (a) { return a.id; }), naRaiz = raizes.indexOf(cfg.aba) >= 0 && !cursoAberto;
-  $('b-voltar').classList.toggle('hide', naRaiz && !(cfg.modo === 'gc' && ehGestor() && cfg.aba === 'painel'));
+  $('b-voltar').classList.remove('hide');   // TESTE 16: Voltar disponível em todas as telas autenticadas
   $('b-voltar-ger').classList.add('hide');
   var abas = abasAtuais(), abaNav = raizes.indexOf(cfg.aba) >= 0 ? cfg.aba : (navStack.length ? (navStack[0].aba && raizes.indexOf(navStack[0].aba) >= 0 ? navStack[0].aba : inicioId()) : inicioId());
   $('nav').innerHTML = abas.map(function (a) {
@@ -6054,7 +6063,7 @@ function avisoNovoEndereco() {
 /* ───────── modal ───────── */
 function abrirModal(html) {
   var jaAberto = $('modal').classList.contains('on');
-  $('modal-sheet').innerHTML = '<div class="grab"></div>' + html; $('modal').classList.add('on');
+  $('modal-sheet').innerHTML = '<div class="grab"></div><button type="button" class="btn gh sm" data-a="fechar" style="width:auto;margin:0 0 10px">← Voltar</button>' + html; $('modal').classList.add('on');
   if (!jaAberto && HIST_OK && cfg.token) { empilhar('modal'); modalHist = true; }
 }
 function fecharModalSo() { $('modal').classList.remove('on'); gcForm = cfg.aba === 'novo' ? gcForm : null; }
@@ -6155,7 +6164,7 @@ var ACOES = {
       if (confirm('Ajustar a grafia do bairro nos cadastros para os nomes da lista?')) corrigirGrafiaBairros();
     },
     filtroM: function (v) { filtroM = v; render(); }, fichaPessoa: fichaPessoa,
-    perfilEditar: function (v) { var p = pessoaPor(v); if (!p) return; if (p.gcId && cfg.modo === 'gc' && p.gcId === gcA()) abrirPessoa(v); else if (p.gcId) abrirPessoa(v); else lvEditar(v); }, csvConsulta: csvConsulta,
+    perfilEditar: function (v) { var p = pessoaPor(v); if (!p) return; abrirPessoa(v); }, csvConsulta: csvConsulta,
     cfRemCulto: function (v) { cfgDraft = lerCfgForm(); cfgDraft.cultos.splice(+v, 1); render(); }, cfSalvar: cfSalvar,
     encEditar: encEditar, encSalvar: encSalvar, encChamada: function (v) { cfg.dataChamada = v; cfg.dataChamadaGC = gcA(); if (cfg.aba === 'chamada') render(); else irAba('chamada'); },
     permPadrao: marcarPadraoPerms,
