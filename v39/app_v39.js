@@ -28,7 +28,10 @@ var V39 = window.V39_CONFIG || {};
 var SB_URL = V39.supabaseUrl || APP.supabaseUrl || '';
 var SB_ANON_KEY = V39.supabaseAnonKey || APP.supabaseAnonKey || '';
 var sb = null, sbSessao = null, sbContexto = null;
-function sbDisponivel(){ return !!(SB_URL && SB_ANON_KEY && window.supabase && typeof window.supabase.createClient === 'function'); }
+function sbDiagnostico(){return {url:!!SB_URL,key:!!SB_ANON_KEY,lib:!!(window.supabase&&typeof window.supabase.createClient==='function'),configOk:!!(window.V39_CONFIG_STATUS&&window.V39_CONFIG_STATUS.ok),host:location.hostname,path:location.pathname};}
+function sbDisponivel(){var d=sbDiagnostico();return !!(d.url&&d.key&&d.lib);}
+function v39Ambiente(){return String(location.pathname||'').indexOf('/v39/')===0;}
+function sbErroConfig(){var d=sbDiagnostico(),p=[];if(!d.url)p.push('Project URL');if(!d.key)p.push('Publishable Key');if(!d.lib)p.push('biblioteca Supabase JS');if(window.V39_CONFIG_STATUS&&!window.V39_CONFIG_STATUS.ok)p=p.concat(window.V39_CONFIG_STATUS.errors||[]);return 'Supabase indisponível na v39. Verifique: '+(p.length?p.join(' | '):'configuração do navegador')+'.';}
 function sbCliente(){
   if(sb) return sb;
   if(!sbDisponivel()) throw new Error('Supabase não configurado na v39.');
@@ -913,7 +916,7 @@ function entrar() {
   var u=$('l-usuario').value.trim().toLowerCase(), senha=$('l-senha').value;
   if(!u||!senha){erroEm('l-erro','Informe e-mail e senha.');return;}
   erroEm('l-erro','');$('b-entrar').disabled=true;carregando(true,'Entrando...');
-  var op=sbDisponivel()?sbEntrar(u,senha).then(function(){return{supabase:true,usuario:cfg.usuario};}):chamar('login',{usuario:u,h:hashSenha(u,senha)});
+  var op=sbDisponivel()?sbEntrar(u,senha).then(function(){return{supabase:true,usuario:cfg.usuario};}):(v39Ambiente()?Promise.reject(new Error(sbErroConfig())):chamar('login',{usuario:u,h:hashSenha(u,senha)}));
   op.then(function(r){
     if(!r.supabase){var trocou=cfg.usuario&&cfg.usuario.id!==r.usuario.id;if(trocou){db={pessoas:[],encontros:[],gcs:[],equipe:[],pendentes:0};fotos={};salvarDB();salvarFotos();}cfg.token=r.token;cfg.usuario=r.usuario;cfg.ultima='';cfg.hashSync='';setTimeout(verificarSenhaTemp,250);setTimeout(verificarConsentimento,300);}
     cfg.modo=ehGestor()?'ger':'gc';cfg.gcAtual='';cfg.aba='';salvarCfg();$('l-senha').value='';if(r.supabase)return Promise.all([v39ListarPessoas(),v39ListarGCs()]).then(function(){return Promise.all([v39CarregarEncontros(),v39ListarCultos(),v39FinCarregar(null,null).catch(function(e){console.warn('v39 financeiro',e);return v39Fin;}),v39LvListar().catch(function(e){console.warn('v39 lar de vida',e);return v39LV;}),v39InstCarregar().catch(function(e){console.warn('v39 instituto',e);return v39Inst;}),v39CarregarAcessos().catch(function(e){console.warn('v39 acessos',e);return v39Access;}),v39ReunCarregar().catch(function(e){console.warn('v39 reuniões',e);return v39Reun;}),v39ComCarregar().catch(function(e){console.warn('v39 comunicação',e);return v39Com;}),v39ConfigCarregar().catch(function(e){console.warn('v39 configurações',e);return v39Settings;})]);}).then(iniciarApp);iniciarApp();return sincronizar(false);
