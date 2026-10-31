@@ -28,7 +28,7 @@ var V39 = window.V39_CONFIG || {};
 var SB_URL = V39.supabaseUrl || APP.supabaseUrl || '';
 var SB_ANON_KEY = String(V39.supabaseAnonKey || V39.supabaseKey || V39.publishableKey || APP.supabaseAnonKey || APP.supabaseKey || APP.publishableKey || '').trim();
 var sb = null, sbSessao = null, sbContexto = null;
-var V39_BUILD='39-tolerant-reads-20261031-13';
+var V39_BUILD='39-permission-map-20261031-14';
 console.info('[2Gather v39]',V39_BUILD,'schema=app');
 function sbDiagnostico(){return {url:!!SB_URL,key:!!SB_ANON_KEY,lib:!!(window.supabase&&typeof window.supabase.createClient==='function'),configOk:!!(window.V39_CONFIG_STATUS&&window.V39_CONFIG_STATUS.ok),host:location.hostname,path:location.pathname};}
 function v39Ambiente(){return String(location.pathname||'').indexOf('/v39/')===0;}
@@ -121,9 +121,30 @@ function v39MapaPermissoes(permissoes){
   });
   else if(permissoes&&typeof permissoes==='object') Object.keys(permissoes).forEach(function(k){raw[k]=permissoes[k]===true||permissoes[k]==='allow';});
   function any(codes){return codes.some(function(c){return raw[c]===true;});}
+  /* Ponte Supabase -> chaves legadas da interface. A UI nunca amplia acesso: cada chave depende de uma permissão efetiva. */
   compat.usuarios=any(['access.view','access.user.view','access.request.view']);
   compat.consulta=any(['people.view']);
   compat.visitantes=any(['people.create','people.update']);
+  compat.rede=any(['gcs.view','gcs.create','gcs.update','gcs.assignments.manage','gcs.manage_memberships']);
+  compat.gc=any(['gcs.view','gcs.meetings.view','gcs.attendance.manage','gcs.manage_memberships']);
+  compat.gcEvento=any(['gcs.meetings.create','gcs.meetings.update','gcs.financial.report']);
+  compat.eventos=any(['events.view','events.create','events.update','events.participants.manage']);
+  compat.financeiro=any(['financial.book.view','financial.movements.create','financial.expenses.create','events.financial.report','gcs.financial.report']);
+  compat.relFin=any(['financial.reports.view','financial.audit','financial.export','financial.reports.export']);
+  compat.cursos=any(['general_meetings.view','general_meetings.create','general_meetings.update','general_meetings.attendance.manage']);
+  compat.instituto=any(['institute.view','institute.courses.manage','institute.offerings.manage','institute.enrollments.manage','institute.attendance.manage']);
+  compat.institutoAdmin=any(['institute.courses.manage','institute.offerings.manage','institute.enrollments.manage']);
+  compat.institutoCursos=any(['institute.view','institute.courses.manage','institute.offerings.manage','institute.enrollments.manage']);
+  compat.recados=any(['communication.announcements.view','communication.announcements.manage','communication.wall.view','communication.wall.manage','communication.notifications.manage']);
+  compat.config=any(['settings.view','settings.manage','church.settings.view','church.settings.manage','access.manage']);
+  compat.lvDirecionar=any(['life_home.view','life_home.manage','life_home.journeys.manage','people.update']);
+  compat.lvLiberar=any(['life_home.manage','life_home.houses.manage']);
+  compat.lvVisitas=any(['life_home.view','life_home.visits.manage']);
+  compat.agendaPastoral=any(['pastoral.agenda.view','pastoral.agenda.manage','institute.health.view']);
+  compat.prontuario=any(['health.records.view','health.records.manage','institute.health.records.view']);
+  compat.pacienteNomes=any(['health.patient_names.view','institute.health.patient_names.view']);
+  compat.instMercado=any(['institute.market.manage','institute.inventory.market.manage']);
+  compat.instFarmacia=any(['institute.pharmacy.manage','institute.inventory.pharmacy.manage']);
   return {raw:raw,compat:compat};
 }
 function v39TemPermissao(codigo){var u=eu();return !!(u&&u.rawPerms&&u.rawPerms[codigo]);}
