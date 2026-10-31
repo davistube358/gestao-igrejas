@@ -28,7 +28,7 @@ var V39 = window.V39_CONFIG || {};
 var SB_URL = V39.supabaseUrl || APP.supabaseUrl || '';
 var SB_ANON_KEY = V39.supabaseAnonKey || APP.supabaseAnonKey || '';
 var sb = null, sbSessao = null, sbContexto = null;
-var V39_BUILD='39-schema-app-20261031-1';
+var V39_BUILD='39-schema-app-context-20261031-2';
 console.info('[2Gather v39]',V39_BUILD,'schema=app');
 function sbDiagnostico(){return {url:!!SB_URL,key:!!SB_ANON_KEY,lib:!!(window.supabase&&typeof window.supabase.createClient==='function'),configOk:!!(window.V39_CONFIG_STATUS&&window.V39_CONFIG_STATUS.ok),host:location.hostname,path:location.pathname};}
 function sbDisponivel(){var d=sbDiagnostico();return !!(d.url&&d.key&&d.lib);}
@@ -43,9 +43,34 @@ function sbCliente(){
 function sbRpc(nome,args){ return sbCliente().rpc(nome,args||{}).then(function(x){ if(x.error) throw x.error; return x.data; }); }
 function sbCarregarContexto(){ return sbRpc('get_my_frontend_context',{}).then(function(x){ sbContexto=Array.isArray(x)?(x[0]||{}):(x||{}); return sbContexto; }); }
 function sbAplicarContexto(x){
-  x=x||{}; var p=x.person||{}, a=x.user_account||{}, i=x.church||{};
-  cfg.usuario={id:a.id||x.user_account_id||'',pessoaId:p.id||x.person_id||'',nome:p.name||p.nome||x.person_name||'',usuario:a.username||'',email:a.email||'',papel:x.profile_key||x.profile||x.role||'',perms:x.permissions||x.perms||{},gcId:x.growth_group_id||x.gc_id||'',consent:x.consent!==false};
-  cfg.activeChurchId=i.id||x.church_id||''; cfg.token=(sbSessao&&sbSessao.access_token)||'supabase'; cfg.ultima=agora(); salvarCfg();
+  x=x||{};
+  var u=x.user||x.user_account||{};
+  var pessoa=x.person||u.person||{};
+  var igrejas=Array.isArray(x.churches)?x.churches:[];
+  var igrejaId=x.active_church_id||x.church_id||'';
+  var igreja=igrejas.filter(function(c){return (c.id||c.church_id)===igrejaId;})[0]||x.church||{};
+  var perfis=Array.isArray(x.profiles)?x.profiles:[];
+  var perfil=x.active_profile||perfis.filter(function(pr){return pr.is_primary===true||pr.primary===true;})[0]||perfis[0]||{};
+  var permissoes=Array.isArray(x.effective_permissions)?x.effective_permissions:(x.permissions||x.perms||[]);
+  var mapaPerm={};
+  if(Array.isArray(permissoes)) permissoes.forEach(function(pr){var cod=pr.code||pr.permission_code||pr.permission||pr.codigo;if(cod)mapaPerm[cod]=pr.allowed!==false;});
+  else mapaPerm=permissoes||{};
+  cfg.usuario={
+    id:u.id||u.user_account_id||x.user_account_id||'',
+    pessoaId:pessoa.id||u.person_id||x.person_id||'',
+    nome:pessoa.preferred_name||pessoa.full_name||pessoa.name||u.preferred_name||u.full_name||u.name||x.person_name||u.username||'',
+    usuario:u.username||u.login||'',
+    email:u.email||(sbSessao&&sbSessao.user&&sbSessao.user.email)||'',
+    papel:perfil.code||perfil.profile_code||x.active_profile_code||x.profile_code||x.profile_key||x.profile||x.role||'',
+    perms:mapaPerm,
+    gcId:x.growth_group_id||x.gc_id||'',
+    consent:x.consent!==false
+  };
+  cfg.activeChurchId=igrejaId||igreja.id||igreja.church_id||'';
+  cfg.igrejaNome=igreja.name||igreja.church_name||cfg.igrejaNome||'';
+  cfg.token=(sbSessao&&sbSessao.access_token)||'supabase';
+  cfg.ultima=agora();
+  salvarCfg();
 }
 function sbRestaurarSessao(){ if(!sbDisponivel()) return Promise.resolve(false); return sbCliente().auth.getSession().then(function(x){if(x.error)throw x.error;sbSessao=x.data&&x.data.session;if(!sbSessao)return false;return sbCarregarContexto().then(function(c){sbAplicarContexto(c);return true;});}); }
 function sbEntrar(email,senha){return sbCliente().auth.signInWithPassword({email:email,password:senha}).then(function(x){if(x.error)throw x.error;sbSessao=x.data.session;return sbCarregarContexto().then(function(c){sbAplicarContexto(c);return c;});});}
