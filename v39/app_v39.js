@@ -38,7 +38,7 @@ function sbCliente(){
   sb=window.supabase.createClient(SB_URL,SB_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
   return sb;
 }
-function sbRpc(nome,args){ return sbCliente().rpc(nome,args||{}).then(function(x){ if(x.error) throw x.error; return x.data; }); }
+function sbRpc(nome,args){ return sbCliente()..schema('app').rpc(nome,args||{}).then(function(x){ if(x.error) throw x.error; return x.data; }); }
 function sbCarregarContexto(){ return sbRpc('get_my_frontend_context',{}).then(function(x){ sbContexto=Array.isArray(x)?(x[0]||{}):(x||{}); return sbContexto; }); }
 function sbAplicarContexto(x){
   x=x||{}; var p=x.person||{}, a=x.user_account||{}, i=x.church||{};
