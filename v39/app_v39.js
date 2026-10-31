@@ -28,7 +28,7 @@ var V39 = window.V39_CONFIG || {};
 var SB_URL = V39.supabaseUrl || APP.supabaseUrl || '';
 var SB_ANON_KEY = String(V39.supabaseAnonKey || V39.supabaseKey || V39.publishableKey || APP.supabaseAnonKey || APP.supabaseKey || APP.publishableKey || '').trim();
 var sb = null, sbSessao = null, sbContexto = null;
-var V39_BUILD='39-boot-audit-fixed-20261031-7';
+var V39_BUILD='39-context-contract-fixed-20261031-9';
 console.info('[2Gather v39]',V39_BUILD,'schema=app');
 function sbDiagnostico(){return {url:!!SB_URL,key:!!SB_ANON_KEY,lib:!!(window.supabase&&typeof window.supabase.createClient==='function'),configOk:!!(window.V39_CONFIG_STATUS&&window.V39_CONFIG_STATUS.ok),host:location.hostname,path:location.pathname};}
 function v39Ambiente(){return String(location.pathname||'').indexOf('/v39/')===0;}
@@ -41,24 +41,71 @@ function sbCliente(){
   return sb;
 }
 function sbRpc(nome,args){return sbCliente().rpc(nome,args||{}).then(function(x){if(x.error)throw x.error;return x.data;});}
-function sbValidarContexto(x){
-  x=Array.isArray(x)?(x[0]||null):x;
-  if(!x)throw new Error('Seu login existe, mas nenhum contexto de acesso foi retornado. Aguarde aprovação ou procure a liderança.');
-  var p=x.person||{},a=x.user_account||{},i=x.church||{},faltam=[];
-  if(!(a.id||x.user_account_id))faltam.push('conta');
-  if(!(p.id||x.person_id))faltam.push('pessoa');
-  if(!(i.id||x.church_id))faltam.push('igreja ativa');
-  if(!(x.profile_key||x.profile_code||x.profile||x.role))faltam.push('perfil');
-  if(!Object.prototype.hasOwnProperty.call(x,'permissions')&&!Object.prototype.hasOwnProperty.call(x,'perms'))faltam.push('permissões');
-  if(faltam.length)throw new Error('Contexto de acesso incompleto: '+faltam.join(', ')+'.');
-  return x;
+function v39Obj(v){
+  if(v==null)return {};
+  if(typeof v==='string'){
+    try{return JSON.parse(v);}catch(e){return {};}
+  }
+  return v;
 }
-function sbCarregarContexto(){return sbRpc('get_my_frontend_context',{}).then(sbValidarContexto).then(function(x){sbContexto=x;return x;});}
-function sbAplicarContexto(x){
-  x=sbValidarContexto(x);var p=x.person||{},a=x.user_account||{},i=x.church||{};
-  cfg.usuario={id:a.id||x.user_account_id||'',pessoaId:p.id||x.person_id||'',nome:p.full_name||p.name||p.nome||x.person_name||'',usuario:a.username||x.username||'',email:a.email||x.email||'',papel:x.profile_key||x.profile_code||x.profile||x.role||'',perms:x.permissions||x.perms||{},gcId:x.growth_group_id||x.gc_id||'',consent:x.consent!==false};
-  cfg.activeChurchId=i.id||x.church_id||'';cfg.token=(sbSessao&&sbSessao.access_token)||'supabase-session';cfg.ultima=agora();salvarCfg();return x;
+function v39Primeiro(v){
+  v=v39Obj(v);
+  if(Array.isArray(v))return v39Obj(v[0]||{});
+  if(v&&Array.isArray(v.data))return v39Obj(v.data[0]||{});
+  if(v&&v.data&&typeof v.data==='object')return v39Obj(v.data);
+  return v||{};
 }
+function v39NormalizarContexto(valor){
+  var x=v39Primeiro(valor);
+  if(x.context)x=v39Primeiro(x.context);
+  if(x.frontend_context)x=v39Primeiro(x.frontend_context);
+  var conta=v39Primeiro(x.user_account||x.account||x.user||{});
+  var pessoa=v39Primeiro(x.person||conta.person||{});
+  var acessos=Array.isArray(x.church_accesses)?x.church_accesses:(Array.isArray(x.churches)?x.churches:[]);
+  var acesso=v39Primeiro(x.active_church_access||x.church_user_access||x.access||{});
+  var igrejaId=x.active_church_id||x.church_id||acesso.church_id||'';
+  if(!acesso.id&&acessos.length){
+    acesso=v39Primeiro(acessos.filter(function(a){return (a.church_id||a.id)===igrejaId;})[0]||acessos[0]);
+    igrejaId=igrejaId||acesso.church_id||acesso.id||'';
+  }
+  var igreja=v39Primeiro(x.active_church||x.church||acesso.church||{});
+  igrejaId=igrejaId||igreja.id||igreja.church_id||'';
+  var perfis=Array.isArray(x.profiles)?x.profiles:(Array.isArray(x.access_profiles)?x.access_profiles:[]);
+  var perfil=v39Obj(x.active_profile||x.primary_profile||x.profile||{});
+  if(typeof perfil==='string')perfil={code:perfil};
+  if(!perfil.code&&!perfil.profile_code&&!perfil.profile_key&&perfis.length){
+    perfil=v39Primeiro(perfis.filter(function(p){return p.is_primary===true||p.primary===true;})[0]||perfis[0]);
+  }
+  var permissoes=x.effective_permissions;
+  if(permissoes==null)permissoes=x.permissions;
+  if(permissoes==null)permissoes=x.perms;
+  if(permissoes==null&&perfil)permissoes=perfil.permissions||perfil.perms;
+  if(permissoes==null)permissoes=[];
+  return {raw:x,conta:conta,pessoa:pessoa,acesso:acesso,igreja:igreja,igrejaId:igrejaId,perfil:perfil,permissoes:permissoes};
+}
+function sbValidarContexto(valor){
+  var n=v39NormalizarContexto(valor),faltam=[];
+  if(!(n.conta.id||n.conta.user_account_id||n.raw.user_account_id))faltam.push('conta');
+  if(!(n.pessoa.id||n.conta.person_id||n.raw.person_id))faltam.push('pessoa');
+  if(!n.igrejaId)faltam.push('igreja ativa');
+  if(!(n.perfil.code||n.perfil.profile_code||n.perfil.profile_key||n.raw.active_profile_code||n.raw.profile_code||n.raw.profile_key||n.raw.role))faltam.push('perfil');
+  /* permissions pode legitimamente ser [] ou {}, portanto validamos presença normalizada, não quantidade */
+  if(n.permissoes==null)faltam.push('permissões');
+  if(faltam.length){console.error('[v39 contexto bruto]',valor);throw new Error('Contexto de acesso incompleto: '+faltam.join(', ')+'.');}
+  return n;
+}
+function sbCarregarContexto(){
+  return sbRpc('get_my_frontend_context',{}).then(function(valor){
+    var n=sbValidarContexto(valor);sbContexto=n.raw;return n;
+  });
+}
+function sbAplicarContexto(valor){
+  var n=(valor&&valor.raw&&valor.conta)?valor:sbValidarContexto(valor),x=n.raw,u=n.conta,p=n.pessoa,i=n.igreja,pr=n.perfil;
+  var mapasPerm=(typeof v39MapaPermissoes==='function')?v39MapaPermissoes(n.permissoes):{raw:n.permissoes||{},compat:n.permissoes||{}};
+  cfg.usuario={id:u.id||u.user_account_id||x.user_account_id||'',pessoaId:p.id||u.person_id||x.person_id||'',nome:p.preferred_name||p.full_name||p.name||u.username||'',usuario:u.username||u.login||x.username||'',email:u.email||(sbSessao&&sbSessao.user&&sbSessao.user.email)||'',papel:pr.code||pr.profile_code||pr.profile_key||x.active_profile_code||x.profile_code||x.profile_key||x.role||'',perms:mapasPerm.compat||{},rawPerms:mapasPerm.raw||{},_v39:true,gcId:x.growth_group_id||x.gc_id||'',consent:x.consent!==false};
+  cfg.activeChurchId=n.igrejaId;cfg.igrejaNome=i.name||i.church_name||x.church_name||cfg.igrejaNome||'';cfg.token=(sbSessao&&sbSessao.access_token)||'supabase-session';cfg.ultima=agora();salvarCfg();return x;
+}
+
 function sbRestaurarSessao(){return sbCliente().auth.getSession().then(function(x){if(x.error)throw x.error;sbSessao=x.data&&x.data.session;if(!sbSessao)return false;return sbCarregarContexto().then(sbAplicarContexto).then(function(){return true;});});}
 function sbEntrar(email,senha){return sbCliente().auth.signInWithPassword({email:email,password:senha}).then(function(x){if(x.error)throw x.error;sbSessao=x.data&&x.data.session;if(!sbSessao)throw new Error('O Supabase não retornou uma sessão válida.');return sbCarregarContexto().then(sbAplicarContexto);});}
 function sbSair(){v39ProntuarioLimparChave();if(!sb)return Promise.resolve();return sbCliente().auth.signOut().then(function(x){if(x.error)throw x.error;sbSessao=null;sbContexto=null;});}
