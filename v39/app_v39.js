@@ -28,7 +28,7 @@ var V39 = window.V39_CONFIG || {};
 var SB_URL = V39.supabaseUrl || APP.supabaseUrl || '';
 var SB_ANON_KEY = String(V39.supabaseAnonKey || V39.supabaseKey || V39.publishableKey || APP.supabaseAnonKey || APP.supabaseKey || APP.publishableKey || '').trim();
 var sb = null, sbSessao = null, sbContexto = null;
-var V39_BUILD='39-permissions-bridge-20261031-11';
+var V39_BUILD='39-tolerant-reads-20261031-13';
 console.info('[2Gather v39]',V39_BUILD,'schema=app');
 function sbDiagnostico(){return {url:!!SB_URL,key:!!SB_ANON_KEY,lib:!!(window.supabase&&typeof window.supabase.createClient==='function'),configOk:!!(window.V39_CONFIG_STATUS&&window.V39_CONFIG_STATUS.ok),host:location.hostname,path:location.pathname};}
 function v39Ambiente(){return String(location.pathname||'').indexOf('/v39/')===0;}
@@ -161,7 +161,7 @@ function v39TratarFalhaBoot(e){console.error('[2Gather v39 boot]',e);limparSessa
 function v39CarregarEssencial(){return Promise.all([v39ConfigCarregar(),v39ListarPessoas(),v39ListarGCs()]);}
 function v39CarregarSecundario(){
   var tarefas=[['encontros',v39CarregarEncontros],['cultos',v39ListarCultos],['financeiro',function(){return v39FinCarregar(null,null);}],['lar de vida',v39LvListar],['instituto',v39InstCarregar],['acessos',v39CarregarAcessos],['reuniões',v39ReunCarregar],['comunicação',v39ComCarregar]];
-  return Promise.all(tarefas.map(function(t){return Promise.resolve().then(t[1]).catch(function(e){console.warn('[v39 '+t[0]+']',e);return null;});})).then(function(){if(cfg.token)render();});
+  return Promise.all(tarefas.map(function(t){return Promise.resolve().then(t[1]).catch(function(e){console.warn('[v39 '+t[0]+'] '+((e&&e.message)||'erro')+' | code='+((e&&e.code)||'-')+' | details='+((e&&e.details)||'-')+' | hint='+((e&&e.hint)||'-'));return null;});})).then(function(){if(cfg.token)render();});
 }
 function v39AbrirApp(){return v39CarregarEssencial().then(function(){iniciarApp();setTimeout(v39CarregarSecundario,0);});}
 function v39ObservarAuth(){
@@ -210,8 +210,22 @@ function v39ConfigSalvar(c){var rows=Object.keys(c||{}).filter(function(k){retur
 
 /* ------------------- v39: Comunicação / Avisos / Notificações ------------------- */
 var v39Com={announcements:[],notifications:[],outbound:[],privateMessages:[],channels:[],prayers:[],loaded:false};
-function v39ComSel(table){return sbCliente().schema('app').from(table).select('*').eq('church_id',v39ChurchId());}
-function v39ComCarregar(){if(!sbDisponivel()||!v39ChurchId())return Promise.resolve(v39Com);var uid=eu().id||null;return Promise.all([v39ComSel('announcements'),v39ComSel('notifications'),v39ComSel('outbound_messages'),v39ComSel('communication_channels'),v39ComSel('prayer_requests'),sbCliente().schema('app').from('private_messages').select('*')]).then(function(r){r.forEach(function(x){if(x.error)throw x.error;});v39Com.announcements=r[0].data||[];v39Com.notifications=(r[1].data||[]).filter(function(n){return !uid||!n.user_account_id||n.user_account_id===uid;});v39Com.outbound=r[2].data||[];v39Com.channels=r[3].data||[];v39Com.prayers=r[4].data||[];v39Com.privateMessages=r[5].data||[];v39Com.loaded=true;db.alertas=v39Com.notifications.map(function(n){return{id:n.id,mensagem:n.body||n.title||'',titulo:n.title||'',lido:n.status==='read'||!!n.read_at,gcId:(n.metadata&&n.metadata.gc_id)||'',criadoEm:n.created_at||'',criadoPor:(n.metadata&&n.metadata.created_by_name)||'',prioridade:n.priority||'',_v39:true};});salvarDB();return v39Com;});}
+var v39Restritos=[];
+/* v39: leitura direta tolerante SOMENTE a 'permission denied' (42501/403). Outros erros continuam sendo lancados.
+   Tabelas sensiveis (mensagens privadas, matriculas, envios externos etc.) ficam sem GRANT ate a policy definitiva. */
+function v39Tolerante(tabela,builder){
+  return Promise.resolve(builder).then(function(x){
+    if(x&&x.error&&(x.error.code==='42501'||x.status===403)){
+      if(v39Restritos.indexOf(tabela)<0)v39Restritos.push(tabela);
+      console.warn('[v39] acesso direto negado (esperado ate a policy definitiva): app.'+tabela);
+      return {data:[],error:null,restrito:true};
+    }
+    return x;
+  });
+}
+window.__2GATHER_RESTRITOS=function(){return v39Restritos.slice();};
+function v39ComSel(table){return v39Tolerante(table,sbCliente().schema('app').from(table).select('*').eq('church_id',v39ChurchId()));}
+function v39ComCarregar(){if(!sbDisponivel()||!v39ChurchId())return Promise.resolve(v39Com);var uid=eu().id||null;return Promise.all([v39ComSel('announcements'),v39ComSel('notifications'),v39ComSel('outbound_messages'),v39ComSel('communication_channels'),v39ComSel('prayer_requests'),v39Tolerante('private_messages',sbCliente().schema('app').from('private_messages').select('*'))]).then(function(r){r.forEach(function(x){if(x.error)throw x.error;});v39Com.announcements=r[0].data||[];v39Com.notifications=(r[1].data||[]).filter(function(n){return !uid||!n.user_account_id||n.user_account_id===uid;});v39Com.outbound=r[2].data||[];v39Com.channels=r[3].data||[];v39Com.prayers=r[4].data||[];v39Com.privateMessages=r[5].data||[];v39Com.loaded=true;db.alertas=v39Com.notifications.map(function(n){return{id:n.id,mensagem:n.body||n.title||'',titulo:n.title||'',lido:n.status==='read'||!!n.read_at,gcId:(n.metadata&&n.metadata.gc_id)||'',criadoEm:n.created_at||'',criadoPor:(n.metadata&&n.metadata.created_by_name)||'',prioridade:n.priority||'',_v39:true};});salvarDB();return v39Com;});}
 function v39MarcarNotificacaoLida(id){var now=new Date().toISOString();return sbCliente().schema('app').from('notifications').update({status:'read',read_at:now}).eq('id',id).eq('user_account_id',eu().id).select('id');}
 
 /* ------------------- v39: Treinamentos / Reuniões ------------------- */
@@ -280,7 +294,7 @@ function v39LvSalvarVisita(journeyId,v){var payload={assignment_id:v.assignment_
 
 /* Instituto: o inventário atual confirma tabelas/RLS, mas não expõe RPCs de aplicação para cursos.
    Na v39 fazemos leitura segura via schema app quando permitido pelo cliente/RLS e mantemos escrita legada até contrato de escrita confirmado. */
-function v39InstTabela(nome){return sbCliente().schema('app').from(nome).select('*').eq('church_id',v39ChurchId());}
+function v39InstTabela(nome){return v39Tolerante(nome,sbCliente().schema('app').from(nome).select('*').eq('church_id',v39ChurchId()));}
 var v39ProntuarioSegredo = null;
 function v39B64u(bytes){var bin='';bytes=new Uint8Array(bytes);for(var i=0;i<bytes.length;i++)bin+=String.fromCharCode(bytes[i]);return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
 function v39Unb64u(text){text=String(text||'').replace(/-/g,'+').replace(/_/g,'/');while(text.length%4)text+='=';var bin=atob(text),out=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)out[i]=bin.charCodeAt(i);return out;}
@@ -333,7 +347,9 @@ var v39Fin={balances:[],period:[],result:[],reports:[],loaded:false};
 function v39Linhas(x){return Array.isArray(x)?x:v39Itens(x);}
 function v39FinCarregar(de,ate){
   if(!sbDisponivel()||!v39ChurchId())return Promise.resolve(v39Fin);
-  de=de||null;ate=ate||null;
+  var hoje=new Date(),pad=function(n){return String(n).padStart(2,'0');};
+  var iso=function(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());};
+  de=de||iso(new Date(hoje.getFullYear(),hoje.getMonth(),1));ate=ate||iso(hoje);   /* v39: periodo padrao = mes corrente; as RPCs de resumo exigem datas */
   return Promise.all([
     sbRpc('secure_financial_account_balances',{p_church_id:v39ChurchId()}),
     sbRpc('secure_financial_period_summary',{p_church_id:v39ChurchId(),p_date_from:de,p_date_to:ate}),
