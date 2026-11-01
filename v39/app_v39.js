@@ -28,7 +28,7 @@ var V39 = window.V39_CONFIG || {};
 var SB_URL = V39.supabaseUrl || APP.supabaseUrl || '';
 var SB_ANON_KEY = String(V39.supabaseAnonKey || V39.supabaseKey || V39.publishableKey || APP.supabaseAnonKey || APP.supabaseKey || APP.publishableKey || '').trim();
 var sb = null, sbSessao = null, sbContexto = null;
-var V39_BUILD='39-access-security-20261031-17';
+var V39_BUILD='39-person-version-conflict-20261031-18';
 console.info('[2Gather v39]',V39_BUILD,'schema=app');
 function sbDiagnostico(){return {url:!!SB_URL,key:!!SB_ANON_KEY,lib:!!(window.supabase&&typeof window.supabase.createClient==='function'),configOk:!!(window.V39_CONFIG_STATUS&&window.V39_CONFIG_STATUS.ok),host:location.hostname,path:location.pathname};}
 function v39Ambiente(){return String(location.pathname||'').indexOf('/v39/')===0;}
@@ -461,7 +461,7 @@ function v39Pessoa(x){
     fone:ct.whatsapp||ct.phone||x.whatsapp||x.phone||x.fone||'', email:ct.email||x.email||'', nasc:person.birth_date||x.birth_date||x.nasc||'', sexo:person.sex||x.sex||x.sexo||'',
     cep:ad.postal_code||x.postal_code||x.cep||'', endereco:ad.street||x.street||x.endereco||'', numero:ad.number||x.number||x.numero||'', complemento:ad.complement||x.complement||x.complemento||'', bairro:ad.neighborhood||x.neighborhood||x.bairro||'', cidade:ad.city||x.city||x.cidade||'',
     gcId:cp.growth_group_id||x.growth_group_id||x.gc_id||x.gcId||'', jornada:cp.journey_stage||x.journey_stage||x.jornada||'', prim:cp.first_visit_date||x.first_visit_date||x.prim||'', obs:cp.notes||x.notes||x.obs||'',
-    updatedAt:person.updated_at||cp.updated_at||x.updated_at||x.updatedAt||'', deleted:false, _pend:false, _v39:true
+    updatedAt:x.updated_at||x.updatedAt||person.updated_at||cp.updated_at||'', deleted:false, _pend:false, _v39:true
   };
 }
 function v39PayloadPessoa(o){
@@ -2071,7 +2071,7 @@ function salvarPessoa(forcar) {
     fone: v('f-fone'), nasc: v('f-nasc'), bairro: v('f-bairro'), cidade: v('f-cidade'), cep: mascaraCep(v('f-cep')),
       endereco: v('f-endereco'), numero: v('f-numero'), complemento: v('f-complemento'), sexo: v('f-sexo'), prim: v('f-prim'), jornada: v('f-jornada'), canal: v('f-canal'), canalOutro: v('f-canal') === 'Outros' ? v('f-canaloutro') : '',
     conv: v('f-conv'), disc: v('f-disc'), obs: v('f-obs'), apelido: v('f-apelido'), gcId: $('f-gc') ? v('f-gc') : (ant ? ant.gcId : gcA()),
-    updatedAt: agora(), deleted: false, _pend: true,
+    updatedAt: ant ? ant.updatedAt : agora(), deleted: false, _pend: true,
     frequentaIgreja: v('f-freqig'), igrejaQual: v('f-freqig') === 'Sim' ? v('f-igreja') : '', aceitaVisita: v('f-aceita') };
   for (var kn in novoO) o[kn] = novoO[kn];
   aplicarConsent(o, v('f-consent'), v('f-resp'));
