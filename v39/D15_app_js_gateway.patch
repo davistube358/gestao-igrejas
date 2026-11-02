@@ -1,0 +1,14 @@
+BUILD 69D.15 - patch central em app.js
+
+No início de function chamar(acao, dados, progresso), antes de montar qualquer request ao Apps Script, inserir:
+
+  if (cfg.token === 'supabase-v39' && window.G2_V39 && G2_V39.mutationGateway && G2_V39.mutationGateway.isMutation(acao)) {
+    return G2_V39.mutationGateway.execute(acao, dados || {}, progresso).catch(function (e) {
+      if (e && /^V39_/.test(e.code || '')) {
+        toast(e.message || 'Operacao indisponivel no backend v39.', 5000);
+      }
+      throw e;
+    });
+  }
+
+Regra: este bloco deve ficar ANTES de qualquer fetch/POST/chamada ao Apps Script.
