@@ -1,0 +1,15 @@
+/* 2Gather v39 Build 12 - resiliencia do backend hibrido */
+(function(){
+'use strict';
+var V=window.G2_V39=window.G2_V39||{};
+V.resilience={
+ readActions:{'v39.session':1,'v39.core':1,'v39.people.list':1,'v39.groups.list':1,'v39.announcements.list':1,'v39.prayers.list':1,'v39.finance.accounts':1,'v39.finance.categories':1,'v39.finance.payees':1,'v39.finance.paymentMethods':1,'v39.solidarity.locations':1,'v39.solidarity.categories':1,'v39.solidarity.counts':1},
+ writeActions:{'v39.login':1,'v39.logout':1,'v39.people.save':1,'v39.groups.save':1,'v39.announcements.save':1,'v39.prayers.save':1},
+ failures:{},threshold:3,cooldownMs:60000,
+ canTry:function(a){var f=this.failures[a];return !f||f.count<this.threshold||(Date.now()-f.last)>this.cooldownMs;},
+ failed:function(a){var f=this.failures[a]||{count:0,last:0};f.count++;f.last=Date.now();this.failures[a]=f;},
+ passed:function(a){delete this.failures[a];},
+ isRead:function(a){return !!this.readActions[a];},isWrite:function(a){return !!this.writeActions[a];},
+ status:function(){return {threshold:this.threshold,cooldownMs:this.cooldownMs,failures:Object.assign({},this.failures)};}
+};
+})();

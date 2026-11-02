@@ -1,0 +1,3 @@
+/* 2Gather v39 Build 59 - Prontuario: gate de seguranca, sem cutover de conteudo */
+(function(){'use strict';var V=window.G2_V39=window.G2_V39||{};
+V.clinicalRecords={enabled:false,preflight:null,validate:async function(){try{var r=await V.client.schema('app').rpc('v39_clinical_record_preflight',{});if(r.error)throw r.error;this.preflight=r.data||{};this.enabled=!!(r.data&&r.data.ready===true&&r.data.rls===true&&r.data.plaintext_columns===false);return this.preflight;}catch(e){this.enabled=false;this.preflight={ready:false,error:e.message||String(e)};return this.preflight;}},status:function(){return{enabled:this.enabled,preflight:this.preflight,contentCutover:false};}};window.G2_V39_CLINICAL_STATUS=function(){return V.clinicalRecords.status();};})();

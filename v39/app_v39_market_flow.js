@@ -1,0 +1,4 @@
+/* 2Gather v39 Build 41 - fluxo real de entrega Mercado */
+(function(){'use strict';var V=window.G2_V39=window.G2_V39||{};
+V.marketFlow={complete:async function(x){x=x||{};var location=await V.market.resolveLocation();if(!x.personId)throw new Error('Mercado: pessoa obrigatoria.');if(!Array.isArray(x.items)||!x.items.length)throw new Error('Mercado: itens obrigatorios.');var items=x.items.map(function(i){return{product_id:i.produtoId||i.product_id,quantity:Number(i.qtd||i.quantity)};});if(items.some(function(i){return !i.product_id||!(i.quantity>0);})){throw new Error('Mercado: item invalido.');}var draft=await V.marketDelivery.createDraft(location.id,x.personId,items,x.reason||null);var id=(draft&&draft.delivery_id)||(draft&&draft.id)||draft;var done=await V.marketDelivery.finalize(id,x.reason||null);return done||{id:id};}};
+})();
