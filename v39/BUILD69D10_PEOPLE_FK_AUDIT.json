@@ -1,0 +1,13 @@
+{
+  "status": "PASS_STATIC",
+  "release": "69D.10",
+  "scope": "disambiguate church_people -> people relationship",
+  "file": "app_v39.js",
+  "checks": {
+    "explicit_fk_embed": true,
+    "ambiguous_embed_removed": true,
+    "church_people_filter": true,
+    "d7_single_client": true
+  },
+  "sha256": "c044d712736c2d50f59fb81c4a603ef7c1798ee134469b75d3dabeb5b099ec2a"
+}

@@ -1,4 +1,4 @@
-/* 2Gather v39 Build 69D.9 - bootstrap Supabase com cliente unico */
+/* 2Gather v39 Build 69D.10 - bootstrap Supabase com cliente unico */
 (function () {
   'use strict';
 
@@ -141,7 +141,7 @@
     var links = await V39.client
       .schema('app')
       .from('church_people')
-      .select('person_id,people(*)')
+      .select('person_id,people!church_people_person_id_fkey(*)')
       .eq('church_id', churchId)
       .is('ended_at', null);
     if (links.error) throw links.error;
