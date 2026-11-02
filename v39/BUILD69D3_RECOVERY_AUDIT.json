@@ -1,0 +1,14 @@
+{
+  "status": "PASS_STATIC",
+  "release": "Build 69D.3 password recovery",
+  "scope": "password recovery only",
+  "behavior": [
+    "detect recovery callback from Supabase URL fragment",
+    "initialize existing G2_V39 Supabase client",
+    "adopt recovery session when access_token and refresh_token are present",
+    "show new-password and confirmation form",
+    "update password with supabase.auth.updateUser",
+    "remove tokens from address bar after success"
+  ],
+  "unchanged": ["normal login", "R2/R3", "config.js", "_headers", "database contracts"]
+}
