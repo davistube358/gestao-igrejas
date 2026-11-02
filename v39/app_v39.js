@@ -1,4 +1,4 @@
-/* 2Gather v39 Build 69D.7 - bootstrap Supabase com cliente unico */
+/* 2Gather v39 Build 69D.9 - bootstrap Supabase com cliente unico */
 (function () {
   'use strict';
 
@@ -133,11 +133,19 @@
   V39.people = V39.people || {};
   V39.people.list = async function (churchId) {
     if (!V39.ready || !V39.client) await V39.init();
-    var q = V39.client.schema('app').from('people').select('*');
-    if (churchId) q = q.eq('church_id', churchId);
-    var r = await q;
-    if (r.error) throw r.error;
-    return r.data || [];
+    if (!churchId) {
+      var own = await V39.client.schema('app').from('people').select('*');
+      if (own.error) throw own.error;
+      return own.data || [];
+    }
+    var links = await V39.client
+      .schema('app')
+      .from('church_people')
+      .select('person_id,people(*)')
+      .eq('church_id', churchId)
+      .is('ended_at', null);
+    if (links.error) throw links.error;
+    return (links.data || []).map(function (row) { return row.people; }).filter(Boolean);
   };
   V39.people.save = async function (row) {
     if (!V39.ready || !V39.client) await V39.init();
