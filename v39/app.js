@@ -584,6 +584,14 @@ function limpo(o) { var c = {}; for (var k in o) if (k !== '_pend') c[k] = o[k];
 function chaveE(e) { return e.gcId + '|' + e.data; }
 
 function sincronizar(avisar) {
+  if (cfg.token === 'supabase-v39' && window.G2_V39 && G2_V39.uiActions && G2_V39.uiActions.syncLegacy) {
+    sincronizando = true; pintarStatus('Sincronizando...');
+    return G2_V39.uiActions.syncLegacy().then(function(r){
+      var d=r.dados||{}; db.pessoas=d.pessoas||[]; db.gcs=d.gcs||[]; db.equipe=d.equipe||[];
+      cfg.ultima=agora(); salvarCfg(); salvarDB(); validarContexto(); render();
+      if(avisar) toast('Sincronizado ✓');
+    }).catch(function(e){ if(avisar) toast(e.message,4500); }).then(function(){sincronizando=false;setTimeout(pintarStatus,1500);});
+  }
   if (!cfg.token) return Promise.resolve();
   if (sincronizando) return Promise.resolve();
   sincronizando = true; pintarStatus('Sincronizando...');
@@ -709,6 +717,9 @@ function cadastrar() {
     .then(function () { $('b-cadastrar').disabled = false; carregando(false); });
 }
 function sair(confirmar) {
+  if (cfg.token === 'supabase-v39' && window.G2_V39 && G2_V39.uiActions && G2_V39.uiActions.logout) {
+    G2_V39.uiActions.logout(); return;
+  }
   if (confirmar && pendentesLocais().pessoas.length + pendentesLocais().encontros.length > 0 &&
       !confirm('Há alterações que ainda não foram enviadas. Se sair agora, elas serão perdidas. Sair mesmo assim?')) return;
   if (confirmar && !confirm('Sair do app neste aparelho?')) return;
