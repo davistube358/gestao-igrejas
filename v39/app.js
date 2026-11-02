@@ -15,7 +15,7 @@ try {
 
 var APP = window.APP_CONFIG || {};
 var URL_PADRAO = APP.apiUrl || 'https://script.google.com/macros/s/AKfycbxKyZ1pzhXbWCK-6vtO2av2ip08yxSY8QbyYWfrTyvpRzoU52Rqj1z9jZ1o3o4xKaJYPA/exec';
-var MODO_PWA = !!APP.appUrl || (APP.origens || []).indexOf(location.origin) >= 0;      // app instalado (Cloudflare Pages): fala com o Apps Script por POST
+var MODO_PWA = !!APP.apiUrl;      // app instalado (Cloudflare Pages): fala com o Apps Script por POST
 var ICONE_2G = 'icons/icon-192.png';
 // padrão antes da 1ª configuração: no app instalado (PWA) é o 2Gather; na página antiga, o logo embutido
 var LOGO_PADRAO = (window.APP_CONFIG && window.APP_CONFIG.apiUrl) ? ICONE_2G : document.getElementById('h-img').getAttribute('src');
