@@ -1,0 +1,24 @@
+{
+  "name": "2Gather",
+  "short_name": "2Gather",
+  "description": "Plataforma de gestão para igrejas",
+  "start_url": "/v39/",
+  "scope": "/v39/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#111827",
+  "icons": [
+    {
+      "src": "./icons/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/favicon-32.png",
+      "sizes": "32x32",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
