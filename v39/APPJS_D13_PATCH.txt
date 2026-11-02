@@ -1,0 +1,18 @@
+BUILD 69D.13 - aplicar em app.js
+
+1) No inicio de function sincronizar(avisar), imediatamente apos a abertura, inserir:
+  if (cfg.token === 'supabase-v39' && window.G2_V39 && G2_V39.uiActions && G2_V39.uiActions.syncLegacy) {
+    sincronizando = true; pintarStatus('Sincronizando...');
+    return G2_V39.uiActions.syncLegacy().then(function(r){
+      var d=r.dados||{}; db.pessoas=d.pessoas||[]; db.gcs=d.gcs||[]; db.equipe=d.equipe||[];
+      cfg.ultima=agora(); salvarCfg(); salvarDB(); validarContexto(); render();
+      if(avisar) toast('Sincronizado ✓');
+    }).catch(function(e){ if(avisar) toast(e.message,4500); }).then(function(){sincronizando=false;setTimeout(pintarStatus,1500);});
+  }
+
+2) No inicio de function sair(confirmar), antes de chamar('logout'...), inserir:
+  if (cfg.token === 'supabase-v39' && window.G2_V39 && G2_V39.uiActions && G2_V39.uiActions.logout) {
+    G2_V39.uiActions.logout(); return;
+  }
+
+Motivo: app.js possui chamar()/sincronizar() fechados no IIFE. Sem este patch, o timer de 120s/visibility ou chamadas de sync enviam token sentinela ao Apps Script, que pode responder sessao:false e executar sessaoExpirada().
