@@ -1,0 +1,20 @@
+{
+  "status": "PASS_STATIC",
+  "release": "69D.7",
+  "scope": "single Supabase client and idempotent initialization",
+  "file": "app_v39.js",
+  "changes": [
+    "reuse V39.client when already available",
+    "return current session when ready",
+    "share concurrent initialization through V39._initPromise",
+    "bind auth events only once",
+    "preserve sessionContext, people, growth groups and table APIs"
+  ],
+  "unchanged": [
+    "Edge auth login",
+    "password",
+    "RLS policies",
+    "runtime and church context",
+    "R2/R3 modules"
+  ]
+}
