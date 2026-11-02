@@ -1,0 +1,1 @@
+{"status":"PASS_STATIC","change":"Restore proven Edge Function auth login contract","endpoint":"/functions/v1/auth","request":{"acao":"login","fields":["usuario","senha"]},"files":["app_v39_bridge.js","app_v39_contracts.js","app_v39_router.js"],"notes":["No service worker change","No index change","No automatic boot","No direct signInWithPassword in login bridge"]}
