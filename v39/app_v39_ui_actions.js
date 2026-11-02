@@ -1,71 +1,26 @@
-/* 2Gather v39 Build 69D.8 - login UI + restore visual de sessao */
+/* 2Gather v39 Build 69D.11 - login, restore de sessao e shell hidratado */
 (function(){
 'use strict';
 var V=window.G2_V39=window.G2_V39||{};
-var restoring=false;
-
+var restoring=false, coreData=null, activeView='inicio';
+function esc(x){return String(x==null?'':x).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 function value(id){var e=document.getElementById(id);return e?String(e.value||'').trim():'';}
-function showError(message){var e=document.getElementById('l-erro');if(!e)return;e.textContent=message||'Nao foi possivel entrar.';e.classList.remove('hide');}
-function clearError(){var e=document.getElementById('l-erro');if(!e)return;e.textContent='';e.classList.add('hide');}
-function busy(on){var b=document.getElementById('b-entrar');if(!b)return;b.disabled=!!on;b.textContent=on?'Entrando...':'Entrar';}
-function setView(authenticated){
-  var login=document.getElementById('s-login');
-  var cadastro=document.getElementById('s-cadastro');
-  var app=document.getElementById('s-app');
-  if(authenticated){
-    if(login)login.classList.add('hide');
-    if(cadastro)cadastro.classList.add('hide');
-    if(app)app.classList.remove('hide');
-  }else{
-    if(app)app.classList.add('hide');
-    if(login)login.classList.remove('hide');
-  }
-}
-async function restoreSession(){
-  if(restoring)return V.runtime&&V.runtime.state;
-  restoring=true;
-  try{
-    if(!V.runtime||typeof V.runtime.start!=='function')throw new Error('Runtime v39 indisponivel.');
-    var state=await V.runtime.start();
-    var ok=!!(state&&state.authenticated&&state.context&&state.context.authUser);
-    setView(ok);
-    if(ok){
-      V.context=state.context;
-      window.dispatchEvent(new CustomEvent('2gather:v39-ui-ready',{detail:{churchId:state.churchId,context:state.context}}));
-    }
-    return state;
-  }catch(err){
-    console.error('[2Gather v39 restore]',err);
-    setView(false);
-    return null;
-  }finally{restoring=false;}
-}
-async function login(){
-  var usuario=value('l-usuario'),senha=value('l-senha');
-  if(!usuario||!senha){showError('Informe o usuario e a senha.');return;}
-  busy(true);clearError();
-  try{
-    if(typeof V.signIn!=='function')throw new Error('Login v39 indisponivel.');
-    var result=await V.signIn(usuario,senha);
-    var context=result&&result.context?result.context:await V.sessionContext();
-    if(!context||!context.authUser)throw new Error('Sessao autenticada sem contexto de acesso.');
-    V.context=context;
-    if(V.runtime&&V.runtime.state){V.runtime.state.authenticated=true;V.runtime.state.context=context;}
-    var state=await restoreSession();
-    if(!(state&&state.authenticated))throw new Error('Runtime nao reconheceu a sessao autenticada.');
-  }catch(err){
-    console.error('[2Gather v39 login]',err);
-    showError(err&&err.message?err.message:'Usuario ou senha incorretos.');
-  }finally{busy(false);}
-}
-function intercept(e){var b=e.target&&e.target.closest?e.target.closest('#b-entrar'):null;if(!b)return;e.preventDefault();e.stopImmediatePropagation();login();}
-document.addEventListener('click',intercept,true);
+function showError(m){var e=document.getElementById('l-erro');if(e){e.textContent=m||'Nao foi possivel entrar.';e.classList.remove('hide');}}
+function clearError(){var e=document.getElementById('l-erro');if(e){e.textContent='';e.classList.add('hide');}}
+function busy(on){var b=document.getElementById('b-entrar');if(b){b.disabled=!!on;b.textContent=on?'Entrando...':'Entrar';}}
+function setView(ok){var l=document.getElementById('s-login'),c=document.getElementById('s-cadastro'),a=document.getElementById('s-app');if(ok){if(l)l.classList.add('hide');if(c)c.classList.add('hide');if(a)a.classList.remove('hide');}else{if(a)a.classList.add('hide');if(l)l.classList.remove('hide');}}
+function profileName(){var a=V.runtime&&V.runtime.state&&V.runtime.state.context&&V.runtime.state.context.assignments||[];var p=a.filter(function(x){return x.is_primary;})[0]||a[0]||{};var ap=p.access_profiles||{};return ap.name||ap.code||ap.profile_code||'Perfil';}
+function personName(){var c=V.runtime&&V.runtime.state&&V.runtime.state.context||{};var p=c.person||{},u=c.userAccount||{};return p.preferred_name||p.full_name||u.username||'Usuario';}
+function ensureShell(){var app=document.getElementById('s-app');if(!app)return null;var old=document.getElementById('v39-shell');if(old)return old;app.innerHTML='';var shell=document.createElement('div');shell.id='v39-shell';shell.style.cssText='min-height:100vh;display:grid;grid-template-columns:250px 1fr;background:#f4f6f8;color:#172033;font-family:system-ui,-apple-system,Segoe UI,sans-serif';shell.innerHTML='<aside style="background:#fff;border-right:1px solid #e4e8ee;padding:20px 14px;display:flex;flex-direction:column;gap:18px"><div style="font-size:24px;font-weight:900;color:#123b69;padding:4px 10px">2Gather</div><nav id="v39-nav" aria-label="Menu principal" style="display:grid;gap:7px"></nav><div style="margin-top:auto;padding:12px 10px;border-top:1px solid #eef1f5"><div id="v39-user" style="font-weight:800"></div><div id="v39-profile" style="font-size:12px;color:#667085;margin-top:3px"></div><button id="v39-logout" type="button" style="margin-top:12px;border:0;background:#eef2f7;padding:9px 12px;border-radius:9px;cursor:pointer">Sair</button></div></aside><main style="min-width:0"><header style="background:#fff;border-bottom:1px solid #e4e8ee;padding:18px 26px"><h1 id="v39-title" style="font-size:22px;margin:0">Inicio</h1></header><section id="v39-content" style="padding:24px"></section></main>';app.appendChild(shell);document.getElementById('v39-user').textContent=personName();document.getElementById('v39-profile').textContent=profileName();document.getElementById('v39-logout').onclick=function(){V.uiActions.logout();};return shell;}
+var menu=[['inicio','Inicio'],['pessoas','Pessoas'],['gcs','GCs'],['equipe','Equipe']];
+function renderMenu(){ensureShell();var nav=document.getElementById('v39-nav');if(!nav)return;nav.innerHTML='';menu.forEach(function(item){var b=document.createElement('button');b.type='button';b.dataset.view=item[0];b.textContent=item[1];b.style.cssText='text-align:left;border:0;padding:11px 12px;border-radius:10px;cursor:pointer;font-weight:700;background:'+(activeView===item[0]?'#e7f0fa':'transparent')+';color:#203047';b.onclick=function(){activeView=item[0];renderMenu();renderContent();};nav.appendChild(b);});}
+function card(label,value){return '<div style="background:#fff;border:1px solid #e4e8ee;border-radius:15px;padding:18px"><div style="font-size:13px;color:#667085">'+esc(label)+'</div><div style="font-size:30px;font-weight:900;margin-top:5px">'+esc(value)+'</div></div>';}
+function renderContent(){var title=document.getElementById('v39-title'),out=document.getElementById('v39-content');if(!out||!coreData)return;var pessoas=coreData.pessoas||[],gcs=coreData.gcs||[],equipe=coreData.equipe||[];if(activeView==='inicio'){title.textContent='Inicio';out.innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px">'+card('Pessoas',pessoas.length)+card('GCs',gcs.length)+card('Equipe',equipe.length)+'</div><div style="background:#fff;border:1px solid #e4e8ee;border-radius:15px;padding:20px;margin-top:16px"><h2 style="margin:0 0 8px;font-size:18px">Sessao ativa</h2><p style="margin:0;color:#667085">'+esc(personName())+' · '+esc(profileName())+'</p></div>';return;}if(activeView==='pessoas'){title.textContent='Pessoas';out.innerHTML='<div style="display:grid;gap:10px">'+pessoas.map(function(p){return '<div style="background:#fff;border:1px solid #e4e8ee;border-radius:12px;padding:15px"><strong>'+esc(p.preferred_name||p.full_name||'Pessoa')+'</strong><div style="font-size:13px;color:#667085;margin-top:4px">Status: '+esc(p.status||'')+'</div></div>';}).join('')+'</div>';return;}if(activeView==='gcs'){title.textContent='GCs';out.innerHTML='<div style="display:grid;gap:10px">'+gcs.map(function(g){return '<div style="background:#fff;border:1px solid #e4e8ee;border-radius:12px;padding:15px"><strong>'+esc(g.name||'GC')+'</strong><div style="font-size:13px;color:#667085;margin-top:4px">Status: '+esc(g.status||'')+'</div></div>';}).join('')+'</div>';return;}title.textContent='Equipe';out.innerHTML='<div style="display:grid;gap:10px">'+equipe.map(function(u){return '<div style="background:#fff;border:1px solid #e4e8ee;border-radius:12px;padding:15px"><strong>'+esc(u.username||'Usuario')+'</strong><div style="font-size:13px;color:#667085;margin-top:4px">Status: '+esc(u.status||'')+'</div></div>';}).join('')+'</div>';}
+async function hydrate(){coreData=await V.runtime.core();ensureShell();renderMenu();renderContent();window.dispatchEvent(new CustomEvent('2gather:v39-shell-ready',{detail:{counts:{pessoas:(coreData.pessoas||[]).length,gcs:(coreData.gcs||[]).length,equipe:(coreData.equipe||[]).length}}}));return coreData;}
+async function restoreSession(){if(restoring)return V.runtime&&V.runtime.state;restoring=true;try{if(!V.runtime||typeof V.runtime.start!=='function')throw new Error('Runtime v39 indisponivel.');var state=await V.runtime.start();var ok=!!(state&&state.authenticated&&state.context&&state.context.authUser);setView(ok);if(ok){V.context=state.context;await hydrate();}return state;}catch(err){console.error('[2Gather v39 restore]',err);setView(false);return null;}finally{restoring=false;}}
+async function login(){var usuario=value('l-usuario'),senha=value('l-senha');if(!usuario||!senha){showError('Informe o usuario e a senha.');return;}busy(true);clearError();try{if(typeof V.signIn!=='function')throw new Error('Login v39 indisponivel.');await V.signIn(usuario,senha);var state=await restoreSession();if(!(state&&state.authenticated))throw new Error('Runtime nao reconheceu a sessao autenticada.');}catch(err){console.error('[2Gather v39 login]',err);showError(err&&err.message?err.message:'Usuario ou senha incorretos.');}finally{busy(false);}}
+document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e.target.closest('#b-entrar'):null;if(!b)return;e.preventDefault();e.stopImmediatePropagation();login();},true);
 document.addEventListener('keydown',function(e){if(e.key!=='Enter')return;var a=document.activeElement;if(!a||!/^l-(usuario|senha)$/.test(a.id))return;e.preventDefault();e.stopImmediatePropagation();login();},true);
-V.uiActions=V.uiActions||{};
-V.uiActions.login=login;
-V.uiActions.restoreSession=restoreSession;
-V.uiActions.logout=async function(){if(typeof V.signOut==='function')await V.signOut();if(V.runtime&&V.runtime.state){V.runtime.state.started=false;V.runtime.state.authenticated=false;V.runtime.state.churchId=null;V.runtime.state.context=null;}setView(false);};
-V.uiActions.core=function(){return V.loadCore(V.churchContext&&V.churchContext.ensure?V.churchContext.ensure():null);};
-function autoRestore(){restoreSession();}
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',autoRestore,{once:true});else autoRestore();
+V.uiActions=V.uiActions||{};V.uiActions.login=login;V.uiActions.restoreSession=restoreSession;V.uiActions.hydrate=hydrate;V.uiActions.logout=async function(){if(typeof V.signOut==='function')await V.signOut();coreData=null;var shell=document.getElementById('v39-shell');if(shell)shell.remove();setView(false);};
+function start(){restoreSession();}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 })();
