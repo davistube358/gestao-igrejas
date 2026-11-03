@@ -1,5 +1,0 @@
-No index.html, carregar app_v39_mutation_gateway.js depois de app_v39_ui_actions.js e antes de app.js:
-<script src="./app_v39_ui_actions.js"></script>
-<script src="./app_v39_mutation_gateway.js"></script>
-...
-<script src="./app.js"></script>
