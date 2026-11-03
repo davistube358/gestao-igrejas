@@ -1,0 +1,4 @@
+/* 2Gather v39 Build 47 - leitura consolidada do estoque Mercado */
+(function(){'use strict';var V=window.G2_V39=window.G2_V39||{};
+V.marketInventoryView={load:async function(){var churchId=V.churchContext.ensure(),loc=await V.market.resolveLocation();var lots=await V.client.schema('app').from('solidarity_inventory_lots').select('*').eq('church_id',churchId).eq('location_id',loc.id).order('expires_on',{ascending:true});if(lots.error)throw lots.error;var entries=await V.client.schema('app').from('market_inventory_entries').select('*').eq('church_id',churchId).eq('location_id',loc.id).order('created_at',{ascending:false});if(entries.error)throw entries.error;var adj=await V.client.schema('app').from('market_inventory_adjustments').select('*').eq('church_id',churchId).eq('location_id',loc.id).order('created_at',{ascending:false});if(adj.error)throw adj.error;return{location:loc,lots:lots.data||[],entries:entries.data||[],adjustments:adj.data||[]};}};
+})();

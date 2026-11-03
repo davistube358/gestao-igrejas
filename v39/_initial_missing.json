@@ -1,0 +1,6 @@
+[
+  "config.js",
+  "app_v39_mutation_gateway.js",
+  "app_v39_write_bridge.js",
+  "app_v39_password_recovery.js"
+]

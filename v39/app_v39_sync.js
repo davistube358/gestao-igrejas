@@ -1,0 +1,2 @@
+/* 2Gather v39 P1.2 - sync legado desativado */
+(function(){'use strict';var V=window.G2_V39=window.G2_V39||{};function err(){var e=new Error('Fila/sync legado desativado na v39. As gravacoes devem ser confirmadas diretamente pelo Supabase.');e.code='V39_LEGACY_SYNC_DISABLED';return e;}V.syncBridge={ready:function(){return false;},run:function(){return Promise.reject(err());},status:function(){return{enabled:false,mode:'supabase-direct',pendingLegacyWrites:0};}};})();

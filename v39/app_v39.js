@@ -1,0 +1,62 @@
+/* 2Gather v39 - bootstrap oficial de migracao Supabase
+ * Base funcional preservada: app.js v38.
+ * Este arquivo entra antes do app.js e disponibiliza a camada v39 sem remover o fallback legado.
+ */
+(function () {
+  'use strict';
+  var C = window.APP_CONFIG || {};
+  var V39 = window.G2_V39 = window.G2_V39 || {};
+  V39.version = 39;
+  V39.backend = 'supabase';
+  V39.compatibility = 'v38';
+  V39.ready = false;
+
+  function assertConfig() {
+    if (!C.supabaseUrl || !C.supabaseAnonKey) throw new Error('Supabase v39 nao configurado em config.js.');
+    if (!window.supabase || !window.supabase.createClient) throw new Error('Biblioteca Supabase nao carregada.');
+  }
+
+  V39.init = function () {
+    assertConfig();
+    V39.client = window.supabase.createClient(C.supabaseUrl, C.supabaseAnonKey, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+    });
+    V39.ready = true;
+    if (typeof V39.bindAuthEvents === 'function') V39.bindAuthEvents();
+    return V39.client.auth.getSession();
+  };
+
+  V39.sessionContext = async function () {
+    if (!V39.ready) await V39.init();
+    var sr = await V39.client.auth.getSession();
+    var authUser = sr.data && sr.data.session && sr.data.session.user;
+    if (!authUser) return null;
+    var ua = await V39.client.schema('app').from('user_accounts').select('*').eq('auth_user_id', authUser.id).maybeSingle();
+    if (ua.error) throw ua.error;
+    if (!ua.data) return { authUser: authUser, userAccount: null, person: null, churches: [], assignments: [] };
+    var person = null;
+    if (ua.data.person_id) {
+      var pr = await V39.client.schema('app').from('people').select('*').eq('id', ua.data.person_id).maybeSingle();
+      if (pr.error) throw pr.error; person = pr.data;
+    }
+    var ca = await V39.client.schema('app').from('church_user_access').select('*,churches(*)').eq('user_account_id', ua.data.id);
+    if (ca.error) throw ca.error;
+    var accesses = ca.data || [], assignments = [];
+    for (var i = 0; i < accesses.length; i++) {
+      var pa = await V39.client.schema('app').from('user_profile_assignments').select('*,access_profiles(*)').eq('church_user_access_id', accesses[i].id);
+      if (pa.error) throw pa.error;
+      assignments = assignments.concat(pa.data || []);
+    }
+    return { authUser: authUser, userAccount: ua.data, person: person, churches: accesses, assignments: assignments };
+  };
+
+  V39.people = {
+    list: async function (churchId) { var q=V39.client.schema('app').from('people').select('*'); if(churchId) q=q.eq('church_id',churchId); var r=await q; if(r.error)throw r.error; return r.data||[]; },
+    save: async function (row) { var r=await V39.client.schema('app').from('people').upsert(row).select().single(); if(r.error)throw r.error; return r.data; }
+  };
+  V39.gcs = {
+    list: async function (churchId) { var q=V39.client.schema('app').from('growth_groups').select('*'); if(churchId) q=q.eq('church_id',churchId); var r=await q; if(r.error)throw r.error; return r.data||[]; },
+    save: async function (row) { var r=await V39.client.schema('app').from('growth_groups').upsert(row).select().single(); if(r.error)throw r.error; return r.data; }
+  };
+  V39.table = function (name) { if(!V39.ready) throw new Error('G2_V39 ainda nao inicializado.'); return V39.client.schema('app').from(name); };
+})();

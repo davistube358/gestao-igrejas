@@ -1,0 +1,26 @@
+{
+  "release": "P1.2-FINAL-CANDIDATE",
+  "status": "PASS_STATIC",
+  "productionReady": false,
+  "nextGate": "functional homologation",
+  "scriptCount": 56,
+  "checks": {
+    "scripts_present": true,
+    "no_duplicates": true,
+    "syntax": true,
+    "p1_once": true,
+    "qa_once": true,
+    "p1_before_app": true,
+    "gateway": true,
+    "strict": true,
+    "finance": true,
+    "no_legacy_targeted": true,
+    "config_no_google": true,
+    "sw_p1": true,
+    "no_official": true
+  },
+  "missingScripts": [],
+  "duplicateScripts": [],
+  "syntaxErrors": [],
+  "legacyFallbackHits": []
+}
