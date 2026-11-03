@@ -1,9 +1,0 @@
-{
-  "status": "PASS_STATIC",
-  "release": "69D.8",
-  "scope": "restore authenticated runtime into the existing shell UI",
-  "file": "app_v39_ui_actions.js",
-  "preserved": ["D6 login interception", "Edge auth signIn", "Enter-key login"],
-  "added": ["runtime.start on page load", "hide s-login when authenticated", "show s-app when authenticated", "restoreSession reusable API", "return to login view after logout"],
-  "unchanged": ["password", "Supabase auth contracts", "RLS", "bridge", "app_v39.js", "database"]
-}

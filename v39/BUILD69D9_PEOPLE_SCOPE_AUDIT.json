@@ -1,9 +1,0 @@
-{
-  "status":"PASS_STATIC",
-  "release":"69D.9",
-  "scope":"correct people church scoping",
-  "file":"app_v39.js",
-  "cause":"app.people has no church_id; church membership is app.church_people(church_id, person_id)",
-  "change":"people.list(churchId) now filters app.church_people by church_id and reads related app.people rows",
-  "preserved":["single Supabase client init","sessionContext","own-person RLS behavior","growth groups API"]
-}

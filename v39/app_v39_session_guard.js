@@ -1,3 +1,0 @@
-/* 2Gather v39 Build 15 - guardas de sessao/igreja */
-(function(){'use strict';var V=window.G2_V39=window.G2_V39||{};
-V.guard={requireAuth:function(){var s=V.runtime&&V.runtime.state;if(!s||!s.authenticated)throw new Error('Sessao autenticada obrigatoria.');return s;},requireChurch:function(){this.requireAuth();return V.churchContext?V.churchContext.ensure():V.runtime.state.churchId;},protect:function(action,payload){if(action==='v39.login'||action==='v39.logout')return payload||{};this.requireAuth();if(/^v39\.(people|groups|announcements|prayers|finance|solidarity)\./.test(action))this.requireChurch();return payload||{};}};})();

@@ -1,1 +1,0 @@
-{"status":"PASS_STATIC","release":"69D.6","files":["app_v39_ui_actions.js","sw_v39.js"],"checks":{"capture_click_before_legacy":true,"plain_user_password_to_v39_signIn":true,"legacy_hash_not_used":true,"enter_key_supported":true,"session_context_required":true,"cache_bumped":true},"scope":"login UI cutover only"}

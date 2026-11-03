@@ -1,8 +1,0 @@
-/* 2Gather v39 Build 43 - writes e estorno Mercado */
-(function(){'use strict';var V=window.G2_V39=window.G2_V39||{};async function rpc(n,a){var r=await V.client.schema('app').rpc(n,a||{});if(r.error)throw r.error;return r.data;}
-V.marketDelivery={enabled:false,cancelEnabled:false,preflight:null,
- validate:async function(){try{var x=await rpc('v39_market_delivery_preflight',{});this.preflight=x||{};this.enabled=!!(x&&x.ready===true);var c=await V.client.schema('app').rpc('v39_cancel_market_delivery',{p_delivery_id:'00000000-0000-0000-0000-000000000000',p_reason:'preflight'});this.cancelEnabled=!!(c.error&&String(c.error.message||'').indexOf('MARKET_DELIVERY_NOT_FOUND')>=0);return Object.assign({},this.preflight,{cancel:this.cancelEnabled});}catch(e){this.enabled=false;this.cancelEnabled=false;this.preflight={ready:false,error:e.message||String(e)};return this.preflight;}},
- createDraft:function(locationId,personId,items,notes){if(!this.enabled)throw new Error('Mercado v39: preflight transacional nao aprovado.');return rpc('v39_create_market_delivery_draft',{p_church_id:V.churchContext.ensure(),p_location_id:locationId,p_person_id:personId,p_items:items||[],p_notes:notes||null});},
- finalize:function(deliveryId,reason){if(!this.enabled)throw new Error('Mercado v39: preflight transacional nao aprovado.');return rpc('v39_finalize_market_delivery',{p_delivery_id:deliveryId,p_reason:reason||null});},
- cancel:function(deliveryId,reason){if(!this.cancelEnabled)throw new Error('Mercado v39: RPC de estorno nao validada.');return rpc('v39_cancel_market_delivery',{p_delivery_id:deliveryId,p_reason:reason});}
-};})();
