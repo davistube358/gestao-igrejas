@@ -5554,9 +5554,13 @@ function aplicarConsent(o, valor, resp) {
 /* ═══════════════════ PWA: instalação, atualização, novo endereço ═══════════════════ */
 var pwaPrompt = null, pwaNovoSW = null;
 function pwaOrigemOk() {
-  if (!MODO_PWA) return false;
-  var ok = APP.origens || [];
-  return ok.indexOf(location.origin) >= 0 || /\.pages\.dev$/.test(location.hostname) || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  var ok = (APP && APP.origens) || [];
+  var hosted = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  if (!hosted) return false;
+  if (ok.indexOf(location.origin) >= 0) return true;
+  if (/\.pages\.dev$/i.test(location.hostname)) return true;
+  try { return !!(APP.appUrl && new URL(APP.appUrl, location.href).origin === location.origin); }
+  catch (_) { return false; }
 }
 function pwaPodeInstalar() { return !!pwaPrompt; }
 function pwaInstalar() {
@@ -5836,8 +5840,10 @@ if (EXIGE_HOSPEDADO && !MODO_SCRIPT && !pwaOrigemOk()) {
   return;
 }
 aplicarLogo();
-chamarBruto({ acao: 'ping' }).then(function (r) { if (r && r.ok) { servidorV = +r.versao || 0; if (cfg.token && servidorV < SERVIDOR_ESPERADO) render(); } }).catch(function () {});
-chamarBruto({ acao: 'configPublica' }).then(function (r) { if (r && r.ok) return atualizarConfig(r.config); }).then(function (m) { avisoNovoEndereco(); if (m && cfg.token) render(); }).catch(function () {});
+if (!(window.APP_CONFIG && APP_CONFIG.build === 'P1.2')) {
+  chamarBruto({ acao: 'ping' }).then(function (r) { if (r && r.ok) { servidorV = +r.versao || 0; if (cfg.token && servidorV < SERVIDOR_ESPERADO) render(); } }).catch(function () {});
+  chamarBruto({ acao: 'configPublica' }).then(function (r) { if (r && r.ok) return atualizarConfig(r.config); }).then(function (m) { avisoNovoEndereco(); if (m && cfg.token) render(); }).catch(function () {});
+}
 if (cfg.token && cfg.usuario) { iniciarApp(); sincronizar(false); setTimeout(verificarSenhaTemp, 400); }
 else mostrarTela('s-login');
 
