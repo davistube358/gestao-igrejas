@@ -1,0 +1,14 @@
+{
+  "name": "2Gather",
+  "short_name": "2Gather",
+  "description": "2Gather - Viver Church",
+  "start_url": "/v39/",
+  "scope": "/v39/",
+  "display": "standalone",
+  "background_color": "#f4f6f9",
+  "theme_color": "#2f5bea",
+  "icons": [
+    {"src":"./icons/favicon-32.png","sizes":"32x32","type":"image/png"},
+    {"src":"./icons/apple-touch-icon.png","sizes":"180x180","type":"image/png"}
+  ]
+}
