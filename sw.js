@@ -1,30 +1,53 @@
-/* 2Gather — service worker.
-   Guarda só a TELA do app (HTML, JS, CSS, ícones) para abrir rápido e sem internet.
-   Dados nunca passam por aqui: as chamadas ao servidor (Apps Script) não são guardadas. */
-var VERSAO = '2gather-v38';
-var ARQUIVOS = ['./', './index.html', './app.js', './config.js', './manifest.webmanifest',
-  './lib/leaflet.js', './lib/leaflet.css',
-  './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png'];
+/* 2Gather v39 · Service Worker · SYNC-V39-7
+   Troque VERSAO a cada publicação: os aparelhos descartam o cache antigo sozinhos.
+   - Arquivos do app (HTML/JS/CSS/config) sempre buscados na internet primeiro, sem cache HTTP.
+   - Sem internet: usa a última cópia guardada.
+   - Pré-cache tolerante: um arquivo ausente não impede a instalação da versão nova. */
+var VERSAO = '2gather-v39-sync7';
+var PRECACHE = ['./', './index.html', './manifest.webmanifest', './config.js', './app.js', './icons/icon-192.png'];
+
 self.addEventListener('install', function (e) {
-  e.waitUntil(caches.open(VERSAO).then(function (c) { return c.addAll(ARQUIVOS); }));
+  e.waitUntil(caches.open(VERSAO).then(function (c) {
+    return Promise.all(PRECACHE.map(function (u) {
+      return fetch(u, { cache: 'no-store' }).then(function (r) { if (r && r.ok) return c.put(u, r); }).catch(function () {});
+    }));
+  }).then(function () { return self.skipWaiting(); }));
 });
+
 self.addEventListener('activate', function (e) {
-  e.waitUntil(caches.keys().then(function (ks) {
-    return Promise.all(ks.filter(function (k) { return k !== VERSAO; }).map(function (k) { return caches.delete(k); }));
+  e.waitUntil(caches.keys().then(function (k) {
+    return Promise.all(k.filter(function (x) { return x !== VERSAO; }).map(function (x) { return caches.delete(x); }));
   }).then(function () { return self.clients.claim(); }));
 });
-self.addEventListener('message', function (e) { if (e.data && e.data.tipo === 'ATUALIZAR') self.skipWaiting(); });
-self.addEventListener('fetch', function (e) {
-  var req = e.request, url = new URL(req.url);
-  if (req.method !== 'GET' || url.origin !== self.location.origin) return;
-  if (req.mode === 'navigate') { e.respondWith(fetch(req).catch(function () { return caches.match('./index.html'); })); return; }
-  e.respondWith(caches.match(req, { ignoreSearch: true }).then(function (r) { return r || fetch(req); }));
+
+self.addEventListener('message', function (e) {
+  if (e.data === 'SKIP_WAITING' || (e.data && e.data.tipo === 'SKIP_WAITING')) self.skipWaiting();
 });
-/* toque na notificação: abre (ou traz para frente) o app na central de avisos */
+
+self.addEventListener('fetch', function (e) {
+  var req = e.request;
+  if (req.method !== 'GET') return;
+  var u = new URL(req.url);
+  if (u.origin !== location.origin) return;                     // Supabase, mapas, CDNs: direto, sem interferência
+  var codigo = req.mode === 'navigate' || /\.(html|js|css|json|webmanifest)$/i.test(u.pathname) || u.pathname.endsWith('/');
+  var busca = codigo ? fetch(req, { cache: 'no-cache' }) : fetch(req);
+  e.respondWith(busca.then(function (r) {
+    if (r && r.ok && r.type === 'basic') { var c2 = r.clone(); caches.open(VERSAO).then(function (c) { c.put(req, c2); }); }
+    return r;
+  }).catch(function () {
+    return caches.match(req).then(function (m) {
+      return m || caches.match(req, { ignoreSearch: true }).then(function (m2) {
+        return m2 || (req.mode === 'navigate' ? caches.match('./index.html') : undefined);
+      });
+    });
+  }));
+});
+
+/* Toque na notificação: abre o app e leva aos avisos */
 self.addEventListener('notificationclick', function (e) {
   e.notification.close();
   e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (l) {
-    for (var i = 0; i < l.length; i++) { if ('focus' in l[i]) { l[i].postMessage({ tipo: 'ABRIR' }); return l[i].focus(); } }
-    return self.clients.openWindow('./?origem=notificacao');
+    for (var i = 0; i < l.length; i++) { l[i].postMessage({ tipo: 'ABRIR' }); if ('focus' in l[i]) return l[i].focus(); }
+    return self.clients.openWindow('./');
   }));
 });
