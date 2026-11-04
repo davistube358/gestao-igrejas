@@ -1988,10 +1988,22 @@ function v39CarregarEncontrosGC(gcs) {
 function v39PessoaPorId(pid) { return (db.pessoas || []).filter(function (p) { return p.id === pid; })[0] || {}; }
 /* Persiste UM encontro do GC (encontro + chamada) e devolve o registro relido do Supabase.
    Se houver pessoa ainda sem UUID (criada só no aparelho), o encontro continua pendente. */
+/* Procura no Supabase o encontro do mesmo GC e data (evita GC_MEETING_CONFLICT ao reenviar). */
+async function v39EncontroExistente(gcId, e) {
+  try {
+    var rows = await v39RpcApp('list_gc_meetings', { p_growth_group_id: gcId, p_date_from: e.data, p_date_to: e.data });
+    rows = (Array.isArray(rows) ? rows : []).filter(function (m) { return m.meeting_date === e.data && m.status !== 'cancelled'; });
+    if (!rows.length) return null;
+    var h = String(e.horario || '').slice(0, 5);
+    var mesmo = rows.filter(function (m) { return String(m.starts_at || '').slice(0, 5) === h; })[0];
+    return (mesmo || rows[0]).id;
+  } catch (err) { console.warn('[2Gather][GC] busca de encontro existente falhou', err); return null; }
+}
 async function v39PersistirEncontro(e) {
   var gcId = e.gcId || gcA();
   if (!v39Uuid(gcId)) throw new Error('GC inválido para persistência no Supabase.');
   var meetingId = v39Uuid(e.meetingId) ? e.meetingId : (v39Uuid(e.id) ? e.id : null);
+  if (!meetingId) meetingId = await v39EncontroExistente(gcId, e);      // reaproveita o encontro já gravado na mesma data
   var meeting = await v39RpcApp('save_gc_meeting', {
     p_growth_group_id: gcId, p_meeting_id: meetingId,
     p_payload: { meeting_date: e.data, starts_at: e.horario || null, ends_at: e.fim || null, theme: e.tema || null, host_person_id: null,
