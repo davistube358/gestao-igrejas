@@ -602,6 +602,14 @@ function sincronizar(avisar) {
       r = r || {};
       if (r.gcs) db.gcs = r.gcs;
       if (r.eventos) db.eventos = r.eventos;
+      return v39RpcApp('v39_list_people', { p_church_id: cfg.usuario && cfg.usuario.igrejaId }).then(function (lista) {
+        if (Array.isArray(lista)) r.pessoas = lista.map(function (x) {
+          var loc = (db.pessoas || []).filter(function (l) { return l.id === x.id; })[0];
+          return Object.assign({}, loc || {}, x, { _pend: false });
+        });
+        return r;
+      }).catch(function (err) { console.warn('[2Gather][pessoas] leitura falhou', err); r.errors = (r.errors || []).concat(['Pessoas: ' + (err && err.message)]); return r; });
+    }).then(function (r) {
       if (Array.isArray(r.pessoas)) {                         // preserva cadastro local ainda não enviado
         var locaisP = (db.pessoas || []).filter(function (p) { return p._pend; });
         db.pessoas = r.pessoas.filter(function (p) { return !locaisP.some(function (l) { return l.id === p.id; }); }).concat(locaisP);
@@ -2036,10 +2044,11 @@ async function v39EnviarPendentes() {
   var pessoas = (db.pessoas || []).filter(function (p) { return p._pend; });
   for (var i = 0; i < pessoas.length; i++) {
     var pe = pessoas[i];
-    if (!(H && H.isMutation && H.isMutation('salvarPessoa'))) { res.pessoasSemContrato++; continue; }
     try {
-      var r = await H.execute('salvarPessoa', { pessoa: limpo(pe) });
-      var nova = (r && (r.pessoa || (r.data && r.data.pessoa) || (r.data && r.data.id && r.data))) || null;
+      var igrejaId = cfg.usuario && cfg.usuario.igrejaId;
+      if (!v39Uuid(igrejaId)) throw new Error('Igreja ativa não identificada.');
+      var envioP = limpo(pe); if (!v39Uuid(envioP.gcId)) envioP.gcId = '';
+      var nova = await v39RpcApp('v39_save_person', { p_church_id: igrejaId, p_person: envioP });
       if (nova && nova.id && nova.id !== pe.id) {               // troca o id local pelo UUID em encontros e listas
         db.encontros.forEach(function (en) {
           if (en.presencas && en.presencas[pe.id] !== undefined) { en.presencas[nova.id] = en.presencas[pe.id]; delete en.presencas[pe.id]; en._pend = true; }
