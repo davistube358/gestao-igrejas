@@ -970,7 +970,7 @@ function validarContexto() {
         : (eu().gcId && gcPor(eu().gcId)) ? eu().gcId : (meus[0] ? meus[0].id : '');
     }
   }
-  if (cfg.modo === 'gc' && cfg.gcAtual && db.gcs.length && !gcPor(cfg.gcAtual)) cfg.gcAtual = ehGestor() ? '' : cfg.gcAtual;
+  if (cfg.modo === 'gc' && cfg.gcAtual && db.gcs.length && !gcPor(cfg.gcAtual) && !sincronizando) cfg.gcAtual = ehGestor() ? '' : cfg.gcAtual;
   if (cfg.modo === 'gc' && !cfg.gcAtual && ehGestor()) cfg.modo = 'ger';
   var ids = abasAtuais().map(function (a) { return a.id; }).concat(abasExtras());
   if (ids.indexOf(cfg.aba) < 0) cfg.aba = ids[0];
@@ -979,7 +979,8 @@ function validarContexto() {
 /* ── navegação: cada tela aberta entra numa pilha; "Voltar" (seta, botão do celular ou do navegador) volta à anterior ── */
 var navStack = [], histTipos = [], ignorarPop = 0, modalHist = false;
 var HIST_OK = !MODO_SCRIPT && !!(window.history && history.pushState);
-function fotoNav() { return { modo: cfg.modo, gcAtual: cfg.gcAtual, aba: cfg.aba, curso: cursoAberto, y: window.scrollY || 0 }; }
+function fotoNav() { return { modo: cfg.modo, gcAtual: cfg.gcAtual, aba: cfg.aba, curso: cursoAberto, y: window.scrollY || 0,
+  f: { culto: filtroCulto, gc: filtroGC, busca: buscaGC, p: filtroP, buscaP: buscaP } }; }
 function empilhar(tipo) {
   if (!HIST_OK) return;
   try { history.pushState({ g2: tipo }, ''); histTipos.push(tipo); } catch (e) {}
@@ -993,23 +994,12 @@ function navegar(muda) {
 function muralNovos() { var v = lerVistos(), ult = v._mural || ''; return (db.mural || []).filter(function (m) { return !m.meu && m.criadoEm > ult; }).length; }
 function irRaiz(id) {
   if (id === 'avisos' || id === 'alertas') { var vv = lerVistos(); vv._mural = new Date().toISOString(); salvarVistos(); }
-  // mantém o caminho até a entrada no contexto atual (ex.: lista de GCs → GC aberto); descarta o resto
-  var k = navStack.length;
-  while (k > 0 && navStack[k - 1].modo === cfg.modo && navStack[k - 1].gcAtual === cfg.gcAtual) k--;
-  navStack = navStack.slice(0, k); cursoAberto = '';
-  if (id !== inicioId()) {
-    navStack.push({ modo: cfg.modo, gcAtual: cfg.gcAtual, aba: inicioId(), curso: '', y: 0 });   // voltar → Início deste perfil
-    if (HIST_OK) {
-      try {
-        if (histTipos[histTipos.length - 1] === 'raiz') { history.replaceState({ g2: 'raiz' }, ''); navStack.splice(navStack.length - 1, 0); }
-        else { history.pushState({ g2: 'raiz' }, ''); histTipos.push('raiz'); }
-      } catch (e) {}
-    }
-  }
-  cfg.aba = id; salvarCfg(); window.scrollTo(0, 0); render();
+  if (id === cfg.aba && !cursoAberto) { window.scrollTo(0, 0); return; }
+  navegar(function () { cfg.aba = id; cursoAberto = ''; });        // Voltar retorna exatamente à tela de onde o usuário saiu
 }
 function restaurar(f) {
   cfg.modo = f.modo; cfg.gcAtual = f.gcAtual; cfg.aba = f.aba; cursoAberto = f.curso || '';
+  if (f.f) { filtroCulto = f.f.culto || filtroCulto; filtroGC = f.f.gc || filtroGC; buscaGC = f.f.busca || ''; filtroP = f.f.p || filtroP; buscaP = f.f.buscaP || ''; }
   salvarCfg(); render(); setTimeout(function () { window.scrollTo(0, f.y || 0); }, 0);
 }
 /** Seta de voltar: usa o histórico do navegador quando existe; senão, volta direto. */
@@ -1057,7 +1047,7 @@ function render() {
   $('h-tit').textContent = TIT[cfg.aba] ? TIT[cfg.aba] : cfg.modo === 'lv' ? igrNome() : cfg.aba === 'config' ? 'Configurações' : cfg.aba === 'cultos' ? 'Cultos e eventos' : cfg.aba === 'membros' ? 'Cadastro de pessoas' : cfg.aba === 'cursos' ? 'Treinamentos/Reuniões' : cfg.modo === 'ger' ? igrNome() : (g ? g.nome : 'Meu GC');
   $('h-papel').textContent = PAPEL_NOME[papel()] || '';
   var raizes = abasAtuais().map(function (a) { return a.id; }), naRaiz = raizes.indexOf(cfg.aba) >= 0 && !cursoAberto;
-  $('b-voltar').classList.toggle('hide', naRaiz && !(cfg.modo === 'gc' && ehGestor() && cfg.aba === 'painel'));
+  $('b-voltar').classList.toggle('hide', naRaiz && !navStack.length && !(cfg.modo === 'gc' && ehGestor() && cfg.aba === 'painel'));
   $('b-voltar-ger').classList.add('hide');
   var abas = abasAtuais(), abaNav = raizes.indexOf(cfg.aba) >= 0 ? cfg.aba : (navStack.length ? (navStack[0].aba && raizes.indexOf(navStack[0].aba) >= 0 ? navStack[0].aba : inicioId()) : inicioId());
   $('nav').innerHTML = abas.map(function (a) {
@@ -1218,7 +1208,7 @@ function rGCs() {
   var h = (pode('rede') ? '<button class="btn" data-a="aba" data-v="novo">+ Cadastrar novo GC</button><div class="gap"></div>' : '') +
     '<div class="tabs">' + [['Ativo', 'Ativos'], ['Inativo', 'Inativos'], ['todos', 'Todos']].map(function (x) {
     return '<button data-a="filtroGC" data-v="' + x[0] + '" class="' + (filtroGC === x[0] ? 'on' : '') + '">' + x[1] + '</button>'; }).join('') + '</div>' +
-    '<input id="busca-gc" type="search" name="gc-search" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Buscar GC, bairro ou líder..." value="' + esc(buscaGC) + '" style="margin-bottom:12px">';
+    '<input id="busca-gc" autocomplete="off" placeholder="Buscar GC, bairro ou líder..." value="' + esc(buscaGC) + '" style="margin-bottom:12px">';
   if (!lst.length) return h + '<div class="card"><div class="empty">Nenhum GC encontrado.<br>Use a aba <b>Novo GC</b> para cadastrar.</div></div>';
   lst.forEach(function (g) {
     var m = metricas(g.id), prox = proximoEncontro(g);
@@ -1344,12 +1334,25 @@ function salvarGC(fecharModal) {
       if (iconeGCNovo && iconeGCNovo !== '__remover__') fotos[r.gc.id + '#ic'] = { v: r.gc.iconeV, data: iconeGCNovo };
       if (iconeGCNovo === '__remover__') delete fotos[r.gc.id + '#ic'];
       salvarFotos(); iconeGCNovo = null;
-      db.gcs = db.gcs.filter(function (x) { return x.id !== r.gc.id; }).concat([r.gc]); salvarDB();
-      gcForm = null; fotoNova = null;
-      if (fecharModal) fechar();
-      toast(novo ? 'GC cadastrado ✓' : 'GC atualizado ✓');
-      if (novo) { cfg.aba = 'gcs'; salvarCfg(); }
-      render(); sincronizar(false);
+      var anterior = g.id ? gcPor(g.id) : null;
+      var mudouStatus = !!(g.id && g.status && anterior && g.status !== anterior.status && !g._restrito);
+      var fimStatus = !mudouStatus || cfg.token !== 'supabase-v39' ? Promise.resolve(null)
+        : v39RpcApp('v39_set_growth_group_status', { p_growth_group_id: g.id, p_status: g.status });
+      return fimStatus.then(function () {
+        if (mudouStatus) r.gc.status = g.status;
+        db.gcs = db.gcs.filter(function (x) { return x.id !== r.gc.id; }).concat([r.gc]); salvarDB();
+        gcForm = null; fotoNova = null;
+        if (fecharModal) fechar();
+        if (mudouStatus && filtroGC !== 'todos' && filtroGC !== g.status) filtroGC = 'todos';   // continua vendo o GC alterado
+        toast(novo ? 'GC cadastrado ✓' : mudouStatus ? 'GC atualizado e marcado como ' + g.status + ' ✓' : 'GC atualizado ✓');
+        if (novo) { cfg.aba = 'gcs'; salvarCfg(); }
+        render(); sincronizar(false);
+      }, function (eSt) {
+        db.gcs = db.gcs.filter(function (x) { return x.id !== r.gc.id; }).concat([r.gc]); salvarDB();
+        if (fecharModal) fechar();
+        render();
+        throw new Error('Os dados do GC foram salvos, mas a situação (' + g.status + ') não foi alterada: ' + ((eSt && eSt.message) || 'erro desconhecido'));
+      });
     })
     .catch(function (e) { toast(e.message, 4500); })
     .then(function () { carregando(false); });
@@ -1626,7 +1629,7 @@ function blocoConta() {
     (cfg.ultima ? '<b style="color:var(--verde)">● Conectado</b><br>Última sincronização: ' + dataHoraLocal(cfg.ultima) : '<b style="color:#999">● Ainda não sincronizado</b>') +
     '<br>Conexão protegida pelo app oficial' + (STORE_OK ? '' : '<br><b style="color:var(--vermelho)">O navegador está bloqueando o armazenamento local.</b>') +
     '</div><button class="btn" data-a="sincronizar">Sincronizar agora</button><div class="gap"></div><button class="btn gh" data-a="verPolitica">Política de privacidade</button></div>' +
-    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-6</div>';
+    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-7</div>';
 }
 function rConta() { return blocoConta(); }
 function trocarSenha() {
@@ -2944,10 +2947,18 @@ function rCultos() {
     return '<button data-a="filtroCulto" data-v="' + t[0] + '" class="' + (filtroCulto === t[0] ? 'on' : '') + '">' + t[1] + '</button>'; }).join('') + '</div>';
   if (filtroCulto === 'fin') return h + rRelFin();
   if (filtroCulto === 'real') h += graficoCultos('Presença nos últimos cultos e eventos');
-  var hj = hoje();
+  var agoraMs = Date.now();
+  var terminou = function (e) {
+    if (!e.data) return false;
+    var ini = minStr(e.inicio), fim = minStr(e.fim);
+    if (fim === null) fim = ini === null ? 24 * 60 : ini + 120;
+    if (ini !== null && fim <= ini) fim += 24 * 60;             // termina depois da meia-noite
+    var p = e.data.split('-');
+    return new Date(+p[0], +p[1] - 1, +p[2], 0, fim).getTime() <= agoraMs;
+  };
   var l = filtroCulto === 'prox'
-    ? evs.filter(function (e) { return e.data >= hj; }).sort(function (a, b) { return (a.data + a.inicio) < (b.data + b.inicio) ? -1 : 1; })
-    : evs.filter(function (e) { return e.data < hj; }).sort(function (a, b) { return (a.data + a.inicio) < (b.data + b.inicio) ? 1 : -1; }).slice(0, 40);
+    ? evs.filter(function (e) { return !terminou(e); }).sort(function (a, b) { return (a.data + a.inicio) < (b.data + b.inicio) ? -1 : 1; })
+    : evs.filter(function (e) { return terminou(e); }).sort(function (a, b) { return (a.data + a.inicio) < (b.data + b.inicio) ? 1 : -1; }).slice(0, 40);
   if (!l.length) return h + '<div class="card"><div class="empty">' + (filtroCulto === 'prox' ? 'Nenhum culto ou evento agendado.' : 'Nenhum culto ou evento realizado ainda.') + '</div></div>';
   l.forEach(function (e) {
     var d = parseData(e.data), aberto = ab && ab.id === e.id;
@@ -6846,7 +6857,7 @@ function estExportar(modo) {
 })();
 
 /* ═══════════════════════════════════════════════════════════════
-   2Gather v39 · SYNC-V39-6 · integrado ao app.js
+   2Gather v39 · SYNC-V39-7 · integrado ao app.js
    1) Ficha do culto/evento (valores, presentes, tema, recados, pregador…) → Supabase
    2) Receitas e anfitrião do encontro de GC → Supabase
    3) Mensagens do sistema em linguagem clara
@@ -6856,7 +6867,7 @@ function estExportar(modo) {
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'SYNC-V39-6';
+  var BUILD = 'SYNC-V39-7';
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 
