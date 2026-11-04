@@ -1977,13 +1977,18 @@ function v39CarregarEncontrosGC(gcs) {
   var grupos = (gcs || db.gcs || []).filter(function (g) { return g && v39Uuid(g.id) && !g.deleted; });
   return Promise.all(grupos.map(function (g) {
     return v39RpcApp('list_gc_meetings', { p_growth_group_id:g.id, p_date_from:null, p_date_to:null }).then(function (rows) {
-      rows = Array.isArray(rows) ? rows : [];
+      rows = v39Lista(rows);
       return Promise.all(rows.map(function (m) { return v39RpcApp('get_gc_meeting', {p_meeting_id:m.id}).then(v39EncontroLegado).catch(function () { return null; }); }));
     }).catch(function (err) { console.warn('[2Gather][GC] encontros nao carregados', g.id, err); return null; });
   })).then(function (listas) {
     if (listas.some(function (l) { return l === null; })) return null;   // leitura parcial: mantém os encontros locais
     return [].concat.apply([], listas).filter(Boolean);
   }).catch(function () { return null; });
+}
+function v39Lista(x) {
+  if (Array.isArray(x)) return x;
+  if (x && typeof x === 'object') { var k = ['items','meetings','rows','data','encontros']; for (var i = 0; i < k.length; i++) if (Array.isArray(x[k[i]])) return x[k[i]]; }
+  return [];
 }
 function v39PessoaPorId(pid) { return (db.pessoas || []).filter(function (p) { return p.id === pid; })[0] || {}; }
 /* Persiste UM encontro do GC (encontro + chamada) e devolve o registro relido do Supabase.
@@ -2003,8 +2008,7 @@ async function v39PersistirEncontro(e) {
   var gcId = e.gcId || gcA();
   if (!v39Uuid(gcId)) throw new Error('GC inválido para persistência no Supabase.');
   var meetingId = v39Uuid(e.meetingId) ? e.meetingId : (v39Uuid(e.id) ? e.id : null);
-  if (!meetingId) meetingId = await v39EncontroExistente(gcId, e);      // reaproveita o encontro já gravado na mesma data
-  var meeting = await v39RpcApp('save_gc_meeting', {
+  var meeting = await v39RpcApp('v39_save_gc_meeting', {
     p_growth_group_id: gcId, p_meeting_id: meetingId,
     p_payload: { meeting_date: e.data, starts_at: e.horario || null, ends_at: e.fim || null, theme: e.tema || null, host_person_id: null,
                  location_text: e.local || null, announcements: e.recados || null, notes: e.obs || null, status: e.deleted ? 'cancelled' : 'planned' },
@@ -2035,7 +2039,7 @@ async function v39EnviarPendentes() {
     if (!(H && H.isMutation && H.isMutation('salvarPessoa'))) { res.pessoasSemContrato++; continue; }
     try {
       var r = await H.execute('salvarPessoa', { pessoa: limpo(pe) });
-      var nova = (r && r.pessoa) || null;
+      var nova = (r && (r.pessoa || (r.data && r.data.pessoa) || (r.data && r.data.id && r.data))) || null;
       if (nova && nova.id && nova.id !== pe.id) {               // troca o id local pelo UUID em encontros e listas
         db.encontros.forEach(function (en) {
           if (en.presencas && en.presencas[pe.id] !== undefined) { en.presencas[nova.id] = en.presencas[pe.id]; delete en.presencas[pe.id]; en._pend = true; }
@@ -2064,7 +2068,10 @@ async function salvarChamada() {
   if (cfg.token !== 'supabase-v39') { salvarDB(); toast('Chamada de ' + br(e.data) + ' salva · ' + presentes(e) + ' presente(s)'); render(); sincronizar(false); return; }
   carregando(true, 'Salvando encontro e chamada...');
   try {
-    var r = await v39PersistirEncontro(e);
+    var envio = await v39EnviarPendentes();                     // pessoas novas primeiro, depois encontros
+    var atual = achaEnc(e.gcId || gcA(), e.data) || e;
+    var r = { encontro: atual, semUuid: atual._pend ? 1 : 0 };
+    if (envio.falhas.length) throw new Error(envio.falhas.join(' · '));
     salvarDB(); render();
     toast(r.semUuid ? 'Chamada salva. ' + r.semUuid + ' pessoa(s) nova(s) ainda aguardam envio do cadastro.' : 'Chamada de ' + br(r.encontro.data) + ' salva no Supabase · ' + presentes(r.encontro) + ' presente(s)', 5000);
   } catch (err) {
