@@ -1626,7 +1626,7 @@ function blocoConta() {
     (cfg.ultima ? '<b style="color:var(--verde)">● Conectado</b><br>Última sincronização: ' + dataHoraLocal(cfg.ultima) : '<b style="color:#999">● Ainda não sincronizado</b>') +
     '<br>Conexão protegida pelo app oficial' + (STORE_OK ? '' : '<br><b style="color:var(--vermelho)">O navegador está bloqueando o armazenamento local.</b>') +
     '</div><button class="btn" data-a="sincronizar">Sincronizar agora</button><div class="gap"></div><button class="btn gh" data-a="verPolitica">Política de privacidade</button></div>' +
-    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · app v' + VERSAO_APP + '</div>';
+    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-6</div>';
 }
 function rConta() { return blocoConta(); }
 function trocarSenha() {
@@ -6191,7 +6191,7 @@ if (cfg.token && cfg.usuario) {
 }
 else mostrarTela('s-login');
 
-window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }, sincronizar: sincronizar, metricas: metricas, pendentes: pendentesLocais };
+window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }, render: function () { render(); }, sincronizar: sincronizar, metricas: metricas, pendentes: pendentesLocais };
 
 
 /* ═══════════════════ v37: TREINAMENTOS/REUNIÕES × CURSOS DO INSTITUTO ═══════════════════
@@ -6845,3 +6845,269 @@ function estExportar(modo) {
 } catch (err) { mostrarErro((err && err.message) || String(err), 'inicialização'); }
 })();
 
+/* ═══════════════════════════════════════════════════════════════
+   2Gather v39 · SYNC-V39-6 · integrado ao app.js
+   1) Ficha do culto/evento (valores, presentes, tema, recados, pregador…) → Supabase
+   2) Receitas e anfitrião do encontro de GC → Supabase
+   3) Mensagens do sistema em linguagem clara
+   4) Versão visível no canto da tela e no Perfil
+   Requer no Supabase: v39_ficha_recados_receitas.sql
+   ═══════════════════════════════════════════════════════════════ */
+(function () {
+  'use strict';
+  if (window.G2_BUILD) return;                       // evita carregar duas vezes
+  var BUILD = 'SYNC-V39-6';
+  window.G2_BUILD = BUILD;
+  console.info('[2Gather] versão ' + BUILD);
+
+  var CAMPOS_EV = ['dizimo', 'oferta', 'outras', 'presentes', 'tema', 'recados', 'pregador', 'tituloPalavra', 'antes', 'depois'];
+  var cacheEv = {}, cacheGc = {};
+
+  function G() { return window.__gc || null; }
+  function db() { var g = G(); return g ? g.db() : null; }
+  function cfg() { var g = G(); return (g && g.cfg()) || {}; }
+  function igrejaId() { var c = cfg(); return c.usuario && c.usuario.igrejaId; }
+  function v39() { return cfg().token === 'supabase-v39'; }
+  function uuid(x) { return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(x || '')); }
+  function lista(x) { return Array.isArray(x) ? x : (x && Array.isArray(x.items) ? x.items : []); }
+
+  function rpc(nome, args) {
+    var V = window.G2_V39 || {};
+    var pronto = (!V.client && typeof V.init === 'function') ? Promise.resolve(V.init()) : Promise.resolve();
+    return pronto.then(function () {
+      if (!V.client) throw new Error('Cliente Supabase indisponível.');
+      var b = V.client.schema('app');
+      return (b.__rpcOriginal || b.rpc).call(b, nome, args || {});
+    }).then(function (r) { if (r.error) throw r.error; return r.data; });
+  }
+
+  function redesenhar() {
+    var a = document.activeElement, m = document.getElementById('main');
+    if (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName) && m && m.contains(a)) { setTimeout(redesenhar, 1500); return; }
+    var g = G(); if (g && typeof g.render === 'function') g.render();
+  }
+
+  /* ── 1. cultos e eventos ── */
+  function chaveEv(src, id) { return (src || 'church_events') + '|' + id; }
+  function resumo(ev) { var o = {}; CAMPOS_EV.forEach(function (k) { if (ev && ev[k] !== undefined && ev[k] !== null) o[k] = String(ev[k]); }); return o; }
+
+  function salvarResumoEvento(ev) {
+    if (!v39() || !ev || ev.deleted || !uuid(ev.id) || !uuid(igrejaId())) return Promise.resolve(null);
+    var d = db(), local = (d && (d.eventos || []).filter(function (x) { return x.id === ev.id; })[0]) || {};
+    var junto = Object.assign({}, local, ev);
+    var src = junto._source === 'worship_services' ? 'worship_services' : 'church_events';
+    var p = resumo(junto);
+    return rpc('v39_save_event_summary', { p_church_id: igrejaId(), p_source: src, p_record_id: ev.id, p_payload: p })
+      .then(function () { cacheEv[chaveEv(src, ev.id)] = p; return p; })
+      .catch(function (e) { console.warn('[2Gather][ficha] não salvou no servidor', e); throw traduzErro(e); });
+  }
+  function carregarResumosEventos() {
+    return rpc('v39_list_event_summaries', { p_church_id: igrejaId() }).then(function (l) {
+      var n = {}; lista(l).forEach(function (s) { var o = {}; CAMPOS_EV.forEach(function (k) { if (s[k] != null) o[k] = s[k]; }); n[chaveEv(s.source, s.id)] = o; });
+      cacheEv = n;
+    }).catch(function (e) { console.warn('[2Gather][ficha] leitura falhou', e); });
+  }
+  function mesclarEventos(lst) {
+    var mudou = false;
+    (lst || []).forEach(function (e) {
+      if (!e || e._pend) return;
+      var s = cacheEv[chaveEv(e._source, e.id)] || cacheEv[chaveEv('church_events', e.id)] || cacheEv[chaveEv('worship_services', e.id)];
+      if (!s) return;
+      CAMPOS_EV.forEach(function (k) { if (s[k] != null && s[k] !== '' && (e[k] == null || e[k] === '')) { e[k] = s[k]; mudou = true; } });
+    });
+    return mudou;
+  }
+
+  /* ── 2. encontros de GC ── */
+  function salvarResumoGC(meetingId, gcId, data) {
+    var d = db(); if (!d || !uuid(meetingId)) return Promise.resolve();
+    var e = (d.encontros || []).filter(function (x) { return x.gcId === gcId && x.data === data && !x.deleted; })[0];
+    if (!e) return Promise.resolve();
+    var p = { dizimo: e.dizimo || '', oferta: e.oferta || '', anfitriao: e.anfitriao || '' };
+    return rpc('v39_save_gc_meeting_summary', { p_meeting_id: meetingId, p_payload: p })
+      .then(function () { cacheGc[meetingId] = p; })
+      .catch(function (err) { console.warn('[2Gather][GC] receitas não salvas', err); });
+  }
+  function carregarResumosGC() {
+    return rpc('v39_list_gc_meeting_summaries', { p_church_id: igrejaId() }).then(function (l) {
+      var n = {}; lista(l).forEach(function (s) { n[s.meetingId] = { dizimo: s.dizimo || '', oferta: s.oferta || '', anfitriao: s.anfitriao || '' }; });
+      cacheGc = n;
+    }).catch(function (e) { console.warn('[2Gather][GC] leitura das receitas falhou', e); });
+  }
+  function mesclarEncontros(lst) {
+    var mudou = false;
+    (lst || []).forEach(function (e) {
+      if (!e || e._pend) return;
+      var s = cacheGc[e.meetingId] || cacheGc[e.id]; if (!s) return;
+      ['dizimo', 'oferta', 'anfitriao'].forEach(function (k) { if (s[k] && (e[k] == null || e[k] === '')) { e[k] = s[k]; mudou = true; } });
+    });
+    return mudou;
+  }
+
+  /* carga ao abrir/atualizar a página, ao trocar de login e a cada 2 min */
+  var igrejaCarregada = null, carregando = false;
+  function carregarTudo() {
+    if (carregando || !v39() || !uuid(igrejaId())) return;
+    carregando = true;
+    var ig = igrejaId();
+    Promise.all([carregarResumosEventos(), carregarResumosGC()]).then(function () {
+      igrejaCarregada = ig;
+      var d = db(); if (d && (mesclarEventos(d.eventos) | mesclarEncontros(d.encontros))) redesenhar();
+    }).catch(function () {}).then(function () { carregando = false; });
+  }
+  setInterval(function () { if (window.G2_V39 && igrejaCarregada !== igrejaId()) carregarTudo(); }, 700);
+  setInterval(carregarTudo, 120000);
+  setInterval(function () {                                  // reaplica depois de cada sincronização do app
+    var d = db(); if (!d || !v39()) return;
+    if (mesclarEventos(d.eventos) | mesclarEncontros(d.encontros)) redesenhar();
+  }, 1500);
+
+  /* ganchos nas gravações */
+  function instalar() {
+    var V = window.G2_V39; if (!V) return false;
+    var ok = true;
+    if (V.p13 && typeof V.p13.hydrate === 'function') {
+      if (!V.p13.__g2wrap) {
+        var h = V.p13.hydrate;
+        V.p13.hydrate = function () {
+          var a = arguments;
+          return Promise.all([carregarResumosEventos(), carregarResumosGC()]).catch(function () {})
+            .then(function () { return h.apply(V.p13, a); })
+            .then(function (r) { if (r && r.eventos) mesclarEventos(r.eventos); return r; });
+        };
+        V.p13.__g2wrap = true;
+      }
+    } else ok = false;
+    if (V.p1 && typeof V.p1.execute === 'function') {
+      if (!V.p1.__g2wrap) {
+        var x = V.p1.execute;
+        V.p1.execute = function (acao, dados, prog) {
+          return Promise.resolve(x.call(V.p1, acao, dados, prog)).then(function (r) {
+            if (acao !== 'salvarEvento') return r;
+            var ev = (dados && dados.evento) || {}, id = ev.id || (r && r.evento && r.evento.id);
+            if (!id || ev.deleted) return r;
+            return salvarResumoEvento(Object.assign({}, ev, { id: id, _source: ev._source || (r && r.evento && r.evento._source) }))
+              .then(function (s) { if (r && r.evento && s) Object.keys(s).forEach(function (k) { r.evento[k] = s[k]; }); return r; });
+          });
+        };
+        V.p1.__g2wrap = true;
+      }
+      var H = V.p1.handlers;
+      if (H && typeof H.salvarCulto === 'function' && !H.__g2wrap) {
+        var c = H.salvarCulto;
+        H.salvarCulto = function (input) {
+          return Promise.resolve(c.call(H, input)).then(function (r) {
+            var ev = (input && (input.culto || input.evento)) || {}, ret = r && (r.evento || r.culto), id = ev.id || (ret && ret.id);
+            if (!id || ev.deleted) return r;
+            return salvarResumoEvento(Object.assign({}, ev, { id: id, _source: 'worship_services' })).then(function () { return r; });
+          });
+        };
+        H.__g2wrap = true;
+      }
+    } else ok = false;
+    if (V.client && typeof V.client.schema === 'function') {
+      if (!V.client.__g2wrap) {
+        var sch = V.client.schema.bind(V.client);
+        V.client.schema = function (nome) {
+          var b = sch(nome);
+          if (nome !== 'app' || !b || typeof b.rpc !== 'function' || b.__rpcOriginal) return b;
+          var ro = b.rpc; b.__rpcOriginal = ro;
+          b.rpc = function (fn, args, opts) {
+            var q = ro.call(b, fn, args, opts);
+            if (fn !== 'v39_save_gc_meeting' && fn !== 'save_gc_meeting') return q;
+            return Promise.resolve(q).then(function (res) {
+              if (res && !res.error && res.data && res.data.id && args && args.p_payload)
+                return salvarResumoGC(res.data.id, args.p_growth_group_id, args.p_payload.meeting_date).then(function () { return res; });
+              return res;
+            });
+          };
+          return b;
+        };
+        V.client.__g2wrap = true;
+      }
+    } else ok = false;
+    return ok;
+  }
+  var tent = 0, tm = setInterval(function () { if (instalar() || ++tent > 240) clearInterval(tm); }, 250);
+
+  /* ── 3. mensagens claras ── */
+  var COD = {
+    GC_MEETING_CONFLICT: 'Já existe um encontro deste GC nesta data. Abra o encontro da lista para editar.',
+    GC_MEETING_DATE_REQUIRED: 'Informe a data do encontro.',
+    GC_MEETING_TIME_INVALID: 'O horário de término precisa ser depois do início.',
+    GC_MEETING_NOT_FOUND: 'Encontro não encontrado. Atualize a página e tente de novo.',
+    GC_MEETING_CLOSED: 'Este encontro foi cancelado e não pode ser reaberto.',
+    GC_MEETING_INVALID: 'Algum dado do encontro está em formato inválido. Confira data e horários.',
+    GC_MEETING_STATUS_INVALID: 'Situação do encontro inválida.',
+    GC_NOT_FOUND: 'GC não encontrado. Atualize a página.',
+    GC_FIELD_NOT_ALLOWED: 'Esse dado do GC não pode ser alterado por esta tela.',
+    GC_NAME_REQUIRED: 'Informe o nome do GC.',
+    GC_VALUES_INVALID: 'Valores inválidos. Use números, por exemplo 150,00.',
+    EVENT_NOT_FOUND: 'Culto ou evento não encontrado. Atualize a agenda.',
+    EVENT_VALUES_INVALID: 'Valores inválidos. Use números, por exemplo 150,00.',
+    PERSON_NAME_REQUIRED: 'Informe o nome da pessoa.',
+    PERSON_NOT_FOUND: 'Pessoa não encontrada nesta igreja. Atualize a página.',
+    PERMISSION_DENIED: 'Você não tem permissão para esta ação. Fale com a liderança.',
+    REASON_REQUIRED: 'Informe o motivo para continuar.',
+    CHURCH_REQUIRED: 'Não foi possível identificar a igreja. Saia e entre novamente.',
+    V39_ACTION_NOT_MAPPED: 'Esta função ainda está sendo migrada e não está disponível no momento.',
+    V39_CLIENT_UNAVAILABLE: 'Não foi possível conectar ao servidor. Atualize a página.'
+  };
+  function traduzTexto(t) {
+    t = String(t || '');
+    for (var c in COD) if (t.indexOf(c) >= 0) return COD[c];
+    if (/a[cç][aã]o v39 n[aã]o mapeada/i.test(t)) return COD.V39_ACTION_NOT_MAPPED;
+    if (/failed to fetch|networkerror|load failed|sem conex[aã]o|network request failed/i.test(t)) return 'Sem conexão com a internet. O que você fez fica guardado e será enviado quando a conexão voltar.';
+    if (/jwt|token.*expir|sess[aã]o expir|not authenticated|invalid refresh/i.test(t)) return 'Sua sessão expirou. Saia e entre novamente.';
+    if (/sem permiss|permission denied|row-level security|42501/i.test(t)) return COD.PERMISSION_DENIED;
+    if (/duplicate key|unique constraint|23505/i.test(t)) return 'Este registro já existe.';
+    if (/invalid input syntax|violates check|22P02|23514/i.test(t)) return 'Algum dado está em formato inválido. Confira os campos.';
+    if (/could not find the function|PGRST202/i.test(t)) return 'O servidor ainda não tem esta função. Avise o administrador do sistema.';
+    if (/cliente supabase indispon/i.test(t)) return COD.V39_CLIENT_UNAVAILABLE;
+    return '';
+  }
+  function traduzErro(e) { var m = traduzTexto((e && (e.message || e.details || e.code)) || e); return new Error(m || (e && e.message) || 'Não foi possível concluir. Tente novamente.'); }
+  function amigavel(t) {
+    var o = String(t || ''), m;
+    if ((m = o.match(/^Chamada guardada no aparelho, mas N[ÃA]O enviada: (.*)$/i))) return 'A chamada foi guardada neste aparelho, mas ainda não chegou ao servidor. ' + (traduzTexto(m[1]) || 'Tente salvar novamente.');
+    if ((m = o.match(/^N[ãa]o foi poss[íi]vel salvar a chamada: (.*)$/i))) return 'Não foi possível salvar a chamada. ' + (traduzTexto(m[1]) || 'Tente novamente.');
+    if (/Atualizado com avisos/.test(o)) return 'Dados atualizados, mas parte das informações não carregou. Tente sincronizar de novo.';
+    if (/salva no Supabase/.test(o)) return o.replace(' no Supabase', '');
+    if (/[A-Z]{3,}_[A-Z_]{3,}/.test(o) || /supabase|v39|rpc|PGRST|Apps Script/i.test(o)) {
+      var tr = traduzTexto(o); if (tr) return tr;
+      if (/supabase|v39|rpc|PGRST/i.test(o)) return 'Não foi possível concluir agora. Tente novamente em instantes.';
+    }
+    return o;
+  }
+  function statusAmigavel(t) {
+    var o = String(t || ''), m;
+    if ((m = o.match(/^(.*?)(\d+) altera[cç][aã]o\(?[õo]?e?s?\)? N[ÃA]O enviada\(s\) ao Supabase$/i))) return m[1] + m[2] + (m[2] === '1' ? ' alteração aguardando envio' : ' alterações aguardando envio');
+    if (/leitura parcial/i.test(o)) return 'Alguns dados não carregaram · toque em Sincronizar';
+    if (/falha de leitura/i.test(o)) return 'Não foi possível atualizar · verifique a internet';
+    if (/Enviando altera[cç][oõ]es ao Supabase/i.test(o)) return 'Enviando alterações…';
+    if (/Atualizando do Supabase/i.test(o)) return 'Atualizando…';
+    if (/Supabase conectado$/i.test(o)) return o.replace(/Supabase conectado$/i, 'Conectado');
+    return o;
+  }
+  function vigiar(id, fn) {
+    var el = document.getElementById(id); if (!el) return false;
+    var trocando = false;
+    function ap() { if (trocando) return; var a = el.textContent, b = fn(a); if (b !== a) { trocando = true; el.textContent = b; trocando = false; } }
+    new MutationObserver(ap).observe(el, { childList: true, characterData: true, subtree: true });
+    ap(); return true;
+  }
+  ['toast', 'h-sub', 'l-erro', 'c-erro'].forEach(function (id) {
+    var n = 0, t = setInterval(function () { if (vigiar(id, id === 'h-sub' ? statusAmigavel : amigavel) || ++n > 100) clearInterval(t); }, 300);
+  });
+
+  /* ── 4. versão visível ── */
+  function marcarVersao() {
+    var tag = document.getElementById('g2-build');
+    if (!tag && document.body) {
+      tag = document.createElement('div'); tag.id = 'g2-build';
+      tag.style.cssText = 'position:fixed;right:10px;bottom:calc(env(safe-area-inset-bottom) + 6px);z-index:9999;font-size:11px;color:#8a919c;background:rgba(255,255,255,.85);padding:2px 6px;border-radius:6px;pointer-events:none';
+      tag.textContent = 'v39 · ' + BUILD; document.body.appendChild(tag);
+    }
+  }
+  marcarVersao(); setTimeout(marcarVersao, 1000);
+})();
