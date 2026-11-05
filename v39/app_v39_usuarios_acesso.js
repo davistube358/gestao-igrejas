@@ -9,7 +9,7 @@
    Não altera o app.js. */
 (function () {
   'use strict';
-  var VERSAO = 'USUARIOS-1';
+  var VERSAO = 'USUARIOS-2';
   var ABAS_AVISO = ['avisos', 'alertas', 'mural', 'pessoas', 'membros', 'usuarios', 'equipe', 'inicio', 'painel'];
   var pendentes = [], nomes = {}, perfis = [], podeAprovar = null, carregando = false, ultimaCarga = 0;
 
@@ -80,10 +80,13 @@
         podeAprovar = true;
         pendentes = lista(l).filter(function (r) { return ['pending', 'under_review', 'correction_requested'].indexOf(r.status) >= 0; });
         var ids = pendentes.map(function (r) { return r.person_id; }).filter(Boolean);
-        var p1 = ids.length ? app().then(function (b) { return b.from('people').select('id,full_name,preferred_name').in('id', ids); })
-          .then(function (r) { (r.data || []).forEach(function (p) { nomes[p.id] = p.full_name || p.preferred_name; }); }).catch(function () {}) : Promise.resolve();
-        var p2 = perfis.length ? Promise.resolve() : app().then(function (b) { return b.from('access_profiles').select('id,code,name,is_active').eq('is_active', true); })
-          .then(function (r) { perfis = (r.data || []).filter(function (p) { return p.code !== 'master'; }); }).catch(function () {});
+        var p1 = ids.length ? rpc('v39_access_request_names', { p_church_id: igrejaId() })
+          .then(function (m) { for (var k in (m || {})) if (m[k]) nomes[k] = m[k]; })
+          .catch(function () { return app().then(function (b) { return b.from('people').select('id,full_name,preferred_name').in('id', ids); })
+            .then(function (r) { (r.data || []).forEach(function (p) { nomes[p.id] = p.full_name || p.preferred_name; }); }).catch(function () {}); }) : Promise.resolve();
+        var p2 = perfis.length ? Promise.resolve() : rpc('v39_list_access_profiles', {})
+          .then(function (l) { perfis = lista(l).filter(function (p) { return p.code !== 'master'; }); })
+          .catch(function (e) { console.warn('[2Gather][acessos] perfis: rode v39_acesso_apoio.sql', e); });
         return Promise.all([p1, p2]);
       })
       .catch(function (e) { if (/autoriza|permiss|PERMISSION/i.test(String(e && (e.message || e.details)))) podeAprovar = false; else console.warn('[2Gather][acessos]', e); })
@@ -154,11 +157,13 @@
     var gcs = ((G() && G().db().gcs) || []).filter(function (g) { return !g.deleted && g.status !== 'Inativo'; });
     var optsPerfil = perfis.slice().sort(function (a, b) { return nomePerfil(a).localeCompare(nomePerfil(b), 'pt-BR'); })
       .map(function (p) { return '<option value="' + esc(p.id) + '"' + (p.id === r.requested_profile_id ? ' selected' : '') + '>' + esc(nomePerfil(p)) + '</option>'; }).join('');
-    if (!optsPerfil && r.requested_profile_id) optsPerfil = '<option value="' + esc(r.requested_profile_id) + '">Função pedida</option>';
+    if (!optsPerfil && r.requested_profile_id) optsPerfil = '<option value="' + esc(r.requested_profile_id) + '">Função pedida (lista de perfis indisponível)</option>';
     var optsGc = '<option value="">Sem GC</option>' + gcs.map(function (g) { return '<option value="' + esc(g.id) + '"' + (g.id === r.requested_gc_id ? ' selected' : '') + '>' + esc(g.nome) + '</option>'; }).join('');
     var o = janela('<h2 style="margin:0 0 4px">Liberar acesso</h2>' +
       '<div style="font-size:13px;color:#666;margin-bottom:10px">' + esc(nomes[r.person_id] || r.requested_username) + ' · usuário <b>' + esc(r.requested_username) + '</b></div>' +
       '<label>CPF *</label><input id="g2a-cpf" inputmode="numeric" maxlength="14" placeholder="000.000.000-00" autocomplete="off">' +
+      '<div style="background:var(--bg,#F0F1F4);border-radius:10px;padding:9px 11px;margin:10px 0 2px;font-size:13px">Função pedida no cadastro: <b>' +
+        esc(nomePerfil(perfilPorId(r.requested_profile_id)) || 'não informada') + '</b><br><span style="color:#888;font-size:12px">Já vem selecionada abaixo. Mantenha ou escolha outro perfil.</span></div>' +
       '<label>Perfil de acesso *</label><select id="g2a-perfil">' + optsPerfil + '</select>' +
       '<label>GC</label><select id="g2a-gc">' + optsGc + '</select>' +
       '<div style="font-size:11.5px;color:#999;margin:6px 0 2px">Se o perfil for Líder e o GC estiver sem líder, a pessoa já entra como líder do GC.</div>' +
