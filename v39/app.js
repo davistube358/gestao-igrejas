@@ -1629,7 +1629,7 @@ function blocoConta() {
     (cfg.ultima ? '<b style="color:var(--verde)">● Conectado</b><br>Última sincronização: ' + dataHoraLocal(cfg.ultima) : '<b style="color:#999">● Ainda não sincronizado</b>') +
     '<br>Conexão protegida pelo app oficial' + (STORE_OK ? '' : '<br><b style="color:var(--vermelho)">O navegador está bloqueando o armazenamento local.</b>') +
     '</div><button class="btn" data-a="sincronizar">Sincronizar agora</button><div class="gap"></div><button class="btn gh" data-a="verPolitica">Política de privacidade</button></div>' +
-    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-7</div>';
+    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-8</div>';
 }
 function rConta() { return blocoConta(); }
 function trocarSenha() {
@@ -2040,9 +2040,16 @@ async function v39PersistirEncontro(e) {
   if (idx >= 0) db.encontros[idx] = junto; else db.encontros.push(junto);
   return { encontro: junto, semUuid: semUuid };
 }
+/* Erro PERSON_DUPLICATE do Supabase → id da pessoa já existente (ou ''). */
+function v39DuplicadoId(e) {
+  var txt = String((e && (e.details || e.message)) || '');
+  if (txt.indexOf('PERSON_DUPLICATE') < 0) return '';
+  try { var d = JSON.parse(e.details); var id = d && (d.detail && d.detail.person_id || d.person_id); return v39Uuid(id) ? id : ''; }
+  catch (x) { var m = txt.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i); return m ? m[0] : ''; }
+}
 /* Envia ao Supabase tudo que ficou marcado como pendente no aparelho. */
 async function v39EnviarPendentes() {
-  var res = { enviados: 0, falhas: [], pessoasSemContrato: 0 };
+  var res = { enviados: 0, falhas: [], pessoasSemContrato: 0, duplicados: [] };
   var H = window.G2_V39 && G2_V39.p1;
   var pessoas = (db.pessoas || []).filter(function (p) { return p._pend; });
   for (var i = 0; i < pessoas.length; i++) {
@@ -2051,7 +2058,20 @@ async function v39EnviarPendentes() {
       var igrejaId = cfg.usuario && cfg.usuario.igrejaId;
       if (!v39Uuid(igrejaId)) throw new Error('Igreja ativa não identificada.');
       var envioP = limpo(pe); if (!v39Uuid(envioP.gcId)) envioP.gcId = '';
-      var nova = await v39RpcApp('v39_save_person', { p_church_id: igrejaId, p_person: envioP });
+      var nova;
+      try { nova = await v39RpcApp('v39_save_person', { p_church_id: igrejaId, p_person: envioP }); }
+      catch (eDup) {
+        var dupId = v39DuplicadoId(eDup);
+        if (!dupId || v39Uuid(pe.id)) throw eDup;
+        // já cadastrada na igreja: não cria de novo; as marcações da chamada passam para o cadastro existente
+        db.encontros.forEach(function (en) {
+          if (en.presencas && en.presencas[pe.id] !== undefined) { en.presencas[dupId] = en.presencas[pe.id]; delete en.presencas[pe.id]; en._pend = true; }
+          if (en.lista && en.lista.add) en.lista.add = en.lista.add.map(function (x) { return x === pe.id ? dupId : x; });
+        });
+        db.pessoas = db.pessoas.filter(function (x) { return x.id !== pe.id; });
+        res.duplicados.push(pe.nome || 'Pessoa');
+        continue;
+      }
       if (nova && nova.id && nova.id !== pe.id) {               // troca o id local pelo UUID em encontros e listas
         db.encontros.forEach(function (en) {
           if (en.presencas && en.presencas[pe.id] !== undefined) { en.presencas[nova.id] = en.presencas[pe.id]; delete en.presencas[pe.id]; en._pend = true; }
@@ -2068,6 +2088,7 @@ async function v39EnviarPendentes() {
     catch (err2) { res.falhas.push('Encontro ' + br(encs[j].data) + ': ' + (err2 && err2.message || err2)); }
   }
   salvarDB();
+  if (res.duplicados.length) toast(res.duplicados.join(', ') + ' já estava(m) cadastrado(s) na igreja. O cadastro existente foi usado e nenhuma pessoa foi duplicada.', 7000);
   return res;
 }
 async function salvarChamada() {
@@ -6857,7 +6878,7 @@ function estExportar(modo) {
 })();
 
 /* ═══════════════════════════════════════════════════════════════
-   2Gather v39 · SYNC-V39-7 · integrado ao app.js
+   2Gather v39 · SYNC-V39-8 · integrado ao app.js
    1) Ficha do culto/evento (valores, presentes, tema, recados, pregador…) → Supabase
    2) Receitas e anfitrião do encontro de GC → Supabase
    3) Mensagens do sistema em linguagem clara
@@ -6867,7 +6888,7 @@ function estExportar(modo) {
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'SYNC-V39-7';
+  var BUILD = 'SYNC-V39-8';
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 
@@ -7058,6 +7079,19 @@ function estExportar(modo) {
     EVENT_VALUES_INVALID: 'Valores inválidos. Use números, por exemplo 150,00.',
     PERSON_NAME_REQUIRED: 'Informe o nome da pessoa.',
     PERSON_NOT_FOUND: 'Pessoa não encontrada nesta igreja. Atualize a página.',
+    PERSON_DUPLICATE: 'Esta pessoa já está cadastrada na igreja. Use o cadastro existente.',
+    MEMBER_CPF_REQUIRED: 'Para cadastrar como membro é preciso informar um CPF válido.',
+    PERSON_CPF_INVALID: 'CPF inválido. Confira os números.',
+    PERSON_CREATE_CONFLICT: 'Não foi possível concluir o cadastro. Confira se a pessoa já existe.',
+    PERSON_REQUIRED_FIELD: 'Preencha os campos obrigatórios do cadastro.',
+    PERSON_INVALID_FIELD: 'Algum campo do cadastro está com valor inválido. Confira data de nascimento e telefone.',
+    PERSON_NOT_IN_CHURCH: 'Esta pessoa não está vinculada à igreja.',
+    RECORD_VERSION_CONFLICT: 'Este cadastro foi alterado por outra pessoa. Atualize a página e tente de novo.',
+    CHURCH_PERSON_STATUS_INVALID: 'Situação da pessoa inválida.',
+    GC_MEMBERSHIP_INVALID: 'Vínculo com o GC inválido.',
+    GC_MEMBERSHIP_CONFLICT: 'Não foi possível alterar o GC desta pessoa. Atualize a página e tente de novo.',
+    GC_MEMBERSHIP_NOT_FOUND: 'Esta pessoa não está mais neste GC. Atualize a página.',
+    GC_STATUS_INVALID: 'Situação do GC inválida.',
     PERMISSION_DENIED: 'Você não tem permissão para esta ação. Fale com a liderança.',
     REASON_REQUIRED: 'Informe o motivo para continuar.',
     CHURCH_REQUIRED: 'Não foi possível identificar a igreja. Saia e entre novamente.',
