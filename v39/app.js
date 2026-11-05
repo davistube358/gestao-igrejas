@@ -882,7 +882,9 @@ function sair(confirmar) {
   if (confirmar && pendentesLocais().pessoas.length + pendentesLocais().encontros.length > 0 &&
       !confirm('Há alterações que ainda não foram enviadas. Se sair agora, elas serão perdidas. Sair mesmo assim?')) return;
   if (confirmar && !confirm('Sair do app neste aparelho?')) return;
-  if (cfg.token) chamar('logout', {}).catch(function () {});
+  if (cfg.token === 'supabase-v39') v39SignOut('local').catch(function () {});
+  else if (cfg.token) chamar('logout', {}).catch(function () {});
+  fecharMenuUsuario();
   limparSessao();
   mostrarTela('s-login');
 }
@@ -941,7 +943,7 @@ function abasAtuais() {
     A.push({ id: 'avisos', nome: 'Avisos', ic: IC_AVISOS });
     if (pode('visitantes')) A.push({ id: 'lvmeus', nome: 'Cadastros', ic: IC_LISTA });
     else if (pode('consulta')) A.push({ id: 'membros', nome: 'Pessoas', ic: IC_PESSOAS });
-    A = A.slice(0, 4); A.push({ id: 'conta', nome: 'Perfil', ic: IC_PERFIL });
+    A = A.slice(0, 4); A.push({ id: 'conta', nome: 'Configurações', ic: IC_CONFIG });
     return A;
   }
   if (cfg.modo === 'ger') {
@@ -950,12 +952,12 @@ function abasAtuais() {
     if (pode('consulta')) G.push({ id: 'membros', nome: 'Pessoas', ic: IC_PESSOAS });
     else if (temCultos()) G.push({ id: 'gcs', nome: 'GCs', ic: IC_GC });
     G.push({ id: 'avisos', nome: 'Avisos', ic: IC_AVISOS });
-    G.push({ id: 'conta', nome: 'Perfil', ic: IC_PERFIL });
+    G.push({ id: 'conta', nome: 'Configurações', ic: IC_CONFIG });
     return G;
   }
   return [{ id: 'painel', nome: 'Início', ic: IC_INICIO }, { id: 'chamada', nome: 'Encontros', ic: IC_AGENDA },
           { id: 'pessoas', nome: 'Pessoas', ic: IC_PESSOAS }, { id: 'alertas', nome: 'Avisos', ic: IC_AVISOS },
-          { id: 'mais', nome: 'Perfil', ic: IC_PERFIL }];
+          { id: 'mais', nome: 'Configurações', ic: IC_CONFIG }];
 }
 function inicioId() { return cfg.modo === 'lv' ? (pode('visitantes') ? 'lvnovo' : temInst() ? 'instituto' : pode('lvVisitas') ? 'lvcasas' : 'conta') : cfg.modo === 'ger' ? 'bi' : 'painel'; }
 function validarContexto() {
@@ -1043,7 +1045,7 @@ function render() {
   validarContexto();
   var g = cfg.modo === 'gc' ? gcPor(cfg.gcAtual) : null;
   $('h-img').src = g ? iconeGC(g.id) : LOGO;
-  var TIT = { instituto: 'Instituto', instcursos: 'Cursos do Instituto', instmercado: 'Mercado solidário', instfarmacia: 'Farmácia solidária', instagenda: 'Agenda', lvcasas: 'Lar de Vida', relatorios: 'Relatórios', financeiro: 'Financeiro', usuarios: 'Usuários e acessos', avisos: 'Avisos', gcs: 'GCs' };
+  var TIT = { instituto: 'Instituto', instcursos: 'Cursos do Instituto', instmercado: 'Mercado solidário', instfarmacia: 'Farmácia solidária', instagenda: 'Agenda', lvcasas: 'Lar de Vida', relatorios: 'Relatórios', financeiro: 'Financeiro', usuarios: 'Usuários e acessos', avisos: 'Avisos', gcs: 'GCs', conta: 'Configurações', mais: 'Configurações' };
   $('h-tit').textContent = TIT[cfg.aba] ? TIT[cfg.aba] : cfg.modo === 'lv' ? igrNome() : cfg.aba === 'config' ? 'Configurações' : cfg.aba === 'cultos' ? 'Cultos e eventos' : cfg.aba === 'membros' ? 'Cadastro de pessoas' : cfg.aba === 'cursos' ? 'Treinamentos/Reuniões' : cfg.modo === 'ger' ? igrNome() : (g ? g.nome : 'Meu GC');
   $('h-papel').textContent = PAPEL_NOME[papel()] || '';
   var raizes = abasAtuais().map(function (a) { return a.id; }), naRaiz = raizes.indexOf(cfg.aba) >= 0 && !cursoAberto;
@@ -1070,6 +1072,7 @@ function render() {
   if (cfg.aba === 'lv') setTimeout(lvGeoFila, 0);
   setTimeout(desenharMapa, 0);
   pintarStatus();
+  garantirBotaoUsuario();
 }
 
 /* ═══════════════════ GERENCIADOR ═══════════════════ */
@@ -1609,27 +1612,24 @@ function redefinirSenha(id) {
 
 /* conta */
 function blocoConta() {
-  var u = eu();
+  var u = eu(), v39 = cfg.token === 'supabase-v39';
   return '<div class="card"><div class="row" style="padding-top:0"><div class="fp-click" ' + (u.pessoaId ? 'data-a="fotoDireta" data-v="' + esc(u.pessoaId) + '"' : '') + '>' + avatarU(u) + (u.pessoaId ? '<span>📷</span>' : '') + '</div><div class="info"><div class="nm">' + esc(u.nome) + '</div>' +
     '<div class="sb">@' + esc(u.usuario) + ' · ' + esc(PAPEL_NOME[u.papel] || '') + (u.gcId ? ' · ' + esc(gcNome(u.gcId)) : '') + '</div></div></div>' +
     (pode('config') ? '<button class="btn pr" data-a="aba" data-v="config">Configurações da igreja</button><div class="gap"></div>' : '') +
-    (ehAdmin() ? '<button class="btn gh" data-a="aba" data-v="usuarios">Usuários e acessos' + (db.pendentes ? ' · <b style="color:var(--vermelho)">' + db.pendentes + ' aguardando</b>' : '') + '</button><div class="gap"></div>' : '') +
+    (ehAdmin() ? (v39 ? '<button class="btn gh" data-a="abrirPedidosAcesso">Cadastros aguardando liberação</button><div class="gap"></div>'
+      : '<button class="btn gh" data-a="aba" data-v="usuarios">Usuários e acessos' + (db.pendentes ? ' · <b style="color:var(--vermelho)">' + db.pendentes + ' aguardando</b>' : '') + '</button><div class="gap"></div>') : '') +
     (podeFin() && cfg.modo !== 'ger' ? '<button class="btn gh" data-a="aba" data-v="financeiro">Consolidado financeiro</button><div class="gap"></div>' : '') +
     (temCultos() && cfg.modo !== 'ger' ? '<button class="btn gh" data-a="aba" data-v="cultos">Cultos e eventos</button><div class="gap"></div>' : '') +
     (temCursos() && cfg.modo !== 'ger' ? '<button class="btn gh" data-a="aba" data-v="cursos">Treinamentos/Reuniões</button><div class="gap"></div>' : '') +
     (temInst() && cfg.modo !== 'ger' ? '<button class="btn gh" data-a="aba" data-v="instituto">Instituto</button><div class="gap"></div>' : '') +
     (pode('consulta') && cfg.modo !== 'ger' ? '<button class="btn gh" data-a="aba" data-v="membros">Consultar cadastro de pessoas</button><div class="gap"></div>' : '') +
     (pode('visitantes') && cfg.modo !== 'lv' ? '<button class="btn gh" data-a="aba" data-v="lvnovo">Cadastrar visitante do culto</button><div class="gap"></div>' : '') +
-    '<button class="btn gh" data-a="trocarSenha">Trocar minha senha</button><div class="gap"></div>' +
     (pwaPodeInstalar() ? '<button class="btn pr" data-a="pwaInstalar">Instalar o app neste aparelho</button><div class="gap"></div>' : '') +
-    '<button class="btn dg" data-a="sair">Sair deste aparelho</button><div class="gap"></div>' +
-    '<button class="btn dg" data-a="sairTodos">Sair de todos os aparelhos</button>' +
-    '<div style="font-size:11px;color:#999;margin-top:8px;line-height:1.5">Por segurança, a sessão expira após 7 dias sem uso. Ao sair, os dados guardados neste aparelho são apagados.</div></div>' +
-    '<div class="sec">Sincronização</div><div class="card"><div style="font-size:13px;line-height:1.6;color:#444;margin-bottom:12px">' +
-    (cfg.ultima ? '<b style="color:var(--verde)">● Conectado</b><br>Última sincronização: ' + dataHoraLocal(cfg.ultima) : '<b style="color:#999">● Ainda não sincronizado</b>') +
-    '<br>Conexão protegida pelo app oficial' + (STORE_OK ? '' : '<br><b style="color:var(--vermelho)">O navegador está bloqueando o armazenamento local.</b>') +
-    '</div><button class="btn" data-a="sincronizar">Sincronizar agora</button><div class="gap"></div><button class="btn gh" data-a="verPolitica">Política de privacidade</button></div>' +
-    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-8</div>';
+    '<button class="btn gh" data-a="verPolitica">Política de privacidade</button></div>' +
+    '<div class="card" style="font-size:12.5px;color:var(--tx2,#5E6470);line-height:1.55;display:flex;gap:10px;align-items:center">' +
+      '<span style="flex:0 0 30px;height:30px;border-radius:50%;background:var(--pri);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:11px">' + esc(ini(u.nome || '?')) + '</span>' +
+      '<span>Sincronizar, trocar a senha e sair do app ficam no botão com as suas iniciais, no canto superior direito.</span></div>' +
+    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-9</div>';
 }
 function rConta() { return blocoConta(); }
 function trocarSenha() {
@@ -5844,7 +5844,7 @@ function aceitarPolitica() {
 function sairTodos() {
   if (!confirm('Sair de TODOS os aparelhos onde você entrou (inclusive este)?')) return;
   carregando(true, 'Encerrando sessões...');
-  chamar('sairTodos', {}).catch(function () {}).then(function () {
+  (cfg.token === 'supabase-v39' ? v39SignOut('global') : chamar('sairTodos', {})).catch(function (e) { console.warn('[2Gather] sair de todos', e); }).then(function () {
     carregando(false); limparSessao(); mostrarTela('s-login'); erroEm('l-erro', 'Você saiu de todos os aparelhos. Entre novamente.');
   });
 }
@@ -5969,6 +5969,94 @@ function avisoNovoEndereco() {
   document.body.appendChild(el);
 }
 
+/* ═══════════════════ v39: MENU DO USUÁRIO (canto superior direito) ═══════════════════
+   Um único botão com as iniciais. Ao tocar: dados do usuário, sincronizar, trocar senha,
+   política de privacidade, sair deste aparelho e sair de todos os aparelhos. */
+var IC_CONFIG = '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>';
+function umEstilo() {
+  if ($('g2-um-css')) return;
+  var st = document.createElement('style'); st.id = 'g2-um-css';
+  st.textContent =
+    '#g2-ubtn{flex:0 0 auto;width:38px;height:38px;border-radius:50%;border:2px solid rgba(255,255,255,.9);background:var(--pri,#2F5BEA);color:#fff;font-weight:800;font-size:13.5px;' +
+      'display:inline-flex;align-items:center;justify-content:center;cursor:pointer;margin-left:8px;position:relative;box-shadow:0 2px 6px rgba(0,0,0,.18);padding:0;background-size:cover;background-position:center}' +
+    '#g2-ubtn:focus-visible{outline:3px solid var(--pri-m,#9db3f5);outline-offset:2px}' +
+    '#g2-ubtn i{position:absolute;top:-2px;right:-2px;width:11px;height:11px;border-radius:50%;background:#E5484D;border:2px solid #fff}' +
+    '#g2-umenu{position:fixed;z-index:10050;width:min(300px,calc(100vw - 20px));background:var(--card,#fff);color:var(--tx,#14161A);border-radius:16px;' +
+      'box-shadow:0 12px 32px rgba(0,0,0,.22);padding:6px;animation:g2um .14s ease-out}' +
+    '@keyframes g2um{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}' +
+    '#g2-umenu .uh{display:flex;gap:10px;align-items:center;padding:10px 10px 12px;border-bottom:1px solid rgba(0,0,0,.07);margin-bottom:4px}' +
+    '#g2-umenu .uh .av{width:42px;height:42px;font-size:15px}' +
+    '#g2-umenu .uh b{display:block;font-size:14.5px;line-height:1.25}#g2-umenu .uh small{display:block;font-size:12px;color:var(--tx2,#5E6470);margin-top:2px}' +
+    '#g2-umenu button{display:flex;width:100%;align-items:center;gap:11px;border:0;background:none;padding:11px 10px;border-radius:10px;font:inherit;font-size:14px;font-weight:600;color:inherit;text-align:left;cursor:pointer}' +
+    '#g2-umenu button:hover,#g2-umenu button:focus-visible{background:var(--bg,#F0F1F4);outline:none}' +
+    '#g2-umenu button svg{width:19px;height:19px;flex:0 0 19px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;opacity:.8}' +
+    '#g2-umenu button.dg{color:#C2262B}#g2-umenu hr{border:0;border-top:1px solid rgba(0,0,0,.07);margin:4px 6px}' +
+    '#g2-umenu .us{font-size:11.5px;color:var(--tx2,#5E6470);padding:2px 10px 8px;line-height:1.4}' +
+    '@media (prefers-color-scheme:dark){#g2-umenu{background:#1d2026;color:#eceef1}#g2-umenu button:hover{background:#2a2e36}}';
+  document.head.appendChild(st);
+}
+function umPendentes() { var p = pendentesLocais(); return p.pessoas.length + p.encontros.length; }
+function garantirBotaoUsuario() {
+  umEstilo();
+  var b = $('g2-ubtn'), u = eu();
+  if (!cfg.token) { if (b) b.style.display = 'none'; fecharMenuUsuario(); return; }
+  if (!b) {
+    var ancora = $('h-papel') || $('h-tit');
+    if (!ancora || !ancora.parentNode) return;
+    b = document.createElement('button'); b.id = 'g2-ubtn'; b.type = 'button';
+    b.setAttribute('aria-haspopup', 'true'); b.setAttribute('aria-expanded', 'false');
+    ancora.parentNode.insertBefore(b, ancora.nextSibling);
+    b.addEventListener('click', function (ev) { ev.preventDefault(); ev.stopPropagation(); if ($('g2-umenu')) fecharMenuUsuario(); else abrirMenuUsuario(); });
+  }
+  b.style.display = '';
+  var foto = u.pessoaId && fotoP(u.pessoaId);
+  b.style.backgroundImage = foto ? "url('" + foto + "')" : '';
+  b.innerHTML = (foto ? '' : esc(ini(u.nome || u.usuario || '?'))) + (umPendentes() ? '<i></i>' : '');
+  b.setAttribute('aria-label', 'Menu do usuário' + (u.nome ? ': ' + u.nome : ''));
+  b.title = u.nome || 'Minha conta';
+}
+function itemMenu(acao, ic, rot, cls) {
+  return '<button type="button" data-a="' + acao + '"' + (cls ? ' class="' + cls + '"' : '') + '><svg viewBox="0 0 24 24">' + ic + '</svg>' + rot + '</button>';
+}
+function abrirMenuUsuario() {
+  fecharMenuUsuario();
+  var u = eu(), b = $('g2-ubtn'); if (!b) return;
+  var np = umPendentes();
+  var m = document.createElement('div'); m.id = 'g2-umenu'; m.setAttribute('role', 'menu');
+  m.innerHTML = '<div class="uh">' + avatarU(u) + '<div style="min-width:0"><b>' + esc(u.nome || u.usuario || '') + '</b>' +
+      '<small>' + esc([PAPEL_NOME[papel()], igrNome()].filter(Boolean).join(' · ')) + (u.usuario ? ' · @' + esc(u.usuario) : '') + '</small></div></div>' +
+    '<div class="us">' + (np ? '<b style="color:#C2262B">' + np + (np === 1 ? ' alteração aguardando envio' : ' alterações aguardando envio') + '</b>'
+      : (cfg.ultima ? 'Sincronizado às ' + horaLocal(cfg.ultima) : 'Ainda não sincronizado')) + '</div>' +
+    itemMenu('sincronizar', '<path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5M3 21v-5h5"/>', 'Sincronizar agora') +
+    itemMenu('trocarSenha', '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>', 'Trocar minha senha') +
+    itemMenu('nav', IC_CONFIG, 'Configurações').replace('data-a="nav"', 'data-a="nav" data-v="' + (cfg.modo === 'gc' ? 'mais' : 'conta') + '"') +
+    itemMenu('verPolitica', '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>', 'Política de privacidade') +
+    '<hr>' +
+    itemMenu('sair', '<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l-5-5 5-5M5 12h12"/>', 'Sair deste aparelho', 'dg') +
+    itemMenu('sairTodos', '<rect x="2" y="4" width="13" height="10" rx="2"/><path d="M6 18h5M17 8h3a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-6"/>', 'Sair de todos os aparelhos', 'dg');
+  document.body.appendChild(m);
+  var r = b.getBoundingClientRect();
+  m.style.top = Math.round(r.bottom + 8) + 'px';
+  m.style.right = Math.max(10, Math.round(window.innerWidth - r.right)) + 'px';
+  b.setAttribute('aria-expanded', 'true');
+  m.addEventListener('click', function () { setTimeout(fecharMenuUsuario, 0); });     // a ação roda pelo ACOES; o menu fecha
+  setTimeout(function () { var p = m.querySelector('button'); if (p) p.focus(); }, 30);
+}
+function fecharMenuUsuario() {
+  var m = $('g2-umenu'); if (m) m.remove();
+  var b = $('g2-ubtn'); if (b) b.setAttribute('aria-expanded', 'false');
+}
+document.addEventListener('click', function (ev) { var m = $('g2-umenu'); if (m && !m.contains(ev.target) && ev.target.id !== 'g2-ubtn') fecharMenuUsuario(); }, true);
+document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && $('g2-umenu')) { fecharMenuUsuario(); var b = $('g2-ubtn'); if (b) b.focus(); } });
+window.addEventListener('resize', fecharMenuUsuario);
+window.addEventListener('scroll', fecharMenuUsuario, { passive: true });
+/** Supabase: encerra a sessão neste aparelho (local) ou em todos (global). */
+function v39SignOut(escopo) {
+  var V = window.G2_V39 || {};
+  if (!V.client || !V.client.auth) return Promise.resolve();
+  return Promise.resolve(V.client.auth.signOut({ scope: escopo })).then(function (r) { if (r && r.error) throw r.error; });
+}
+
 /* ───────── modal ───────── */
 function abrirModal(html) {
   var jaAberto = $('modal').classList.contains('on');
@@ -5983,6 +6071,7 @@ function fechar() {
 
 /* ───────── eventos ───────── */
 var ACOES = {
+  abrirPedidosAcesso: function () { if (window.G2_USUARIOS) G2_USUARIOS.abrir(); else toast('Atualize a página para abrir os pedidos de acesso.'); },
   aba: function (v) { irAba(v); }, nav: function (v) { irRaiz(v); }, voltar: voltar, abrirGC: function (v) { abrirGC(v); }, editarGC: function (v) { editarGC(v); },
   excluirGC: function (v) { excluirGC(v); }, salvarGC: function () { salvarGC(false); }, salvarGCmodal: function () { salvarGC(true); },
   escolherFoto: function () { $('foto-input').click(); },
@@ -6878,7 +6967,7 @@ function estExportar(modo) {
 })();
 
 /* ═══════════════════════════════════════════════════════════════
-   2Gather v39 · SYNC-V39-8 · integrado ao app.js
+   2Gather v39 · SYNC-V39-9 · integrado ao app.js
    1) Ficha do culto/evento (valores, presentes, tema, recados, pregador…) → Supabase
    2) Receitas e anfitrião do encontro de GC → Supabase
    3) Mensagens do sistema em linguagem clara
@@ -6888,7 +6977,7 @@ function estExportar(modo) {
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'SYNC-V39-8';
+  var BUILD = 'SYNC-V39-9';
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 
