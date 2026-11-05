@@ -1623,13 +1623,12 @@ function blocoConta() {
     (temCursos() && cfg.modo !== 'ger' ? '<button class="btn gh" data-a="aba" data-v="cursos">Treinamentos/Reuniões</button><div class="gap"></div>' : '') +
     (temInst() && cfg.modo !== 'ger' ? '<button class="btn gh" data-a="aba" data-v="instituto">Instituto</button><div class="gap"></div>' : '') +
     (pode('consulta') && cfg.modo !== 'ger' ? '<button class="btn gh" data-a="aba" data-v="membros">Consultar cadastro de pessoas</button><div class="gap"></div>' : '') +
-    (pode('visitantes') && cfg.modo !== 'lv' ? '<button class="btn gh" data-a="aba" data-v="lvnovo">Cadastrar visitante do culto</button><div class="gap"></div>' : '') +
     (pwaPodeInstalar() ? '<button class="btn pr" data-a="pwaInstalar">Instalar o app neste aparelho</button><div class="gap"></div>' : '') +
     '<button class="btn gh" data-a="verPolitica">Política de privacidade</button></div>' +
     '<div class="card" style="font-size:12.5px;color:var(--tx2,#5E6470);line-height:1.55;display:flex;gap:10px;align-items:center">' +
       '<span style="flex:0 0 30px;height:30px;border-radius:50%;background:var(--pri);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:11px">' + esc(ini(u.nome || '?')) + '</span>' +
       '<span>Sincronizar, trocar a senha e sair do app ficam no botão com as suas iniciais, no canto superior direito.</span></div>' +
-    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-9</div>';
+    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-10</div>';
 }
 function rConta() { return blocoConta(); }
 function trocarSenha() {
@@ -6967,7 +6966,7 @@ function estExportar(modo) {
 })();
 
 /* ═══════════════════════════════════════════════════════════════
-   2Gather v39 · SYNC-V39-9 · integrado ao app.js
+   2Gather v39 · SYNC-V39-10 · integrado ao app.js
    1) Ficha do culto/evento (valores, presentes, tema, recados, pregador…) → Supabase
    2) Receitas e anfitrião do encontro de GC → Supabase
    3) Mensagens do sistema em linguagem clara
@@ -6977,7 +6976,7 @@ function estExportar(modo) {
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'SYNC-V39-9';
+  var BUILD = 'SYNC-V39-10';
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 
