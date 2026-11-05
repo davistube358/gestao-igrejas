@@ -203,7 +203,10 @@ function chamar(acao, dados, progresso) {
 
 /* ───────── permissões ───────── */
 function eu() { return cfg.usuario || {}; }
-function papel() { return eu().papel || ''; }
+var PAPEL_V39_V38 = { leader: 'lider', disciple: 'discipulo', secretary: 'secretaria', treasury: 'tesouraria', volunteer: 'voluntario',
+  life_home_volunteer: 'voluntarioLV', institute_volunteer: 'voluntarioInst', health_professional: 'profissional' };
+function v39PapelLegado(p) { p = String(p || ''); return PAPEL_V39_V38[p] || p; }
+function papel() { return v39PapelLegado(eu().papel); }
 function ehGestor() { return pode('rede'); }
 function ehAdmin() { return pode('usuarios'); }
 function editaPessoas() { return pode('gc') || pode('rede') || pode('lvDirecionar'); }
@@ -607,7 +610,7 @@ function sincronizar(avisar) {
           var loc = (db.pessoas || []).filter(function (l) { return l.id === x.id; })[0];
           return Object.assign({}, loc || {}, x, { _pend: false });
         });
-        return r;
+        return v39CarregarLarDeVida(r);
       }).catch(function (err) { console.warn('[2Gather][pessoas] leitura falhou', err); r.errors = (r.errors || []).concat(['Pessoas: ' + (err && err.message)]); return r; });
     }).then(function (r) {
       if (Array.isArray(r.pessoas)) {                         // preserva cadastro local ainda não enviado
@@ -782,7 +785,7 @@ function v39LegacyUsuario(login, auth) {
     id: a.id || a.user_account_id || person.id || (auth.session.user && auth.session.user.id) || login,
     usuario: a.username || a.usuario || login,
     nome: person.preferred_name || person.display_name || person.full_name || person.name || a.name || a.nome || login,
-    papel: papelAtual, perfil: papelAtual, permissoes: permissions,
+    papel: v39PapelLegado(papelAtual), perfil: papelAtual, perfilV39: papelAtual, permissoes: permissions,
     perms: c.permissionOverrides || c.perms || a.perms || {},
     igrejaId: primary.church_id || church.id || church.church_id || c.churchId || c.church_id || '',
     churchUserAccessId: primary.id || accessId || '',
@@ -1628,7 +1631,7 @@ function blocoConta() {
     '<div class="card" style="font-size:12.5px;color:var(--tx2,#5E6470);line-height:1.55;display:flex;gap:10px;align-items:center">' +
       '<span style="flex:0 0 30px;height:30px;border-radius:50%;background:var(--pri);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:11px">' + esc(ini(u.nome || '?')) + '</span>' +
       '<span>Sincronizar, trocar a senha e sair do app ficam no botão com as suas iniciais, no canto superior direito.</span></div>' +
-    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-10</div>';
+    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-11</div>';
 }
 function rConta() { return blocoConta(); }
 function trocarSenha() {
@@ -2046,6 +2049,21 @@ function v39DuplicadoId(e) {
   try { var d = JSON.parse(e.details); var id = d && (d.detail && d.detail.person_id || d.person_id); return v39Uuid(id) ? id : ''; }
   catch (x) { var m = txt.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i); return m ? m[0] : ''; }
 }
+/* Lar de Vida: jornada, discípulo e visitas de cada pessoa + discípulos de cada GC (etapa C). */
+var LV_CAMPOS = ['lvStatus', 'lvDiscipuloId', 'lvDiscipuloNome', 'lvInicio', 'lvLiberadoPor', 'lvVisitas', 'lvResultado', 'lvObsFinal', 'lvEncerradoEm'];
+function v39CarregarLarDeVida(r) {
+  var ig = cfg.usuario && cfg.usuario.igrejaId;
+  var pLv = v39RpcApp('v39_list_life_home', { p_church_id: ig }).then(function (l) {
+    var mapa = {}; (Array.isArray(l) ? l : []).forEach(function (x) { mapa[x.personId] = x; });
+    (r.pessoas || []).forEach(function (p) { var x = mapa[p.id]; if (x) LV_CAMPOS.forEach(function (k) { p[k] = x[k]; }); });
+  }).catch(function (e) { console.warn('[2Gather][lar] leitura falhou', e); r.errors = (r.errors || []).concat(['Lar de Vida']); });
+  var pDisc = v39RpcApp('v39_gc_discipulos', { p_church_id: ig }).then(function (d) {
+    var gcs = (d && d.gcs) || {};
+    (db.gcs || []).forEach(function (g) { var l = gcs[g.id] || []; g.discipulos = l.map(function (x) { return x.id; }).join(','); g.discipulosNomes = l.map(function (x) { return x.nome; }).join(', '); });
+    db.voluntariosLV = (d && d.voluntariosLV) || [];
+  }).catch(function (e) { console.warn('[2Gather][lar] discípulos não carregados', e); });
+  return Promise.all([pLv, pDisc]).then(function () { return r; });
+}
 /* Envia ao Supabase tudo que ficou marcado como pendente no aparelho. */
 async function v39EnviarPendentes() {
   var res = { enviados: 0, falhas: [], pessoasSemContrato: 0, duplicados: [] };
@@ -2077,7 +2095,12 @@ async function v39EnviarPendentes() {
           if (en.lista && en.lista.add) en.lista.add = en.lista.add.map(function (x) { return x === pe.id ? nova.id : x; });
         });
       }
-      db.pessoas = db.pessoas.filter(function (x) { return x.id !== pe.id && (!nova || x.id !== nova.id); }).concat([Object.assign({}, pe, nova || {}, { _pend: false })]);
+      var gravada = Object.assign({}, pe, nova || {}, { _pend: false });
+      db.pessoas = db.pessoas.filter(function (x) { return x.id !== pe.id && (!nova || x.id !== nova.id); }).concat([gravada]);
+      if (pe.lvStatus !== undefined && v39Uuid(gravada.id)) {
+        try { await v39RpcApp('v39_save_life_home', { p_church_id: igrejaId, p_person: Object.assign({}, envioP, { id: gravada.id }) }); }
+        catch (eLv) { gravada._pend = true; res.falhas.push('Lar de Vida de ' + (pe.nome || 'pessoa') + ': ' + (eLv && eLv.message || eLv)); }
+      }
       res.enviados++;
     } catch (err) { res.falhas.push('Pessoa ' + (pe.nome || pe.id) + ': ' + (err && err.message || err)); }
   }
@@ -2906,8 +2929,8 @@ function atualizarConfig(c) {
 function pode(p) {
   var u = eu();
   if (u.papel === 'master') return SEM_MASTER_C.indexOf(p) < 0;   // master: acesso total, exceto dados de saúde (só o profissional responsável)
-  if (u.perms) return !!u.perms[p];
-  return (PERM_PADRAO_C[u.papel] || []).indexOf(p) >= 0;     // sessão antiga, antes da 1ª sincronização
+  if (u.perms && Object.keys(u.perms).length) return !!u.perms[p];
+  return (PERM_PADRAO_C[v39PapelLegado(u.papel)] || []).indexOf(p) >= 0;     // sessão antiga, antes da 1ª sincronização
 }
 function modoVisitante() { return !pode('gc') && !pode('rede') && !pode('lvDirecionar'); }
 function temCultos() { return pode('eventos') || pode('financeiro') || pode('recados') || pode('relFin'); }
@@ -6966,7 +6989,7 @@ function estExportar(modo) {
 })();
 
 /* ═══════════════════════════════════════════════════════════════
-   2Gather v39 · SYNC-V39-10 · integrado ao app.js
+   2Gather v39 · SYNC-V39-11 · integrado ao app.js
    1) Ficha do culto/evento (valores, presentes, tema, recados, pregador…) → Supabase
    2) Receitas e anfitrião do encontro de GC → Supabase
    3) Mensagens do sistema em linguagem clara
@@ -6976,7 +6999,7 @@ function estExportar(modo) {
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'SYNC-V39-10';
+  var BUILD = 'SYNC-V39-11';
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 
@@ -7180,6 +7203,10 @@ function estExportar(modo) {
     GC_MEMBERSHIP_CONFLICT: 'Não foi possível alterar o GC desta pessoa. Atualize a página e tente de novo.',
     GC_MEMBERSHIP_NOT_FOUND: 'Esta pessoa não está mais neste GC. Atualize a página.',
     GC_STATUS_INVALID: 'Situação do GC inválida.',
+    LIFE_HOME_CONFLICT: 'Não foi possível salvar o Lar de Vida: o discípulo pode já estar no limite de casas.',
+    LIFE_HOME_INVALID: 'Algum dado do Lar de Vida está inválido. Confira a data da visita.',
+    LIFE_HOME_NOT_FOUND: 'Acompanhamento do Lar de Vida não encontrado. Atualize a página.',
+    PERSON_NOT_IN_CHURCH: 'Esta pessoa não está vinculada à igreja. Salve o cadastro e tente de novo.',
     PERMISSION_DENIED: 'Você não tem permissão para esta ação. Fale com a liderança.',
     REASON_REQUIRED: 'Informe o motivo para continuar.',
     CHURCH_REQUIRED: 'Não foi possível identificar a igreja. Saia e entre novamente.',
