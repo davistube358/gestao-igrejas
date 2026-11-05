@@ -610,7 +610,7 @@ function sincronizar(avisar) {
           var loc = (db.pessoas || []).filter(function (l) { return l.id === x.id; })[0];
           return Object.assign({}, loc || {}, x, { _pend: false });
         });
-        return v39CarregarLarDeVida(r);
+        return v39CarregarLarDeVida(r).then(v39CarregarEquipeFotos);
       }).catch(function (err) { console.warn('[2Gather][pessoas] leitura falhou', err); r.errors = (r.errors || []).concat(['Pessoas: ' + (err && err.message)]); return r; });
     }).then(function (r) {
       if (Array.isArray(r.pessoas)) {                         // preserva cadastro local ainda não enviado
@@ -627,7 +627,9 @@ function sincronizar(avisar) {
       });
     }).then(function (r) {
       cfg.ultima = agora(); salvarCfg(); salvarDB();
+      validarContexto();
       if (typeof render === 'function') render();
+      enviarFotosPend().then(buscarFotosPessoas).then(function (m) { if (m) render(); }).catch(function () {});
       if (avisar) toast(r.errors && r.errors.length ? 'Atualizado com avisos' : 'Atualizado ✓');
       pintarStatus(r.errors && r.errors.length ? 'Supabase conectado · leitura parcial' : null);
       return { ok: !(r.errors && r.errors.length), v39: true, dados: r };
@@ -1341,10 +1343,18 @@ function salvarGC(fecharModal) {
       if (iconeGCNovo === '__remover__') delete fotos[r.gc.id + '#ic'];
       salvarFotos(); iconeGCNovo = null;
       var anterior = g.id ? gcPor(g.id) : null;
+      var fimEquipe = cfg.token !== 'supabase-v39' || g._restrito || !v39Uuid(r.gc.id) ? Promise.resolve(null)
+        : v39GravarEquipeGC(g, r.gc.id, anterior).then(function () {
+            r.gc.liderId = g.liderId || ''; r.gc.liderNome = g.liderNome || ''; r.gc.supervisorId = g.supervisorId || ''; r.gc.supervisorNome = g.supervisorNome || '';
+            r.gc.discipulos = g.discipulos || ''; r.gc.discipulosNomes = g.discipulosNomes || '';
+          }, function (eq) {
+            var t = String((eq && (eq.message || eq.details)) || '');
+            toast('Os dados do GC foram salvos, mas a liderança não: ' + (/PERMISSION|permiss/i.test(t) ? 'somente master ou pastor definem o líder.' : /PERSON_NOT_LINKED/.test(t) ? 'o líder escolhido não tem cadastro de pessoa.' : (eq && eq.message) || 'erro desconhecido'), 7000);
+          });
       var mudouStatus = !!(g.id && g.status && anterior && g.status !== anterior.status && !g._restrito);
       var fimStatus = !mudouStatus || cfg.token !== 'supabase-v39' ? Promise.resolve(null)
         : v39RpcApp('v39_set_growth_group_status', { p_growth_group_id: g.id, p_status: g.status });
-      return fimStatus.then(function () {
+      return Promise.all([fimStatus, fimEquipe]).then(function () {
         if (mudouStatus) r.gc.status = g.status;
         db.gcs = db.gcs.filter(function (x) { return x.id !== r.gc.id; }).concat([r.gc]); salvarDB();
         gcForm = null; fotoNova = null;
@@ -1631,7 +1641,7 @@ function blocoConta() {
     '<div class="card" style="font-size:12.5px;color:var(--tx2,#5E6470);line-height:1.55;display:flex;gap:10px;align-items:center">' +
       '<span style="flex:0 0 30px;height:30px;border-radius:50%;background:var(--pri);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:11px">' + esc(ini(u.nome || '?')) + '</span>' +
       '<span>Sincronizar, trocar a senha e sair do app ficam no botão com as suas iniciais, no canto superior direito.</span></div>' +
-    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-11</div>';
+    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-12</div>';
 }
 function rConta() { return blocoConta(); }
 function trocarSenha() {
@@ -2064,6 +2074,110 @@ function v39CarregarLarDeVida(r) {
   }).catch(function (e) { console.warn('[2Gather][lar] discípulos não carregados', e); });
   return Promise.all([pLv, pDisc]).then(function () { return r; });
 }
+
+/* ═══ SYNC-V39-12: equipe do GC, permissões por módulo e fotos (Supabase) ═══ */
+var V39_PADRAO_PERMS = { supervisor: ['visitantes', 'rede', 'gc', 'gcEvento', 'lvDirecionar', 'lvLiberar'], lider: ['gc', 'gcEvento', 'lvLiberar'],
+  discipulo: ['gc', 'lvVisitas'], secretaria: ['eventos', 'visitantes', 'recados', 'consulta', 'instituto', 'institutoAdmin', 'institutoCursos', 'instMercado', 'agendaPastoral'],
+  tesouraria: ['financeiro', 'relFin'], voluntario: ['visitantes'], voluntarioLV: ['visitantes', 'lvVisitas'], voluntarioInst: ['instituto', 'instMercado'], profissional: ['instituto', 'prontuario'] };
+var V39_MODULOS = { gcs: { controla: ['gc', 'gcEvento'], libera: ['gc'] }, life_home: { controla: ['lvVisitas', 'lvLiberar', 'lvDirecionar'], libera: ['lvVisitas'] },
+  worship: { controla: ['eventos', 'recados', 'visitantes'], libera: ['eventos', 'visitantes'] }, events: { controla: ['eventos', 'recados'], libera: ['eventos'] },
+  financial: { controla: ['financeiro', 'relFin'], libera: ['financeiro', 'relFin'] }, people: { controla: ['consulta'], libera: ['consulta'] },
+  institute: { controla: ['instituto', 'institutoAdmin', 'institutoCursos'], libera: ['instituto'] }, solidarity_market: { controla: ['instMercado'], libera: ['instMercado'] },
+  access: { controla: ['usuarios'], libera: ['usuarios'] } };
+function v39AplicarModulos(mods) {
+  var u = cfg.usuario; if (!u) return;
+  var p = v39PapelLegado(u.papel);
+  if (p === 'master' || p === 'pastor' || !V39_PADRAO_PERMS[p]) return;
+  var on = {}, cod = {}, lig = {};
+  V39_PADRAO_PERMS[p].forEach(function (c) { on[c] = true; });
+  (mods || []).forEach(function (m) { lig[m.modulo] = m; });
+  Object.keys(V39_MODULOS).forEach(function (k) { V39_MODULOS[k].controla.forEach(function (c) { (cod[c] = cod[c] || []).push(k); }); });
+  Object.keys(on).forEach(function (c) {
+    var ms = cod[c]; if (!ms) return;
+    if (!ms.some(function (k) { var m = lig[k]; return !m || m.doPerfil || m.excecao === 'allow'; })) delete on[c];
+  });
+  Object.keys(lig).forEach(function (k) {
+    var m = lig[k], d = V39_MODULOS[k]; if (!d) return;
+    if (m.excecao === 'deny') d.controla.forEach(function (c) { delete on[c]; });
+    else if (m.excecao === 'allow') d.libera.forEach(function (c) { on[c] = true; });
+  });
+  u.perms = on; salvarCfg();
+}
+function v39CarregarEquipeFotos(r) {
+  var ig = cfg.usuario && cfg.usuario.igrejaId;
+  var pEq = v39RpcApp('v39_gc_team', { p_church_id: ig }).then(function (t) {
+    db.equipe = (t && t.equipe) || [];
+    var mapa = (t && t.gcs) || {};
+    (r.gcs || db.gcs || []).forEach(function (g) {
+      var x = mapa[g.id]; if (!x) return;
+      g.liderId = x.liderId || ''; g.liderNome = x.liderNome || '';
+      g.supervisorId = x.supervisorId || ''; g.supervisorNome = x.supervisorNome || '';
+    });
+    var me = (db.equipe || []).filter(function (u) { return u.id === eu().id; })[0];
+    if (me && cfg.usuario) { if (me.pessoaId) cfg.usuario.pessoaId = me.pessoaId; if (me.gcId && !cfg.usuario.gcId) cfg.usuario.gcId = me.gcId; }
+  }).catch(function (e) { console.warn('[2Gather][equipe] rode v39_equipe_fotos.sql', e); });
+  var pPerm = v39RpcApp('v39_my_module_access', { p_church_id: ig }).then(v39AplicarModulos)
+    .catch(function (e) { console.warn('[2Gather][permissões] leitura falhou', e); });
+  var pFoto = v39RpcApp('v39_people_photos', { p_church_id: ig, p_person_ids: null }).then(function (l) {
+    var m = {}; (Array.isArray(l) ? l : []).forEach(function (x) { m[x.id] = x; });
+    (r.pessoas || []).forEach(function (p) { var x = m[p.id]; p.temFoto = !!x; p.fotoV = x ? x.fotoV : ''; p.fotoPath = x ? x.path : ''; p.fotoLink = x ? x.linkId : ''; });
+  }).catch(function (e) { console.warn('[2Gather][fotos] leitura falhou', e); });
+  return Promise.all([pEq, pPerm, pFoto]).then(function () { if (r.gcs) db.gcs = r.gcs; return r; });
+}
+/** Grava líder, supervisor e discípulos do GC (função oficial de vínculo com o GC). */
+function v39GravarEquipeGC(g, gcId, ant) {
+  var ok = function (x) { return v39Uuid(x); }, lista = function (t) { return String(t || '').split(',').filter(ok); };
+  var nd = lista(g.discipulos), ad = lista(ant && ant.discipulos);
+  var mudou = (g.liderId || '') !== ((ant && ant.liderId) || '') || (g.supervisorId || '') !== ((ant && ant.supervisorId) || '') || nd.slice().sort().join() !== ad.slice().sort().join();
+  if (!mudou) return Promise.resolve(null);
+  return v39RpcApp('v39_set_gc_team', { p_church_id: cfg.usuario.igrejaId, p_gc_id: gcId, p_leader_user: ok(g.liderId) ? g.liderId : null,
+    p_supervisor_user: ok(g.supervisorId) ? g.supervisorId : null, p_discipulos: nd, p_previous: ad }).then(function (res) {
+    if (res && res.avisos && res.avisos.length) console.warn('[2Gather][equipe]', res.avisos);
+    return res;
+  });
+}
+/* fotos no Storage (bucket privado person-photos) */
+function v39DataUrlBlob(u) {
+  var p = String(u).split(','), mime = (p[0].match(/data:([^;]+)/) || [])[1] || 'image/jpeg', bin = atob(p[1] || ''), a = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
+  return new Blob([a], { type: mime });
+}
+function v39BlobDataUrl(b) { return new Promise(function (ok, er) { var fr = new FileReader(); fr.onload = function () { ok(fr.result); }; fr.onerror = er; fr.readAsDataURL(b); }); }
+function v39Cliente() {
+  var V = window.G2_V39 || {}, pr = (!V.client && typeof V.init === 'function') ? Promise.resolve(V.init()) : Promise.resolve();
+  return pr.then(function () { if (!V.client) throw new Error('Sem conexão com o servidor.'); return V.client; });
+}
+function v39SalvarFoto(pid, foto) {
+  var ig = cfg.usuario && cfg.usuario.igrejaId;
+  if (!v39Uuid(pid)) return Promise.reject(new Error('Cadastro não encontrado no servidor ainda.'));
+  if (foto === '__remover__') {
+    var p0 = pessoaPor(pid);
+    var link = p0 && p0.fotoLink ? Promise.resolve(p0.fotoLink) : v39RpcApp('v39_people_photos', { p_church_id: ig, p_person_ids: [pid] }).then(function (l) { return l && l[0] ? l[0].linkId : ''; });
+    return link.then(function (lk) { if (!lk) return { fotoV: '' }; return v39RpcApp('v39_unlink_file', { p_church_id: ig, p_link_id: lk, p_reason: 'Foto removida no app' }).then(function () { return { fotoV: '' }; }); });
+  }
+  var blob = v39DataUrlBlob(foto), caminho = ig + '/' + pid + '/' + Date.now() + '.jpg';
+  return v39Cliente().then(function (c) { return c.storage.from('person-photos').upload(caminho, blob, { contentType: 'image/jpeg', upsert: false }); })
+    .then(function (r) {
+      if (r.error) throw /row-level|policy|permission|403|unauthorized/i.test(r.error.message || '') ? new Error('Você não tem permissão para enviar fotos. Peça à liderança para liberar “Gerenciar foto de pessoa” no seu perfil.') : r.error;
+      if (!(window.crypto && crypto.subtle && blob.arrayBuffer)) return null;
+      return blob.arrayBuffer().then(function (b) { return crypto.subtle.digest('SHA-256', b); })
+        .then(function (h) { return Array.prototype.map.call(new Uint8Array(h), function (x) { return ('0' + x.toString(16)).slice(-2); }).join(''); }).catch(function () { return null; });
+    })
+    .then(function (h) { return v39RpcApp('register_person_photo', { p_church_id: ig, p_person_id: pid, p_storage_path: caminho, p_original_file_name: 'foto.jpg', p_checksum_sha256: h }); })
+    .then(function () { var p = pessoaPor(pid); if (p) { p.temFoto = true; p.fotoV = caminho; p.fotoPath = caminho; } return { fotoV: caminho }; });
+}
+function v39BaixarFotos(ids) {
+  var alvo = PES().filter(function (p) { return ids.indexOf(p.id) >= 0 && p.fotoPath; });
+  if (!alvo.length) return Promise.resolve({ itens: [] });
+  return v39Cliente().then(function (c) {
+    return Promise.all(alvo.map(function (p) {
+      return c.storage.from('person-photos').download(p.fotoPath).then(function (r) {
+        if (r.error || !r.data) return null;
+        return v39BlobDataUrl(r.data).then(function (u) { return { id: p.id, fotoV: p.fotoV, foto: u }; });
+      }).catch(function () { return null; });
+    }));
+  }).then(function (l) { return { itens: l.filter(Boolean) }; });
+}
 /* Envia ao Supabase tudo que ficou marcado como pendente no aparelho. */
 async function v39EnviarPendentes() {
   var res = { enviados: 0, falhas: [], pessoasSemContrato: 0, duplicados: [] };
@@ -2089,7 +2203,10 @@ async function v39EnviarPendentes() {
         res.duplicados.push(pe.nome || 'Pessoa');
         continue;
       }
-      if (nova && nova.id && nova.id !== pe.id) {               // troca o id local pelo UUID em encontros e listas
+      if (nova && nova.id && nova.id !== pe.id) {               // troca o id local pelo UUID em encontros, listas e fotos
+          if (fotoPend[pe.id]) { fotoPend[nova.id] = fotoPend[pe.id]; delete fotoPend[pe.id]; }
+          if (fotosP[pe.id]) { fotosP[nova.id] = fotosP[pe.id]; delete fotosP[pe.id]; }
+          salvarFotosP();
         db.encontros.forEach(function (en) {
           if (en.presencas && en.presencas[pe.id] !== undefined) { en.presencas[nova.id] = en.presencas[pe.id]; delete en.presencas[pe.id]; en._pend = true; }
           if (en.lista && en.lista.add) en.lista.add = en.lista.add.map(function (x) { return x === pe.id ? nova.id : x; });
@@ -5133,7 +5250,7 @@ function buscarFotosPessoas() {
   PES().forEach(function (p) { if (!p.temFoto && fotosP[p.id] && !fotoPend[p.id]) { delete fotosP[p.id]; mudou = true; } });
   if (mudou) salvarFotosP();
   if (!falta.length) return Promise.resolve(mudou);
-  return chamar('fotosPessoas', { ids: falta.slice(0, 80) }).then(function (r) {
+  return (cfg.token === 'supabase-v39' ? v39BaixarFotos(falta.slice(0, 80)) : chamar('fotosPessoas', { ids: falta.slice(0, 80) })).then(function (r) {
     (r.itens || []).forEach(function (x) { fotosP[x.id] = { v: x.fotoV, data: x.foto }; });
     salvarFotosP(); return true;
   }).catch(function () { return mudou; });
@@ -5143,7 +5260,7 @@ function enviarFotosPend() {
   var ids = Object.keys(fotoPend), p = Promise.resolve();
   ids.forEach(function (id) {
     p = p.then(function () {
-      return chamar('salvarFotoPessoa', { id: id, foto: fotoPend[id] }).then(function (r) {
+      return (cfg.token === 'supabase-v39' ? v39SalvarFoto(id, fotoPend[id]) : chamar('salvarFotoPessoa', { id: id, foto: fotoPend[id] })).then(function (r) {
         if (fotoPend[id] === '__remover__') delete fotosP[id]; else fotosP[id] = { v: r.fotoV, data: fotoPend[id] };
         delete fotoPend[id]; salvarFotosP();
       }).catch(function (e) { if (!/não encontrado/i.test(e.message)) { delete fotoPend[id]; salvarFotosP(); toast(e.message, 4000); } });
@@ -6989,7 +7106,7 @@ function estExportar(modo) {
 })();
 
 /* ═══════════════════════════════════════════════════════════════
-   2Gather v39 · SYNC-V39-11 · integrado ao app.js
+   2Gather v39 · SYNC-V39-12 · integrado ao app.js
    1) Ficha do culto/evento (valores, presentes, tema, recados, pregador…) → Supabase
    2) Receitas e anfitrião do encontro de GC → Supabase
    3) Mensagens do sistema em linguagem clara
@@ -6999,7 +7116,7 @@ function estExportar(modo) {
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'SYNC-V39-11';
+  var BUILD = 'SYNC-V39-12';
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 
@@ -7203,6 +7320,7 @@ function estExportar(modo) {
     GC_MEMBERSHIP_CONFLICT: 'Não foi possível alterar o GC desta pessoa. Atualize a página e tente de novo.',
     GC_MEMBERSHIP_NOT_FOUND: 'Esta pessoa não está mais neste GC. Atualize a página.',
     GC_STATUS_INVALID: 'Situação do GC inválida.',
+    PERSON_NOT_LINKED: 'O usuário escolhido não tem cadastro de pessoa ligado. Procure o master.',
     LIFE_HOME_CONFLICT: 'Não foi possível salvar o Lar de Vida: o discípulo pode já estar no limite de casas.',
     LIFE_HOME_INVALID: 'Algum dado do Lar de Vida está inválido. Confira a data da visita.',
     LIFE_HOME_NOT_FOUND: 'Acompanhamento do Lar de Vida não encontrado. Atualize a página.',
