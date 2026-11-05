@@ -223,6 +223,12 @@ function podeAlterarPessoa(p) {
   var t = Date.parse(p.criadoEm || '');
   return isNaN(t) ? false : (Date.now() - t) < EDICAO_HORAS * 3600000;
 }
+/** Trocar/remover a foto de um cadastro: quem pode alterar o cadastro, ou o próprio usuário na própria foto. */
+function podeFotoPessoa(p) {
+  if (!p) return false;
+  if (eu().pessoaId && p.id === eu().pessoaId) return true;
+  return podeAlterarPessoa(p);
+}
 function avisoSoLeitura(p) {
   return '<div class="aviso" style="margin:8px 0;font-size:12.5px;line-height:1.5">Somente <b>secretaria, pastor ou master</b> alteram os dados deste cadastro' +
     (p && p.criadoPor === eu().id ? ' (o prazo de ' + EDICAO_HORAS + ' horas para corrigir o seu cadastro terminou)' : '') + '.</div>';
@@ -1693,7 +1699,7 @@ function blocoConta() {
     '<div class="card" style="font-size:12.5px;color:var(--tx2,#5E6470);line-height:1.55;display:flex;gap:10px;align-items:center">' +
       '<span style="flex:0 0 30px;height:30px;border-radius:50%;background:var(--pri);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:11px">' + esc(ini(u.nome || '?')) + '</span>' +
       '<span>Sincronizar, trocar a senha e sair do app ficam no botão com as suas iniciais, no canto superior direito.</span></div>' +
-    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-14</div>';
+    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-15</div>';
 }
 function rConta() { return blocoConta(); }
 function trocarSenha() {
@@ -2134,7 +2140,7 @@ function v39CarregarLarDeVida(r) {
   return Promise.all([pLv, pDisc]).then(function () { return r; });
 }
 
-/* ═══ SYNC-V39-14: equipe do GC, permissões por módulo e fotos (Supabase) ═══ */
+/* ═══ SYNC-V39-15: equipe do GC, permissões por módulo e fotos (Supabase) ═══ */
 var V39_PADRAO_PERMS = { supervisor: ['visitantes', 'rede', 'gc', 'gcEvento', 'lvDirecionar', 'lvLiberar'], lider: ['gc', 'gcEvento', 'lvLiberar'],
   discipulo: ['gc', 'lvVisitas'], secretaria: ['eventos', 'visitantes', 'recados', 'consulta', 'instituto', 'institutoAdmin', 'institutoCursos', 'instMercado', 'agendaPastoral'],
   tesouraria: ['financeiro', 'relFin'], voluntario: ['visitantes'], voluntarioLV: ['visitantes', 'lvVisitas'], voluntarioInst: ['instituto', 'instMercado'], profissional: ['instituto', 'prontuario'] };
@@ -2282,7 +2288,7 @@ function v39BaixarFotos(ids) {
 }
 /* Envia ao Supabase tudo que ficou marcado como pendente no aparelho. */
 async function v39EnviarPendentes() {
-  var res = { enviados: 0, falhas: [], pessoasSemContrato: 0, duplicados: [] };
+  var res = { enviados: 0, falhas: [], pessoasSemContrato: 0, duplicados: [], recusados: [] };
   var H = window.G2_V39 && G2_V39.p1;
   var pessoas = (db.pessoas || []).filter(function (p) { return p._pend; });
   for (var i = 0; i < pessoas.length; i++) {
@@ -2321,7 +2327,22 @@ async function v39EnviarPendentes() {
         catch (eLv) { gravada._pend = true; res.falhas.push('Lar de Vida de ' + (pe.nome || 'pessoa') + ': ' + (eLv && eLv.message || eLv)); }
       }
       res.enviados++;
-    } catch (err) { res.falhas.push('Pessoa ' + (pe.nome || pe.id) + ': ' + (err && err.message || err)); }
+    } catch (err) {
+      var tx = String((err && (err.code || '')) + ' ' + (err && (err.details || '')) + ' ' + (err && (err.message || err)));
+      if (/PERMISSION_DENIED|PERSON_EDIT_DENIED/.test(tx)) {
+        // O servidor recusou por falta de permissão: não adianta tentar de novo. Descarta do aparelho e avisa.
+        if (v39Uuid(pe.id)) {
+          if (pe.lvStatus !== undefined) {              // a liberação do Lar de Vida não depende da permissão de editar o cadastro
+            try { await v39RpcApp('v39_save_life_home', { p_church_id: cfg.usuario && cfg.usuario.igrejaId, p_person: limpo(pe) }); } catch (eLv2) { console.warn('[2Gather][lar] recusado', eLv2); }
+          }
+          pe._pend = false;                              // a próxima leitura traz o cadastro como está no servidor
+        } else {
+          db.pessoas = db.pessoas.filter(function (x) { return x.id !== pe.id; });
+          db.encontros.forEach(function (en) { if (en.presencas && en.presencas[pe.id] !== undefined) { delete en.presencas[pe.id]; en._pend = true; } });
+        }
+        res.recusados.push(pe.nome || 'Pessoa');
+      } else res.falhas.push('Pessoa ' + (pe.nome || pe.id) + ': ' + (err && err.message || err));
+    }
   }
   var encs = (db.encontros || []).filter(function (e) { return e._pend; });
   for (var j = 0; j < encs.length; j++) {
@@ -2329,6 +2350,7 @@ async function v39EnviarPendentes() {
     catch (err2) { res.falhas.push('Encontro ' + br(encs[j].data) + ': ' + (err2 && err2.message || err2)); }
   }
   salvarDB();
+  if (res.recusados.length) toast('Sem permissão para alterar o cadastro de ' + res.recusados.join(', ') + '. A alteração foi descartada. Somente secretaria, pastor ou master alteram cadastros.', 8000);
   if (res.duplicados.length) toast(res.duplicados.join(', ') + ' já estava(m) cadastrado(s) na igreja. O cadastro existente foi usado e nenhuma pessoa foi duplicada.', 7000);
   return res;
 }
@@ -4026,7 +4048,8 @@ function fichaPessoa(id) {
   var ie = ETAPAS.indexOf(p.jornada);
   if (ie >= 0) tl.push(['ok', 'Jornada: ' + esc(p.jornada.replace(/^\d+\.\s*/, '')), 'etapa atual']);
   if (ie >= 0 && ie < ETAPAS.length - 1) tl.push(['', esc(ETAPAS[ie + 1].replace(/^\d+\.\s*/, '')), 'próxima etapa']);
-  abrirModal('<div class="perfil"><div class="fp-click" data-a="fotoDireta" data-v="' + esc(p.id) + '" title="Trocar foto">' + avatarP(p) + '<span>📷</span></div><h2>' + esc(p.nome) + '</h2>' +
+  var fotoOk = podeFotoPessoa(p);
+    abrirModal('<div class="perfil"><div class="fp-click"' + (fotoOk ? ' data-a="fotoDireta" data-v="' + esc(p.id) + '" title="Trocar foto"' : ' style="cursor:default"') + '>' + avatarP(p) + (fotoOk ? '<span>📷</span>' : '') + '</div><h2>' + esc(p.nome) + '</h2>' +
     (p.apelido ? '<div class="apel">“' + esc(p.apelido) + '”</div>' : '') +
     '<p>' + esc([p.status === 'Em visita' ? 'Visitante' : p.status === 'Ativo' ? (p.tipo || 'Membro') : p.status, g ? g.nome : (p.gcId ? '' : 'sem GC'), p.prim ? 'desde ' + br(p.prim) : ''].filter(Boolean).join(' · ')) + '</p>' +
     '<div class="pills">' + (p.origem ? '<span class="pill p-cinza">' + esc(p.origem) + '</span>' : '') + lvResumoPill(p) + pillIgreja(p) + '</div></div>' +
@@ -5421,6 +5444,8 @@ function aplicarFotoNova(pid) {
 }
 /** Trocar a foto direto pela ficha / perfil. */
 function trocarFotoDireta(pid) {
+  var pAlvo = pessoaPor(pid);
+  if (pAlvo && !podeFotoPessoa(pAlvo)) return toast('Somente secretaria, pastor ou master alteram a foto deste cadastro. Quem cadastrou pode corrigir nas primeiras ' + EDICAO_HORAS + ' horas.', 5500);
   fpAlvo = { pid: pid, direto: true };
   abrirModal('<h2>Foto</h2><div style="text-align:center;margin:10px 0">' + avatarP(pessoaPor(pid) || { id: pid, nome: eu().nome }, ' style="width:110px;height:110px;margin:0 auto;font-size:34px"') + '</div>' +
     '<button class="btn pr" data-a="fpCam">📷 Tirar foto agora</button><div class="gap"></div><button class="btn gh" data-a="fpGal">🖼️ Escolher da galeria</button><div class="gap"></div>' +
@@ -7219,7 +7244,7 @@ function estExportar(modo) {
 })();
 
 /* ═══════════════════════════════════════════════════════════════
-   2Gather v39 · SYNC-V39-14 · integrado ao app.js
+   2Gather v39 · SYNC-V39-15 · integrado ao app.js
    1) Ficha do culto/evento (valores, presentes, tema, recados, pregador…) → Supabase
    2) Receitas e anfitrião do encontro de GC → Supabase
    3) Mensagens do sistema em linguagem clara
@@ -7229,7 +7254,7 @@ function estExportar(modo) {
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'SYNC-V39-14';
+  var BUILD = 'SYNC-V39-15';
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 
