@@ -9,7 +9,7 @@
    Não altera o app.js. */
 (function () {
   'use strict';
-  var VERSAO = 'USUARIOS-2';
+  var VERSAO = 'USUARIOS-3';
   var ABAS_AVISO = ['avisos', 'alertas', 'mural', 'pessoas', 'membros', 'usuarios', 'equipe', 'inicio', 'painel'];
   var pendentes = [], nomes = {}, perfis = [], podeAprovar = null, carregando = false, ultimaCarga = 0;
 
@@ -40,7 +40,11 @@
     GC_SCOPE_INVALID: 'O GC escolhido não pertence a esta igreja.',
     REASON_REQUIRED: 'Informe o motivo.',
     PERMISSION_DENIED: 'Você não tem permissão para liberar acessos.',
-    'Somente Master': 'Somente um Master pode dar o perfil Master.'
+    'Somente Master': 'Somente um Master pode dar o perfil Master.',
+    SELF_CHANGE_DENIED: 'Não é possível alterar o seu próprio acesso.',
+    USER_NOT_IN_CHURCH: 'Este usuário não tem acesso a esta igreja.',
+    OVERRIDE_INVALID: 'O banco recusou esta alteração de módulo. Avise o administrador do sistema.',
+    'Somente Master altera': 'Somente um Master altera o acesso de outro Master.'
   };
   function traduz(e) {
     var t = String((e && (e.details || e.message || e.code)) || e || '');
@@ -204,6 +208,120 @@
       .catch(function (e) { toast(traduz(e), 5000); });
   }
 
+
+  /* ═══════════ USUÁRIOS E ACESSOS (usuários ativos) ═══════════ */
+  var MODULOS = { gc: 'GCs', gcs: 'GCs', people: 'Pessoas', pessoas: 'Pessoas', events: 'Cultos e eventos', worship: 'Cultos', agenda: 'Agenda',
+    finance: 'Financeiro', financeiro: 'Financeiro', institute: 'Instituto', instituto: 'Instituto', life_home: 'Lar de Vida', lar: 'Lar de Vida',
+    access: 'Usuários e acessos', users: 'Usuários e acessos', reports: 'Relatórios', relatorios: 'Relatórios', announcements: 'Avisos e mural',
+    mural: 'Mural', messages: 'Mensagens', config: 'Configurações da igreja', church: 'Configurações da igreja', courses: 'Treinamentos/Reuniões',
+    training: 'Treinamentos/Reuniões', market: 'Mercado solidário', pharmacy: 'Farmácia solidária', clinical: 'Prontuário', health: 'Saúde',
+    audit: 'Auditoria', lgpd: 'LGPD / Privacidade' };
+  function nomeModulo(c) { return MODULOS[c] || MODULOS[String(c).split('.')[0]] || String(c).replace(/_/g, ' ').replace(/^\w/, function (x) { return x.toUpperCase(); }); }
+  var usuarios = [], podeGerir = null;
+  function uId(x) { return x.user_account_id || x.id; }
+  function uNome(x) { return x.full_name || x.person_name || x.nome || x.name || x.username || '—'; }
+  function uPerfil(x) { return x.profile_code || x.primary_profile_code || (Array.isArray(x.profiles) && x.profiles[0] && (x.profiles[0].code || x.profiles[0])) || x.profile || ''; }
+  function uStatus(x) { return String(x.status || x.account_status || x.access_status || 'active'); }
+  function nomeCodigo(c) { for (var i = 0; i < perfis.length; i++) if (perfis[i].code === c) return nomePerfil(perfis[i]); return nomePerfil({ code: c }); }
+  function carregarUsuarios(busca) {
+    var pp = perfis.length ? Promise.resolve() : rpc('v39_list_access_profiles', {}).then(function (l) { perfis = lista(l).filter(function (p) { return p.code !== 'master'; }); }).catch(function () {});
+    return pp.then(function () { return rpc('list_active_users', { p_church_id: igrejaId(), p_search: busca || null, p_profile_code: null, p_gc_id: null, p_limit: 200, p_offset: 0 }); })
+      .then(function (l) { podeGerir = true; usuarios = lista(l); return usuarios; })
+      .catch(function (e) { if (/autoriza|permiss|PERMISSION/i.test(String(e && (e.message || e.details)))) podeGerir = false; throw e; });
+  }
+  function abrirUsuarios() {
+    var o = janela('<h2 style="margin:0 0 4px">Usuários e acessos</h2><div style="font-size:12.5px;color:#888;margin-bottom:10px">Toque em um usuário para mudar o perfil, liberar ou bloquear módulos, suspender ou reativar.</div>' +
+      (pendentes.length ? '<button class="btn pr" id="g2u-ped" style="width:100%;margin-bottom:10px">🔔 ' + pendentes.length + ' cadastro(s) aguardando liberação</button>' : '') +
+      '<input id="g2u-busca" placeholder="Buscar por nome ou usuário..." autocomplete="off"><div id="g2u-lista" style="margin-top:10px"><div class="empty">Carregando...</div></div>' +
+      '<button class="btn gh" id="g2u-fechar" style="width:100%;margin-top:8px">Fechar</button>');
+    if (o.querySelector('#g2u-ped')) o.querySelector('#g2u-ped').addEventListener('click', abrirLista);
+    o.querySelector('#g2u-fechar').addEventListener('click', fecharJanela);
+    var alvo = o.querySelector('#g2u-lista'), tm = null;
+    function pintarLista(l) {
+      if (!l.length) { alvo.innerHTML = '<div class="empty">Nenhum usuário encontrado.</div>'; return; }
+      alvo.innerHTML = l.map(function (x, i) {
+        var susp = /susp|inativ|block/i.test(uStatus(x));
+        return '<div class="card" data-u="' + i + '" style="margin-bottom:8px;cursor:pointer;display:flex;gap:10px;align-items:center' + (susp ? ';opacity:.6' : '') + '">' +
+          '<div style="flex:1;min-width:0"><div style="font-weight:700">' + esc(uNome(x)) + '</div><div style="font-size:12.5px;color:#666">@' + esc(x.username || '') +
+          ' · ' + esc(nomeCodigo(uPerfil(x)) || 'sem perfil') + (susp ? ' · <b style="color:#C2262B">suspenso</b>' : '') + '</div></div><div style="color:#aaa">›</div></div>';
+      }).join('');
+    }
+    function buscar() {
+      alvo.innerHTML = '<div class="empty">Carregando...</div>';
+      carregarUsuarios(o.querySelector('#g2u-busca').value.trim()).then(pintarLista)
+        .catch(function (e) { alvo.innerHTML = '<div class="empty">' + esc(traduz(e)) + '</div>'; });
+    }
+    o.querySelector('#g2u-busca').addEventListener('input', function () { clearTimeout(tm); tm = setTimeout(buscar, 400); });
+    alvo.addEventListener('click', function (ev) { var c = ev.target.closest('[data-u]'); if (c) abrirUsuario(usuarios[+c.getAttribute('data-u')]); });
+    buscar();
+  }
+  function abrirUsuario(x) {
+    var id = uId(x), susp = /susp|inativ|block/i.test(uStatus(x)), perfilAtual = uPerfil(x);
+    var opts = perfis.slice().sort(function (a, b) { return nomePerfil(a).localeCompare(nomePerfil(b), 'pt-BR'); })
+      .map(function (p) { return '<option value="' + esc(p.code) + '"' + (p.code === perfilAtual ? ' selected' : '') + '>' + esc(nomePerfil(p)) + '</option>'; }).join('');
+    if (perfilAtual === 'master') opts = '<option value="master" selected>Master</option>' + opts;
+    var o = janela('<h2 style="margin:0 0 2px">' + esc(uNome(x)) + '</h2><div style="font-size:12.5px;color:#666;margin-bottom:12px">@' + esc(x.username || '') + (x.email ? ' · ' + esc(x.email) : '') + '</div>' +
+      '<label>Perfil de acesso</label><div style="display:flex;gap:8px"><select id="g2u-perfil" style="flex:1">' + opts + '</select><button class="btn pr sm" id="g2u-salvarp">Salvar</button></div>' +
+      '<div style="font-weight:700;margin:16px 0 4px">Módulos</div><div style="font-size:12px;color:#888;margin-bottom:6px">"Padrão do perfil" segue o perfil. "Liberado" ou "Bloqueado" criam uma exceção só para esta pessoa.</div>' +
+      '<div id="g2u-mods"><div class="empty">Carregando...</div></div>' +
+      '<div style="height:12px"></div><button class="btn ' + (susp ? 'pr' : 'dg') + '" id="g2u-susp" style="width:100%">' + (susp ? 'Reativar acesso' : 'Suspender acesso') + '</button>' +
+      '<div class="gap"></div><button class="btn gh" id="g2u-voltar" style="width:100%">Voltar</button>');
+    o.querySelector('#g2u-voltar').addEventListener('click', abrirUsuarios);
+    o.querySelector('#g2u-salvarp').addEventListener('click', function () {
+      var novo = o.querySelector('#g2u-perfil').value; if (novo === perfilAtual) return toast('O perfil já é este.');
+      var m = prompt('Motivo da troca de perfil:', ''); if (m === null) return; m = m.trim(); if (m.length < 3) return toast('Informe o motivo com pelo menos 3 caracteres.');
+      rpc('change_user_profile', { p_user_account_id: id, p_church_id: igrejaId(), p_profile_code: novo, p_reason: m })
+        .then(function () { toast('Perfil alterado para ' + nomeCodigo(novo) + ' ✓. Vale no próximo acesso da pessoa.', 5000); x.profile_code = novo; perfilAtual = novo; carregarMods(); })
+        .catch(function (e) { toast(traduz(e), 5000); });
+    });
+    o.querySelector('#g2u-susp').addEventListener('click', function () {
+      var m = prompt(susp ? 'Motivo da reativação:' : 'Motivo da suspensão (a pessoa perde o acesso):', ''); if (m === null) return; m = m.trim(); if (m.length < 3) return toast('Informe o motivo com pelo menos 3 caracteres.');
+      rpc(susp ? 'reactivate_user_account' : 'suspend_user_account', { p_user_account_id: id, p_church_id: igrejaId(), p_reason: m })
+        .then(function () { toast(susp ? 'Acesso reativado ✓' : 'Acesso suspenso.'); abrirUsuarios(); })
+        .catch(function (e) { toast(traduz(e), 5000); });
+    });
+    var box = o.querySelector('#g2u-mods');
+    function carregarMods() {
+      rpc('v39_user_module_access', { p_church_id: igrejaId(), p_user_account_id: id }).then(function (r) {
+        var ms = (r && r.modulos) || [];
+        if (!ms.length) { box.innerHTML = '<div class="empty">Nenhum módulo cadastrado no banco.</div>'; return; }
+        box.innerHTML = ms.map(function (m) {
+          var ex = m.excecao === 'allow' ? 'liberar' : m.excecao === 'deny' ? 'bloquear' : 'perfil';
+          var efetivo = ex === 'liberar' || (ex === 'perfil' && m.doPerfil);
+          return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid rgba(0,0,0,.06)">' +
+            '<span style="width:9px;height:9px;border-radius:50%;flex:0 0 9px;background:' + (efetivo ? '#2E9E5B' : '#C9CDD3') + '"></span>' +
+            '<div style="flex:1;font-size:14px">' + esc(nomeModulo(m.modulo)) + '<div style="font-size:11.5px;color:#999">' + (efetivo ? 'com acesso' : 'sem acesso') + (ex === 'perfil' ? ' · pelo perfil' : ' · exceção') + '</div></div>' +
+            '<select data-mod="' + esc(m.modulo) + '" data-atual="' + ex + '" style="width:auto;max-width:150px;margin:0">' +
+            '<option value="perfil"' + (ex === 'perfil' ? ' selected' : '') + '>Padrão do perfil</option>' +
+            '<option value="liberar"' + (ex === 'liberar' ? ' selected' : '') + '>Liberado</option>' +
+            '<option value="bloquear"' + (ex === 'bloquear' ? ' selected' : '') + '>Bloqueado</option></select></div>';
+        }).join('');
+      }).catch(function (e) { box.innerHTML = '<div class="empty">' + esc(/does not exist|PGRST202|find the function/i.test(String(e && (e.message || e.details))) ? 'Rode o v39_usuarios_modulos.sql no Supabase.' : traduz(e)) + '</div>'; });
+    }
+    box.addEventListener('change', function (ev) {
+      var sel = ev.target; if (!sel.getAttribute('data-mod')) return;
+      var mod = sel.getAttribute('data-mod'), atual = sel.getAttribute('data-atual');
+      var m = prompt('Motivo da alteração em "' + nomeModulo(mod) + '":', ''); if (m === null || m.trim().length < 3) { sel.value = atual; if (m !== null) toast('Informe o motivo com pelo menos 3 caracteres.'); return; }
+      sel.disabled = true;
+      rpc('v39_set_user_module_access', { p_church_id: igrejaId(), p_user_account_id: id, p_module_code: mod, p_mode: sel.value, p_reason: m.trim() })
+        .then(function () { toast('Acesso a ' + nomeModulo(mod) + ' atualizado ✓'); carregarMods(); })
+        .catch(function (e) { sel.value = atual; sel.disabled = false; toast(traduz(e), 5000); });
+    });
+    carregarMods();
+  }
+  /* botão "Usuários e acessos" na aba Configurações */
+  function pintarBotaoUsuarios() {
+    var main = $('main'); if (!main || $('g2-btn-usuarios')) return;
+    var aba = String(cfg().aba || '').toLowerCase(); if (aba !== 'conta' && aba !== 'mais') return;
+    if (podeAprovar !== true && podeGerir !== true) return;
+    var b = document.createElement('button'); b.id = 'g2-btn-usuarios'; b.className = 'btn pr'; b.style.cssText = 'width:100%;margin-bottom:12px';
+    b.innerHTML = 'Usuários e acessos' + (pendentes.length ? ' · <b style="color:#ffd27a">' + pendentes.length + ' aguardando</b>' : '');
+    b.addEventListener('click', abrirUsuarios);
+    var antigo = main.querySelector('[data-a="abrirPedidosAcesso"]'); if (antigo) { var g = antigo.nextElementSibling; antigo.remove(); if (g && g.className === 'gap') g.remove(); }
+    main.insertBefore(b, main.firstChild);
+  }
+  setInterval(pintarBotaoUsuarios, 800);
+
   /* ── tela de login: cadastro ainda não liberado ── */
   var CHAVE = 'g2_cadastro_pendente';
   function guardarPendente(u) { try { if (u) localStorage.setItem(CHAVE, String(u).toLowerCase()); } catch (e) {} }
@@ -257,5 +375,5 @@
   }, 2000);
   setInterval(function () { if (logado() && podeAprovar) carregar(true); }, 120000);
 
-  window.G2_USUARIOS = { versao: VERSAO, abrir: function () { carregar(true).then(abrirLista); }, recarregar: function () { return carregar(true); } };
+  window.G2_USUARIOS = { versao: VERSAO, abrir: function () { carregar(true).then(abrirLista); }, usuarios: abrirUsuarios, recarregar: function () { return carregar(true); } };
 })();
