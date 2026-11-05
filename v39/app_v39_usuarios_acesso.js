@@ -9,7 +9,7 @@
    Não altera o app.js. */
 (function () {
   'use strict';
-  var VERSAO = 'USUARIOS-3';
+  var VERSAO = 'USUARIOS-4';
   var ABAS_AVISO = ['avisos', 'alertas', 'mural', 'pessoas', 'membros', 'usuarios', 'equipe', 'inicio', 'painel'];
   var pendentes = [], nomes = {}, perfis = [], podeAprovar = null, carregando = false, ultimaCarga = 0;
 
@@ -35,12 +35,14 @@
     ACCESS_REQUEST_NOT_PENDING: 'Este pedido já foi decidido por outra pessoa. A lista foi atualizada.',
     ACCESS_REQUEST_INCOMPLETE: 'Este pedido está incompleto (sem usuário de acesso). Peça para a pessoa se cadastrar de novo.',
     PROFILE_NOT_AVAILABLE: 'O perfil escolhido não está disponível.',
+    PROFILE_LOCKED: 'O perfil Master não pode ser alterado.',
+    PERSON_INVALID_FIELD: 'Algum campo está com valor inválido. Confira a data de nascimento e o CEP.',
     PERSON_CONFIRMATION_REQUIRED: 'Não foi possível confirmar a pessoa deste pedido.',
     PERSON_NOT_IN_CHURCH: 'A pessoa não está vinculada a esta igreja.',
     GC_SCOPE_INVALID: 'O GC escolhido não pertence a esta igreja.',
     REASON_REQUIRED: 'Informe o motivo.',
     PERMISSION_DENIED: 'Você não tem permissão para liberar acessos.',
-    'Somente Master': 'Somente um Master pode dar o perfil Master.',
+    'Somente Master': 'Esta alteração é restrita ao perfil Master.',
     SELF_CHANGE_DENIED: 'Não é possível alterar o seu próprio acesso.',
     USER_NOT_IN_CHURCH: 'Este usuário não tem acesso a esta igreja.',
     OVERRIDE_INVALID: 'O banco recusou esta alteração de módulo. Avise o administrador do sistema.',
@@ -151,7 +153,7 @@
     o.addEventListener('click', function (ev) {
       var b = ev.target.closest('[data-g2acao]'); if (!b) return;
       var a = b.getAttribute('data-g2acao'), r = pendentes[+b.getAttribute('data-i')];
-      if (a === 'fechar') return fecharJanela();
+      if (a === 'fechar') return ehMaster() ? abrirHub() : fecharJanela();
       if (a === 'liberar') return abrirLiberar(r);
       if (a === 'corrigir' || a === 'recusar') return decidir(r, a);
     });
@@ -235,7 +237,7 @@
       '<input id="g2u-busca" placeholder="Buscar por nome ou usuário..." autocomplete="off"><div id="g2u-lista" style="margin-top:10px"><div class="empty">Carregando...</div></div>' +
       '<button class="btn gh" id="g2u-fechar" style="width:100%;margin-top:8px">Fechar</button>');
     if (o.querySelector('#g2u-ped')) o.querySelector('#g2u-ped').addEventListener('click', abrirLista);
-    o.querySelector('#g2u-fechar').addEventListener('click', fecharJanela);
+    o.querySelector('#g2u-fechar').addEventListener('click', abrirHub);
     var alvo = o.querySelector('#g2u-lista'), tm = null;
     function pintarLista(l) {
       if (!l.length) { alvo.innerHTML = '<div class="empty">Nenhum usuário encontrado.</div>'; return; }
@@ -309,18 +311,184 @@
     });
     carregarMods();
   }
-  /* botão "Usuários e acessos" na aba Configurações */
-  function pintarBotaoUsuarios() {
-    var main = $('main'); if (!main || $('g2-btn-usuarios')) return;
-    var aba = String(cfg().aba || '').toLowerCase(); if (aba !== 'conta' && aba !== 'mais') return;
-    if (podeAprovar !== true && podeGerir !== true) return;
-    var b = document.createElement('button'); b.id = 'g2-btn-usuarios'; b.className = 'btn pr'; b.style.cssText = 'width:100%;margin-bottom:12px';
-    b.innerHTML = 'Usuários e acessos' + (pendentes.length ? ' · <b style="color:#ffd27a">' + pendentes.length + ' aguardando</b>' : '');
-    b.addEventListener('click', abrirUsuarios);
-    var antigo = main.querySelector('[data-a="abrirPedidosAcesso"]'); if (antigo) { var g = antigo.nextElementSibling; antigo.remove(); if (g && g.className === 'gap') g.remove(); }
-    main.insertBefore(b, main.firstChild);
+
+  function ehMaster() { var u = cfg().usuario || {}; return String(u.papel || '').toLowerCase() === 'master'; }
+
+  /* ═══════════ HUB "Usuários e acessos" (somente Master) ═══════════ */
+  function abrirHub() {
+    if (!ehMaster()) return fecharJanela();
+    var o = janela('<h2 style="margin:0 0 4px">Usuários e acessos</h2><div style="font-size:12.5px;color:#888;margin-bottom:12px">Manutenção restrita ao perfil Master.</div>' +
+      '<button class="btn ' + (pendentes.length ? 'pr' : 'gh') + '" data-h="ped" style="width:100%">Cadastros aguardando liberação' + (pendentes.length ? ' · ' + pendentes.length : '') + '</button><div class="gap"></div>' +
+      '<button class="btn gh" data-h="usu" style="width:100%">Usuários · perfil, módulos, suspensão</button><div class="gap"></div>' +
+      '<button class="btn gh" data-h="per" style="width:100%">Perfis · liberação por função e módulo</button><div class="gap"></div>' +
+      '<button class="btn gh" data-h="sair" style="width:100%">Fechar</button>');
+    o.addEventListener('click', function (ev) {
+      var b = ev.target.closest('[data-h]'); if (!b) return;
+      var h = b.getAttribute('data-h');
+      if (h === 'ped') carregar(true).then(abrirLista); else if (h === 'usu') abrirUsuarios(); else if (h === 'per') abrirPerfis(); else fecharJanela();
+    });
   }
-  setInterval(pintarBotaoUsuarios, 800);
+
+  /* ═══════════ PERFIS: painel por função e módulo ═══════════ */
+  function abrirPerfis() {
+    var o = janela('<h2 style="margin:0 0 4px">Perfis</h2><div style="font-size:12.5px;color:#888;margin-bottom:10px">Escolha a função para ver e ajustar o que ela pode fazer em cada módulo. A alteração vale para todas as pessoas com esse perfil.</div>' +
+      '<div id="g2p-lista"><div class="empty">Carregando...</div></div><button class="btn gh" id="g2p-voltar" style="width:100%;margin-top:8px">Voltar</button>');
+    o.querySelector('#g2p-voltar').addEventListener('click', abrirHub);
+    var alvo = o.querySelector('#g2p-lista');
+    rpc('v39_list_access_profiles', {}).then(function (l) {
+      var ps = lista(l);
+      alvo.innerHTML = ps.map(function (p, i) {
+        return '<div class="card" data-p="' + i + '" style="margin-bottom:8px;cursor:pointer;display:flex;align-items:center;gap:10px"><div style="flex:1"><b>' + esc(nomePerfil(p)) + '</b>' +
+          (p.code === 'master' ? '<div style="font-size:12px;color:#999">acesso total · não editável</div>' : '') + '</div><div style="color:#aaa">›</div></div>';
+      }).join('') || '<div class="empty">Nenhum perfil encontrado.</div>';
+      alvo.addEventListener('click', function (ev) { var c = ev.target.closest('[data-p]'); if (c) abrirPerfil(ps[+c.getAttribute('data-p')]); });
+    }).catch(function (e) { alvo.innerHTML = '<div class="empty">' + esc(traduz(e)) + '</div>'; });
+  }
+  function abrirPerfil(perf) {
+    var o = janela('<h2 style="margin:0 0 2px">' + esc(nomePerfil(perf)) + '</h2><div id="g2p-info" style="font-size:12.5px;color:#888;margin-bottom:10px"></div>' +
+      '<div id="g2p-mods"><div class="empty">Carregando...</div></div>' +
+      '<div style="position:sticky;bottom:0;background:var(--bg,#fff);padding-top:8px"><button class="btn pr" id="g2p-salvar" style="width:100%;display:none">Salvar alterações</button>' +
+      '<div class="gap"></div><button class="btn gh" id="g2p-voltar" style="width:100%">Voltar</button></div>');
+    o.querySelector('#g2p-voltar').addEventListener('click', abrirPerfis);
+    var box = o.querySelector('#g2p-mods'), salvar = o.querySelector('#g2p-salvar'), orig = {}, travado = false;
+    function mudancas() { var l = []; box.querySelectorAll('input[data-perm]').forEach(function (c) { var k = c.getAttribute('data-perm'); if (c.checked !== orig[k]) l.push({ code: k, liberada: c.checked }); }); return l; }
+    function atualizar() {
+      box.querySelectorAll('[data-modbox]').forEach(function (g) {
+        var cs = g.querySelectorAll('input[data-perm]'), n = 0; cs.forEach(function (c) { if (c.checked) n++; });
+        var t = g.querySelector('[data-cont]'); t.textContent = n + '/' + cs.length;
+        t.style.background = n === 0 ? '#E7E9EC' : n === cs.length ? '#2E9E5B' : '#E0A100'; t.style.color = n === 0 ? '#555' : '#fff';
+      });
+      var m = mudancas().length; salvar.style.display = m && !travado ? '' : 'none'; salvar.textContent = 'Salvar ' + m + ' alteração(ões)';
+    }
+    function carregarPerfil() {
+      rpc('v39_profile_permissions', { p_church_id: igrejaId(), p_profile_code: perf.code }).then(function (r) {
+        travado = !!r.bloqueado; orig = {};
+        o.querySelector('#g2p-info').textContent = (r.usuarios || 0) + ' pessoa(s) com este perfil nesta igreja' + (travado ? ' · o perfil Master tem acesso total e não pode ser alterado' : '');
+        var grupos = {}; (r.permissoes || []).forEach(function (x) { (grupos[x.modulo] = grupos[x.modulo] || []).push(x); orig[x.code] = !!x.liberada; });
+        box.innerHTML = Object.keys(grupos).sort(function (a, b) { return nomeModulo(a).localeCompare(nomeModulo(b), 'pt-BR'); }).map(function (m) {
+          return '<details data-modbox class="card" style="margin-bottom:8px;padding:10px 12px"><summary style="display:flex;align-items:center;gap:10px;cursor:pointer;list-style:none">' +
+            '<b style="flex:1">' + esc(nomeModulo(m)) + '</b><span data-cont style="border-radius:999px;padding:2px 9px;font-size:12px;font-weight:700"></span>' +
+            (travado ? '' : '<button type="button" class="btn gh sm" data-tudo="' + esc(m) + '" style="width:auto">Tudo / nada</button>') + '</summary>' +
+            grupos[m].map(function (x) {
+              return '<label style="display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-top:1px solid rgba(0,0,0,.06);font-weight:500;cursor:pointer">' +
+                '<input type="checkbox" data-perm="' + esc(x.code) + '"' + (x.liberada ? ' checked' : '') + (travado ? ' disabled' : '') + ' style="width:auto;margin-top:3px">' +
+                '<span style="flex:1;font-size:13.5px">' + esc(x.nome) + (x.descricao ? '<br><span style="font-size:12px;color:#888">' + esc(x.descricao) + '</span>' : '') +
+                (/high|alta|sens|crit/i.test(x.sensibilidade) ? ' <span style="font-size:11px;color:#C2262B;font-weight:700">· sensível</span>' : '') + '</span></label>';
+            }).join('') + '</details>';
+        }).join('') || '<div class="empty">Nenhuma permissão cadastrada.</div>';
+        atualizar();
+      }).catch(function (e) { box.innerHTML = '<div class="empty">' + esc(/PGRST202|find the function|does not exist/i.test(String(e && (e.message || e.details))) ? 'Rode o v39_perfis_meus_dados.sql no Supabase.' : traduz(e)) + '</div>'; });
+    }
+    box.addEventListener('change', atualizar);
+    box.addEventListener('click', function (ev) {
+      var b = ev.target.closest('[data-tudo]'); if (!b) return; ev.preventDefault();
+      var cs = b.closest('[data-modbox]').querySelectorAll('input[data-perm]'), todos = true; cs.forEach(function (c) { if (!c.checked) todos = false; });
+      cs.forEach(function (c) { c.checked = !todos; }); atualizar();
+    });
+    salvar.addEventListener('click', function () {
+      var l = mudancas(); if (!l.length) return;
+      var sens = l.filter(function (x) { return x.liberada; }).length;
+      var m = prompt('Motivo da alteração no perfil ' + nomePerfil(perf) + ' (' + l.length + ' item(ns)' + (sens ? ', ' + sens + ' liberado(s)' : '') + '):', ''); if (m === null) return;
+      m = m.trim(); if (m.length < 3) return toast('Informe o motivo com pelo menos 3 caracteres.');
+      salvar.disabled = true;
+      rpc('v39_set_profile_permissions', { p_church_id: igrejaId(), p_profile_code: perf.code, p_grants: l, p_reason: m })
+        .then(function (r) { toast('Perfil ' + nomePerfil(perf) + ' atualizado ✓ (' + (r.liberadas || 0) + ' liberada(s), ' + (r.removidas || 0) + ' removida(s)). Vale no próximo acesso das pessoas.', 6000); carregarPerfil(); })
+        .catch(function (e) { toast(traduz(e), 5000); }).then(function () { salvar.disabled = false; });
+    });
+    carregarPerfil();
+  }
+
+  /* ═══════════ MEUS DADOS (cada usuário, somente os próprios dados) ═══════════ */
+  function abrirMeusDados() {
+    var o = janela('<h2 style="margin:0 0 4px">Meus dados</h2><div style="font-size:12.5px;color:#888;margin-bottom:10px">Altere seus dados pessoais. Função, GC e jornada na igreja são mantidos pela liderança.</div><div id="g2m-form"><div class="empty">Carregando...</div></div>');
+    var f = o.querySelector('#g2m-form'), atual = {};
+    function campo(id, rot, v, extra) { return '<label>' + rot + '</label><input id="g2m-' + id + '" value="' + esc(v || '') + '"' + (extra || '') + '>'; }
+    rpc('v39_get_my_profile', {}).then(function (d) {
+      atual = d || {};
+      f.innerHTML = '<label>Nome completo</label><input value="' + esc(d.nome) + '" disabled style="opacity:.7"><div style="font-size:11.5px;color:#999;margin-top:2px">Para corrigir o nome completo, procure a liderança.</div>' +
+        campo('apelido', 'Como prefere ser chamado(a)', d.apelido) +
+        '<div class="g2"><div>' + campo('nasc', 'Nascimento', d.nasc, ' type="date"') + '</div><div><label>Sexo</label><select id="g2m-sexo"><option value=""></option>' +
+          ['Masculino', 'Feminino'].map(function (x) { return '<option' + (d.sexo === x ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select></div></div>' +
+        campo('fone', 'WhatsApp', d.fone, ' inputmode="tel" placeholder="(16) 99999-9999"') +
+        campo('email', 'E-mail de acesso', d.email, ' type="email" autocomplete="email"') +
+        '<div style="font-size:11.5px;color:#999;margin-top:2px">Ao trocar o e-mail, enviamos um link de confirmação para o novo endereço.</div>' +
+        '<div class="g2"><div>' + campo('cep', 'CEP', d.cep, ' inputmode="numeric" maxlength="9" placeholder="00000-000"') + '</div><div>' + campo('numero', 'Número', d.numero) + '</div></div>' +
+        campo('endereco', 'Endereço', d.endereco) + campo('complemento', 'Complemento', d.complemento) +
+        '<div class="g2"><div>' + campo('bairro', 'Bairro', d.bairro) + '</div><div>' + campo('cidade', 'Cidade', d.cidade) + '</div></div>' +
+        '<div style="font-size:12px;color:#888;background:var(--bg,#F0F1F4);border-radius:8px;padding:8px;margin-top:10px">A troca de foto será liberada quando o armazenamento de fotos for migrado para o novo servidor.</div>' +
+        '<div id="g2m-erro" style="display:none;color:#a12424;background:#fdecec;border-radius:8px;padding:8px;margin-top:8px;font-size:13px"></div>' +
+        '<div style="height:12px"></div><button class="btn pr" id="g2m-salvar" style="width:100%">Salvar meus dados</button><div class="gap"></div><button class="btn gh" id="g2m-fechar" style="width:100%">Fechar</button>';
+      var cep = o.querySelector('#g2m-cep');
+      cep.addEventListener('input', function () {
+        var dg = soDig(cep.value).slice(0, 8); cep.value = dg.length > 5 ? dg.slice(0, 5) + '-' + dg.slice(5) : dg;
+        if (dg.length === 8) fetch('https://viacep.com.br/ws/' + dg + '/json/').then(function (r) { return r.json(); }).then(function (c) {
+          if (!c || c.erro) return;
+          if (c.logradouro && !o.querySelector('#g2m-endereco').value) o.querySelector('#g2m-endereco').value = c.logradouro;
+          if (c.bairro) o.querySelector('#g2m-bairro').value = c.bairro;
+          if (c.localidade) o.querySelector('#g2m-cidade').value = c.localidade + (c.uf ? '/' + c.uf : '');
+        }).catch(function () {});
+      });
+      o.querySelector('#g2m-fechar').addEventListener('click', fecharJanela);
+      o.querySelector('#g2m-salvar').addEventListener('click', function () {
+        var v = function (id) { return String(o.querySelector('#g2m-' + id).value || '').trim(); }, erro = o.querySelector('#g2m-erro');
+        function falha(m) { erro.textContent = m; erro.style.display = 'block'; }
+        var email = v('email').toLowerCase();
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return falha('Informe um e-mail válido.');
+        if (v('fone') && soDig(v('fone')).length < 10) return falha('Informe o WhatsApp com DDD.');
+        var btn = this; btn.disabled = true; btn.textContent = 'Salvando...'; erro.style.display = 'none';
+        var dados = { apelido: v('apelido'), nasc: v('nasc'), sexo: v('sexo'), fone: v('fone'), cep: v('cep'), endereco: v('endereco'),
+                      numero: v('numero'), complemento: v('complemento'), bairro: v('bairro'), cidade: v('cidade') };
+        var trocaEmail = email && email !== String(atual.email || '').toLowerCase();
+        rpc('v39_update_my_profile', { p_data: dados }).then(function () {
+          if (!trocaEmail) return false;
+          var V = window.G2_V39 || {};
+          return V.client.auth.updateUser({ email: email }).then(function (r) { if (r && r.error) throw r.error; return true; });
+        }).then(function (enviou) {
+          fecharJanela();
+          toast('Seus dados foram salvos ✓' + (enviou ? ' Confirme o novo e-mail pelo link que enviamos; até lá, continue usando o e-mail atual.' : ''), enviou ? 8000 : 4000);
+          var g = G(); if (g && g.sincronizar) g.sincronizar(false);
+        }).catch(function (e) {
+          var t = String((e && (e.message || e.details)) || '');
+          falha(/PERSON_NOT_LINKED/.test(t) ? 'Sua conta não está ligada a um cadastro de pessoa. Procure a liderança.' :
+                /already|registered|exists/i.test(t) ? 'Este e-mail já está em uso por outra conta.' :
+                /PGRST202|find the function/i.test(t) ? 'Função ainda não instalada no servidor. Avise o administrador.' : traduz(e));
+        }).then(function () { btn.disabled = false; btn.textContent = 'Salvar meus dados'; });
+      });
+    }).catch(function (e) {
+      var t = String((e && (e.message || e.details)) || '');
+      f.innerHTML = '<div class="empty">' + esc(/PERSON_NOT_LINKED/.test(t) ? 'Sua conta não está ligada a um cadastro de pessoa. Procure a liderança.' : /PGRST202|find the function/i.test(t) ? 'Rode o v39_perfis_meus_dados.sql no Supabase.' : traduz(e)) + '</div><button class="btn gh" style="width:100%;margin-top:8px" onclick="document.getElementById(\'g2-acessos-modal\').remove()">Fechar</button>';
+    });
+  }
+
+  /* ═══════════ botões na aba Configurações e no menu do usuário ═══════════ */
+  function botao(id, cls, html, fn) { var b = document.createElement('button'); b.id = id; b.className = 'btn ' + cls; b.style.cssText = 'width:100%'; b.innerHTML = html; b.addEventListener('click', fn); return b; }
+  function pintarBotaoUsuarios() {
+    var main = $('main'); if (!main || !logado()) return;
+    var aba = String(cfg().aba || '').toLowerCase(); if (aba !== 'conta' && aba !== 'mais') return;
+    var card = main.querySelector('.card'); if (!card) return;
+    var ref = card.querySelector('[data-a="aba"][data-v="config"]') || card.querySelector('.btn');
+    if (!$('g2-btn-meus')) {
+      var b1 = botao('g2-btn-meus', 'gh', 'Meus dados', abrirMeusDados), g1 = document.createElement('div'); g1.className = 'gap';
+      if (ref) { ref.parentNode.insertBefore(b1, ref); ref.parentNode.insertBefore(g1, ref); } else card.appendChild(b1);
+    }
+    if (ehMaster() && !$('g2-btn-usuarios')) {
+      var antigo = card.querySelector('[data-a="abrirPedidosAcesso"]'); if (antigo) { var g = antigo.nextElementSibling; antigo.remove(); if (g && g.className === 'gap') g.remove(); }
+      var b2 = botao('g2-btn-usuarios', 'pr', 'Usuários e acessos' + (pendentes.length ? ' · <b style="color:#ffd27a">' + pendentes.length + ' aguardando</b>' : ''), abrirHub), g2 = document.createElement('div'); g2.className = 'gap';
+      var depois = card.querySelector('[data-a="aba"][data-v="config"]');
+      if (depois) { depois.parentNode.insertBefore(g2, depois.nextSibling); depois.parentNode.insertBefore(b2, g2.nextSibling); }
+      else { card.appendChild(b2); }
+    }
+  }
+  setInterval(pintarBotaoUsuarios, 700);
+  /* item "Meus dados" no menu das iniciais */
+  new MutationObserver(function () {
+    var m = $('g2-umenu'); if (!m || m.querySelector('[data-g2meus]')) return;
+    var ref = m.querySelector('[data-a="trocarSenha"]'); if (!ref) return;
+    var it = document.createElement('button'); it.type = 'button'; it.setAttribute('data-g2meus', '1');
+    it.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>Meus dados';
+    it.addEventListener('click', function () { setTimeout(abrirMeusDados, 0); });
+    ref.parentNode.insertBefore(it, ref);
+  }).observe(document.body, { childList: true });
 
   /* ── tela de login: cadastro ainda não liberado ── */
   var CHAVE = 'g2_cadastro_pendente';
@@ -375,5 +543,5 @@
   }, 2000);
   setInterval(function () { if (logado() && podeAprovar) carregar(true); }, 120000);
 
-  window.G2_USUARIOS = { versao: VERSAO, abrir: function () { carregar(true).then(abrirLista); }, usuarios: abrirUsuarios, recarregar: function () { return carregar(true); } };
+  window.G2_USUARIOS = { versao: VERSAO, abrir: function () { carregar(true).then(abrirLista); }, usuarios: abrirUsuarios, hub: abrirHub, perfis: abrirPerfis, meusDados: abrirMeusDados, recarregar: function () { return carregar(true); } };
 })();
