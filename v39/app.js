@@ -210,6 +210,52 @@ function papel() { return v39PapelLegado(eu().papel); }
 function ehGestor() { return pode('rede'); }
 function ehAdmin() { return pode('usuarios'); }
 function editaPessoas() { return pode('gc') || pode('rede') || pode('lvDirecionar'); }
+/** Alterar dados pessoais de um cadastro existente: master, pastor e secretaria;
+    quem criou o cadastro, nas primeiras 48 horas. (O banco aplica a mesma regra.) */
+var EDICAO_HORAS = 48;
+function podeAlterarPessoa(p) {
+  if (!p) return editaPessoas() || pode('visitantes');
+  var pp = papel();
+  if (pp === 'master' || pp === 'pastor' || pp === 'secretaria') return true;
+  if (p._pend && !/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(String(p.id || ''))) return true;        // criado neste aparelho, ainda não enviado
+  var meu = p.criadoPor && (p.criadoPor === eu().id || p.criadoPor === eu().authId);
+  if (!meu) return false;
+  var t = Date.parse(p.criadoEm || '');
+  return isNaN(t) ? false : (Date.now() - t) < EDICAO_HORAS * 3600000;
+}
+function avisoSoLeitura(p) {
+  return '<div class="aviso" style="margin:8px 0;font-size:12.5px;line-height:1.5">Somente <b>secretaria, pastor ou master</b> alteram os dados deste cadastro' +
+    (p && p.criadoPor === eu().id ? ' (o prazo de ' + EDICAO_HORAS + ' horas para corrigir o seu cadastro terminou)' : '') + '.</div>';
+}
+/* tipo do GC e sexo vindos do banco podem estar em inglês ou abreviados */
+function v39TipoGC(t) {
+  var n = String(t || '').trim().toLowerCase();
+  if (/^(homens|men|male|masculino|m)$/.test(n)) return 'Homens';
+  if (/^(mulheres|women|female|feminino|f)$/.test(n)) return 'Mulheres';
+  if (/jovem|jovens|youth|teen|adolesc/.test(n)) return 'Jovens e adolescentes';
+  return t || '';
+}
+function v39Sexo(x) {
+  var n = String(x || '').trim().toLowerCase();
+  if (/^(m|male|masc|masculino|homem)$/.test(n)) return 'Masculino';
+  if (/^(f|female|fem|feminino|mulher)$/.test(n)) return 'Feminino';
+  return x || '';
+}
+function v39NormalizarDados() {
+  (db.gcs || []).forEach(function (g) { g.tipoGC = v39TipoGC(g.tipoGC); if (g.sexoGC) g.sexoGC = v39Sexo(g.sexoGC); });
+  (db.pessoas || []).forEach(function (p) { if (p.sexo) p.sexo = v39Sexo(p.sexo); });
+}
+/** Motivo claro quando a pessoa não combina com o GC. */
+function motivoIncompat(g, p) {
+  var pub = publicoGC(g), i = idadeDe(p), f = faixaGC(g);
+  if (!g.tipoGC) return 'o ' + g.nome + ' está sem “Tipo de GC” (Homens, Mulheres ou Jovens). Peça ao supervisor ou pastor para completar em Editar GC.';
+  if (pub && !p.sexo) return 'o cadastro de ' + pri(p.nome) + ' está sem sexo informado. Peça à secretaria para completar o cadastro.';
+  if (pub && pub !== p.sexo) return pri(p.nome) + ' (' + p.sexo.toLowerCase() + ') não combina com o ' + g.nome + ' (' + g.tipoGC.toLowerCase() + ').';
+  if (!naFaixaGC(f, i)) return i === null ? 'o ' + g.nome + ' tem faixa etária (' + faixaTexto(g) + ') e o cadastro de ' + pri(p.nome) + ' está sem data de nascimento.'
+    : pri(p.nome) + ' tem ' + i + ' anos, fora da faixa do ' + g.nome + ' (' + faixaTexto(g) + ').';
+  if (g.tipoGC === 'Jovens e adolescentes') return pri(p.nome) + ' não está na idade do GC de jovens.';
+  return pri(p.nome) + ' está na idade do GC de jovens; o indicado é um GC de jovens.';
+}
 
 /* ───────── dados ───────── */
 function GCS() { return db.gcs.filter(function (g) { return !g.deleted; }); }
@@ -333,7 +379,7 @@ function faixaTexto(g) {
   return f.min !== null ? 'a partir de ' + f.min + ' anos' : 'até ' + f.max + ' anos';
 }
 /** Público do GC: Homens → Masculino; Mulheres → Feminino; Jovens → o definido no GC (vazio = misto). */
-function publicoGC(g) { return g.tipoGC === 'Homens' ? 'Masculino' : g.tipoGC === 'Mulheres' ? 'Feminino' : (g.sexoGC || ''); }
+function publicoGC(g) { var t = v39TipoGC(g.tipoGC); return t === 'Homens' ? 'Masculino' : t === 'Mulheres' ? 'Feminino' : v39Sexo(g.sexoGC || ''); }
 function naFaixaGC(f, i) { return !(f.min !== null && (i === null || i < f.min)) && !(f.max !== null && (i === null || i > f.max)); }
 /** Está na idade de algum GC de jovens? (lista enviada pelo servidor; sem GC de jovens: até IDADE_JOVENS) */
 function ehJovem(p) {
@@ -344,12 +390,12 @@ function ehJovem(p) {
 }
 /** Regra: jovens só no GC de jovens do mesmo público; adultos no GC do mesmo sexo; faixa etária respeitada. */
 function gcCompativel(g, p) {
-  var pub = publicoGC(g), i = idadeDe(p);
-  if (pub && pub !== p.sexo) return false;
+  var pub = publicoGC(g), i = idadeDe(p), tipo = v39TipoGC(g.tipoGC);
+  if (pub && pub !== v39Sexo(p.sexo)) return false;
   if (!naFaixaGC(faixaGC(g), i)) return false;
   var jovem = ehJovem(p);
-  if (g.tipoGC === 'Jovens e adolescentes') return jovem;
-  if (g.tipoGC !== 'Homens' && g.tipoGC !== 'Mulheres') return false;
+  if (tipo === 'Jovens e adolescentes') return jovem;
+  if (tipo !== 'Homens' && tipo !== 'Mulheres') return false;
   return !jovem;
 }
 function ehDecisor() { return papel() === 'master' || papel() === 'pastor'; }
@@ -626,6 +672,7 @@ function sincronizar(avisar) {
         return r;
       });
     }).then(function (r) {
+      v39NormalizarDados();
       cfg.ultima = agora(); salvarCfg(); salvarDB();
       validarContexto();
       if (typeof render === 'function') render();
@@ -1646,7 +1693,7 @@ function blocoConta() {
     '<div class="card" style="font-size:12.5px;color:var(--tx2,#5E6470);line-height:1.55;display:flex;gap:10px;align-items:center">' +
       '<span style="flex:0 0 30px;height:30px;border-radius:50%;background:var(--pri);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:11px">' + esc(ini(u.nome || '?')) + '</span>' +
       '<span>Sincronizar, trocar a senha e sair do app ficam no botão com as suas iniciais, no canto superior direito.</span></div>' +
-    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-13</div>';
+    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-14</div>';
 }
 function rConta() { return blocoConta(); }
 function trocarSenha() {
@@ -1748,12 +1795,12 @@ var ctxPessoa = {};
 function abrirPessoa(id, ctx) {
   var p = id ? db.pessoas.filter(function (x) { return x.id === id; })[0] : null;
   editP = id || null; ctx = ctx || {}; ctxPessoa = ctx;
-  var ro = !editaPessoas(), dis = ro ? ' disabled' : '';
+  var ro = p ? !podeAlterarPessoa(p) : !editaPessoas(), dis = ro ? ' disabled' : '';
   var g = function (k, d) { return esc(p ? (p[k] || '') : (d || '')); };
   var end = separarBairroCidade(p ? p.bairro : '', p ? p.cidade : '');
   fotoNovaP = null; fpAlvo = { pid: id || '', direto: false };
   abrirModal('<h2>' + (p ? (ro ? esc(p.nome) : 'Editar pessoa') : (ctx.addChamada ? 'Visitante — 1ª visita' : 'Nova pessoa')) + '</h2>' +
-    (p && p.origem ? '<span class="pill p-dour">' + esc(p.origem) + '</span>' : '') + (p ? lvResumoPill(p) + pillIgreja(p) : '') +
+    (p && p.origem ? '<span class="pill p-dour">' + esc(p.origem) + '</span>' : '') + (p ? lvResumoPill(p) + pillIgreja(p) : '') + (p && ro && editaPessoas() ? avisoSoLeitura(p) : '') +
     (ro ? '' : campoFotoPessoa(id || '')) +
     '<label>Nome completo *</label><input id="f-nome" value="' + g('nome') + '"' + dis + '>' +
     '<label>Como gostaria de ser chamado(a) / apelido</label><input id="f-apelido" value="' + g('apelido') + '" placeholder="Ex.: Juninho, Dona Cida"' + dis + '>' +
@@ -1786,6 +1833,7 @@ function salvarPessoa(forcar) {
   var v = function (id) { var el = $(id); return el ? el.value.trim() : ''; };
   if (!v('f-nome')) return toast('Informe o nome.');
   var ant = editP ? db.pessoas.filter(function (x) { return x.id === editP; })[0] : null;
+  if (ant && !podeAlterarPessoa(ant)) return toast('Somente secretaria, pastor ou master alteram este cadastro.', 4500);
   var errC = validarConsent('f', !ant); if (errC) return toast(errC, 4500);
   var o = {};
   if (ant) for (var kk in ant) o[kk] = ant[kk];      // preserva campos que o formulário não mostra (Lar de Vida, origem...)
@@ -1814,6 +1862,8 @@ function gravarPessoaGC(o, ant) {
   if (ant && ant.gcId !== o.gcId) toast(pri(o.nome) + ' transferido(a) para ' + gcNome(o.gcId));
 }
 function excluirPessoa() {
+  var pEx = editP ? pessoaPor(editP) : null;
+  if (pEx && !podeAlterarPessoa(pEx)) return toast('Somente secretaria, pastor ou master podem excluir este cadastro.', 4500);
   if (!confirm('Excluir esta pessoa?')) return;
   db.pessoas = db.pessoas.map(function (p) { if (p.id === editP) { p.deleted = true; p.updatedAt = agora(); p._pend = true; } return p; });
   salvarDB(); fechar(); render(); sincAuto();
@@ -2084,7 +2134,7 @@ function v39CarregarLarDeVida(r) {
   return Promise.all([pLv, pDisc]).then(function () { return r; });
 }
 
-/* ═══ SYNC-V39-13: equipe do GC, permissões por módulo e fotos (Supabase) ═══ */
+/* ═══ SYNC-V39-14: equipe do GC, permissões por módulo e fotos (Supabase) ═══ */
 var V39_PADRAO_PERMS = { supervisor: ['visitantes', 'rede', 'gc', 'gcEvento', 'lvDirecionar', 'lvLiberar'], lider: ['gc', 'gcEvento', 'lvLiberar'],
   discipulo: ['gc', 'lvVisitas'], secretaria: ['eventos', 'visitantes', 'recados', 'consulta', 'instituto', 'institutoAdmin', 'institutoCursos', 'instMercado', 'agendaPastoral'],
   tesouraria: ['financeiro', 'relFin'], voluntario: ['visitantes'], voluntarioLV: ['visitantes', 'lvVisitas'], voluntarioInst: ['instituto', 'instMercado'], profissional: ['instituto', 'prontuario'] };
@@ -2636,7 +2686,7 @@ function lvLiberar(pid) {
 var p = pessoaPor(pid), g = gcPor(gcA()), sel = $('lvd-' + pid) ? $('lvd-' + pid).value : '';
 if (!p) return;
 if (!sel) return toast('Escolha quem vai visitar (discípulo ou voluntário do Lar de Vida).');
-if (!ehDecisor() && !p.excecaoPor && !gcCompativel(g, p)) return toast('Esta pessoa não é compatível com o ' + g.nome + ' (sexo/idade). Fale com o pastor para redirecionar.', 5000);
+if (!ehDecisor() && !p.excecaoPor && !gcCompativel(g, p)) return toast('Não foi possível liberar: ' + motivoIncompat(g, p), 7000);
 if (lvCasasDe(sel).length >= LV_CASAS) return toast('Este discípulo já tem ' + LV_CASAS + ' casas.');
 p.lvStatus = 'acompanhando'; p.lvDiscipuloId = sel; p.lvDiscipuloNome = nomeResponsavelLV(g, sel);
 p.lvInicio = ($('lvi-' + pid) && $('lvi-' + pid).value) || hoje(); p.lvLiberadoPor = eu().nome; p.lvVisitas = [];
@@ -2826,6 +2876,7 @@ return campoFotoPessoa(p ? p.id : '') + '<label>Nome completo *</label><input id
 }
 function lvAbrirForm(pid) {
 var p = pid ? pessoaPor(pid) : null;
+if (p && !podeAlterarPessoa(p)) return toast('Somente secretaria, pastor ou master alteram este cadastro. Quem cadastrou pode corrigir nas primeiras ' + EDICAO_HORAS + ' horas.', 5500);
 lvModoCad = 'visitante';
 abrirModal('<h2>' + (p ? 'Editar visitante' : 'Visitante da igreja') + '</h2><span class="pill p-dour">visita igreja</span>' + lvForm(p) +
   '<div style="height:16px"></div><button class="btn pr" data-a="' + (p ? 'lvSalvarEd' : 'lvSalvarNovo') + '" data-v="' + esc(pid || '') + '">Salvar</button>' +
@@ -3958,7 +4009,7 @@ function fichaPessoa(id) {
   var end = separarBairroCidade(p.bairro, p.cidade), f = fone(p.fone), idade = idadeDe(p), g = gcPor(p.gcId);
   var rua = [p.endereco, p.numero].filter(Boolean).join(', ') + (p.complemento ? ' - ' + p.complemento : '');
   var mapaUrl = rua || end.bairro ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent([rua, end.bairro, end.cidade || cidadeIgreja()].filter(Boolean).join(', ')) : '';
-  var podeEditar = editaPessoas() && (!p.gcId || !!gcPor(p.gcId)) && !p.anonimizadoEm;
+  var podeEditar = podeAlterarPessoa(p) && (!p.gcId || !!gcPor(p.gcId)) && !p.anonimizadoEm;
   var kv = function (r, v) { return v ? '<div class="kv"><span>' + r + '</span><b>' + v + '</b></div>' : ''; };
   var at = function (ic, rot, href, acao, val) {
     var dis = !href && !acao;
@@ -7168,7 +7219,7 @@ function estExportar(modo) {
 })();
 
 /* ═══════════════════════════════════════════════════════════════
-   2Gather v39 · SYNC-V39-13 · integrado ao app.js
+   2Gather v39 · SYNC-V39-14 · integrado ao app.js
    1) Ficha do culto/evento (valores, presentes, tema, recados, pregador…) → Supabase
    2) Receitas e anfitrião do encontro de GC → Supabase
    3) Mensagens do sistema em linguagem clara
@@ -7178,7 +7229,7 @@ function estExportar(modo) {
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'SYNC-V39-13';
+  var BUILD = 'SYNC-V39-14';
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 
@@ -7382,6 +7433,7 @@ function estExportar(modo) {
     GC_MEMBERSHIP_CONFLICT: 'Não foi possível alterar o GC desta pessoa. Atualize a página e tente de novo.',
     GC_MEMBERSHIP_NOT_FOUND: 'Esta pessoa não está mais neste GC. Atualize a página.',
     GC_STATUS_INVALID: 'Situação do GC inválida.',
+    PERSON_EDIT_DENIED: 'Somente secretaria, pastor ou master alteram este cadastro. Quem cadastrou pode corrigir nas primeiras 48 horas.',
     PERSON_NOT_LINKED: 'O usuário escolhido não tem cadastro de pessoa ligado. Procure o master.',
     LIFE_HOME_CONFLICT: 'Não foi possível salvar o Lar de Vida: o discípulo pode já estar no limite de casas.',
     LIFE_HOME_INVALID: 'Algum dado do Lar de Vida está inválido. Confira a data da visita.',
