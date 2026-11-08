@@ -1,20 +1,21 @@
-/* 2Gather v39 · Correções gerais · CORRECAO-6
-   Carregar DEPOIS do app.js (SYNC-V39-15) e ANTES de app_v39_setores.js. Não altera o app.js. Não exige SQL.
+/* 2Gather v39 · Correções gerais · CORRECAO-7
+   Carregar DEPOIS do app.js (SYNC-V39-15) e ANTES de app_v39_setores.js. Não altera o app.js.
    Substitui qualquer app_v39_correcoes*.js anterior: no index.html deixe só este.
+   Requer (para o item 3): v39_campanhas_equipe_c2.sql no Supabase.
 
    1) Editar pessoa SEM GC
       Na ficha, o botão "Editar" (perfilEditar) chama lvEditar(v) para quem não tem GC e isso não funcionava.
-      Para pessoa sem GC o clique é desviado para a ação "abrirPessoa" (formulário completo), com "— sem GC —" já
-      selecionado (evita transferir a pessoa para o 1º GC da lista ao salvar).
+      Para pessoa sem GC o clique é desviado para a ação "abrirPessoa" (formulário completo), com "— sem GC —" já selecionado.
    2) Faixa de destaque dinâmica na tela INÍCIO (carrossel)
-      Quadro original + Palavra do culto, Agenda 7 dias, Aniversariantes, Novos rostos (só número), Passagem da semana.
-      CAUSA do carrossel aparecer no Financeiro: a tela Financeiro também começa com o bloco "ini-ola" + um quadro
-      ".hero", e a versão anterior montava o carrossel em qualquer tela com esses dois blocos.
-      CORRECAO-6: só monta nas telas de Início (bi = gestor, painel = GC, lvnovo = voluntário). Em qualquer outra tela,
-      desmonta e devolve o quadro original. As cores são aplicadas direto no elemento (celular e computador). */
+      Só monta na tela de Início de cada perfil: a que corresponde ao PRIMEIRO botão do menu. Nas demais telas (Financeiro etc.)
+      desmonta e devolve o quadro original.
+   3) Equipe fora de "Direcionar ao GC" (novo)
+      A lista "Direcionar ao GC", o contador "Visitantes da igreja sem GC" e o aviso do menu usam a regra do app
+      "sem GC e origem diferente de 'usuário do app'". Quem tem acesso de gestão (Master, Pastor, Secretaria, Tesouraria)
+      é cadastrado sem essa marca e por isso aparecia como visitante. Aqui a marca é aplicada a essas pessoas. */
 (function () {
   'use strict';
-  var VERSAO = 'CORRECAO-6';
+  var VERSAO = 'CORRECAO-7';
   if (window.G2_CORRECOES) return;
   window.G2_CORRECOES = VERSAO;
   console.info('[2Gather] correções ' + VERSAO);
@@ -22,7 +23,7 @@
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function G() { return window.__gc || null; }
-  function db() { var g = G(); return (g && g.db()) || {}; }
+  function db() { var g = G(); try { return (g && g.db && g.db()) || {}; } catch (e) { return {}; } }
   function cfg() { var g = G(); try { return (g && g.cfg && g.cfg()) || {}; } catch (e) { return {}; } }
   function pad(n) { return (n < 10 ? '0' : '') + n; }
   function iso(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
@@ -183,9 +184,12 @@
       if (!pausado && !document.hidden) ir(w, idx(w) + 1);
     }, 8000);
   }
-  // Telas de Início do app.js: bi (gestor), painel (GC), lvnovo (voluntário). O Financeiro usa o mesmo bloco "ini-ola" e fica de fora.
-  var ABAS_INICIO = ['bi', 'painel', 'lvnovo'];
-  function telaInicio(main) { return ABAS_INICIO.indexOf(String(cfg().aba || '')) >= 0 && !!main.querySelector('.ini-ola'); }
+  // A tela de Início de cada perfil é a do PRIMEIRO botão do menu (Início). O Financeiro e outros módulos também usam o bloco "ini-ola".
+  function inicioAba() { var nav = $('nav'), b = nav && nav.querySelector('button[data-v]'); return b ? String(b.getAttribute('data-v') || '') : ''; }
+  function telaInicio(main) {
+    var a = String(cfg().aba || ''), ini = inicioAba();
+    return !!main.querySelector('.ini-ola') && (a === '' || (ini !== '' && a === ini));
+  }
   function desmontar(main) {
     var w = main.querySelector('.g2c'); if (!w) return;
     var orig = w.querySelector('.hero[data-g2c-id="principal"]');
@@ -233,6 +237,60 @@
     agendar();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', observar); else observar();
+
+  /* ═════════ 3) EQUIPE FORA DE "DIRECIONAR AO GC" ═════════ */
+  var EQ = { ig: '', ids: null, t: 0, carregando: false, pend: false, hooked: null };
+  function v39() { return cfg().token === 'supabase-v39'; }
+  function igrejaId() { var u = cfg().usuario || {}; if (u.igrejaId) return u.igrejaId; var V = window.G2_V39 || {}, st = (V.runtime && V.runtime.state) || {}; return st.churchId || null; }
+  function rpcApp(nome, args) {
+    var V = window.G2_V39 || {};
+    var pr = (!V.client && typeof V.init === 'function') ? Promise.resolve(V.init()) : Promise.resolve();
+    return pr.then(function () { if (!V.client) throw new Error('sem cliente'); var b = V.client.schema('app'); return (b.__rpcOriginal || b.rpc).call(b, nome, args || {}); })
+      .then(function (r) { if (r.error) throw r.error; return r.data; });
+  }
+  function carregarEquipe() {
+    var ig = igrejaId();
+    if (EQ.carregando || !v39() || !ig) return;
+    if (EQ.ig === ig && EQ.ids && Date.now() - EQ.t < 300000) return;
+    EQ.carregando = true;
+    rpcApp('v39_staff_person_ids', { p_church_id: ig }).then(function (l) {
+      var m = {}; (Array.isArray(l) ? l : []).forEach(function (id) { m[id] = 1; });
+      EQ.ids = m; EQ.ig = ig; EQ.t = Date.now(); EQ.pend = true;
+    }).catch(function (e) {
+      EQ.t = Date.now() - 240000;                      // tenta de novo em ~1 min
+      console.warn('[2Gather][correções] equipe: rode o v39_campanhas_equipe_c2.sql no Supabase.', e && (e.message || e));
+    }).then(function () { EQ.carregando = false; });
+  }
+  function marcarEquipe(lista) {
+    if (!EQ.ids || !Array.isArray(lista)) return false;
+    var mudou = false;
+    for (var i = 0; i < lista.length; i++) { var p = lista[i]; if (p && EQ.ids[p.id] && p.origem !== 'usuário do app') { p.origem = 'usuário do app'; mudou = true; } }
+    return mudou;
+  }
+  // Toda vez que o app trocar db.pessoas (sincronização), a marca é aplicada antes de a tela ser desenhada.
+  function ganchoPessoas() {
+    var d = db(); if (!d || EQ.hooked === d) return;
+    try {
+      var atual = d.pessoas, desc = Object.getOwnPropertyDescriptor(d, 'pessoas');
+      if (desc && (desc.get || desc.set)) { EQ.hooked = d; return; }
+      Object.defineProperty(d, 'pessoas', { configurable: true, enumerable: true, get: function () { return atual; }, set: function (v) { atual = v; marcarEquipe(v); } });
+      EQ.hooked = d;
+    } catch (e) { /* sem gancho: o ciclo abaixo cobre */ }
+  }
+  function digitando() { var a = document.activeElement; return !!(a && /INPUT|TEXTAREA|SELECT/.test(a.tagName) && $('main') && $('main').contains(a)); }
+  // Redesenha só quando já estamos no Início (primeiro botão do menu): clicar nele não muda de tela.
+  function redesenharInicio() {
+    var g = G(); if (g && typeof g.render === 'function') { g.render(); return; }
+    var a = String(cfg().aba || ''), ini = inicioAba();
+    if (ini && (a === ini || a === '')) { var b = $('nav') && $('nav').querySelector('button[data-v="' + ini + '"]'); if (b) b.click(); }
+  }
+  function ciclo() {
+    if (!cfg().usuario || !v39()) { EQ.ids = null; EQ.ig = ''; return; }
+    carregarEquipe(); ganchoPessoas();
+    if (EQ.ids && marcarEquipe(db().pessoas)) EQ.pend = true;
+    if (EQ.pend && !digitando() && !(($('modal') || {}).classList && $('modal').classList.contains('on'))) { EQ.pend = false; redesenharInicio(); }
+  }
+  setInterval(ciclo, 1500);
 
   // limpeza: remove o botão flutuante e a faixa azul que a primeira versão do Financeiro criava
   setInterval(function () { var f = $('g2f-fab'); if (f) f.remove(); var v = $('g2f-aviso'); if (v) v.remove(); }, 800);
