@@ -1,19 +1,18 @@
-/* 2Gather v39 · Financeiro completo · FIN-ALL-6
-   Substitui o app_v39_financeiro.js (FIN-ALL-1 a 5): no index.html deixe só este arquivo.
+/* 2Gather v39 · Financeiro completo · FIN-ALL-7
+   Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este arquivo.
    Carregar DEPOIS do app.js e dos módulos v39. Não altera o app.js.
-   Requer: v39_financeiro_completo.sql e v39_campanhas_equipe_c2.sql no Supabase (nada novo no SQL nesta versão).
+   Requer no Supabase: v39_financeiro_completo.sql, v39_campanhas_equipe_c2.sql e v39_cartoes_c3.sql.
 
-   FIN-ALL-6
-   - Campanha: meta, já recebido, FALTA PARA A META e a receber dos acordos, em destaque (antes ficava numa linha pequena).
-   - Nova entrada: o tipo "Recebimento de campanha ou voto" aparece uma única vez (a categoria de mesmo nome do banco é ocultada);
-     um só botão "Registrar entrada".
-   - Painel do Financeiro: sem os botões de acesso rápido e sem o "consolidado anterior". No lugar, o dashboard do Livro:
-     entradas × saídas mês a mês, fluxo do mês por dia, de onde vem e para onde vai, saldo por conta, campanhas e últimos lançamentos.
-   - Tela que "atualizava sozinha": quando o app redesenha a área principal (sincronização), o Livro e o painel voltam NA HORA do
-     que já estava na tela, sem buscar tudo de novo no servidor. */
+   FIN-ALL-7
+   - CARTÃO DE CRÉDITO LIGADO À DESPESA: em "Nova despesa" escolha "Cartão de crédito" (cartão, data da compra, parcelas).
+     A despesa segue solicitar → aprovar; depois a Tesouraria lança na fatura ("Lançar na fatura", já abre no cartão certo).
+     Em Transf. e cartões aparece "Despesas no cartão · previstas na fatura" (em qual fatura cada uma vai cair).
+   - IMPORTAR FATURA (OFX/CSV e/ou PDF): guarda o total e as compras da fatura do banco e CONFERE com o que está lançado:
+     o que bate fica "no sistema", o que falta vira despesa no cartão com um toque, e a diferença aparece na fatura.
+   - Pop-up: não fecha mais ao clicar fora. Só pelo botão X no canto, por Cancelar ou por Esc. Botões do rodapé alinhados. */
 (function () {
   'use strict';
-  var VERSAO = 'FIN-ALL-6';
+  var VERSAO = 'FIN-ALL-7';
   if (window.G2_FIN) return;
   window.G2_FIN = { versao: VERSAO };
   console.info('[2Gather] financeiro ' + VERSAO);
@@ -109,8 +108,8 @@
     PERIOD_PREVIOUS_OPEN: 'Feche antes os meses anteriores.', PERIOD_HAS_PENDING: 'Há lançamentos ou lotes pendentes neste mês.',
     PERIOD_NOT_RECONCILED: 'Há lançamentos não conciliados neste mês.', PERIOD_LATER_CLOSED: 'Reabra antes os meses seguintes.',
     PERIOD_NOT_CLOSED: 'Este mês não está fechado.', PERIOD_INVALID: 'Período inválido.', FIN_EVIDENCE_REQUIRED: 'Anexe o comprovante.',
-    FIN_EVIDENCE_INVALID: 'O comprovante não foi encontrado. Envie o arquivo de novo.', FIN_EVIDENCE_SETUP: 'Comprovante sem registro oficial no banco. Avise o administrador.',
-    FIN_AMOUNT_INVALID: 'Valor inválido.', FIN_ACCOUNT_INVALID: 'Escolha uma conta ativa (origem e destino diferentes).',
+    FIN_EVIDENCE_INVALID: 'O arquivo não foi encontrado. Envie de novo.', FIN_EVIDENCE_SETUP: 'Comprovante sem registro oficial no banco. Avise o administrador.',
+    FIN_AMOUNT_INVALID: 'Confira o valor informado.', FIN_ACCOUNT_INVALID: 'Escolha uma conta ativa (origem e destino diferentes).',
     FIN_CATEGORY_INVALID: 'Escolha uma categoria válida para este lançamento.', FIN_METHOD_INVALID: 'Escolha a forma de pagamento/recebimento.',
     FIN_PERSON_INVALID: 'Escolha a pessoa na lista.', FIN_NAME_REQUIRED: 'Preencha os campos obrigatórios.', FIN_STATUS_INVALID: 'Situação inválida.',
     FIN_NOT_FOUND: 'Registro não encontrado. Atualize a tela.', FIN_NOT_EDITABLE: 'Este registro não pode mais ser alterado.',
@@ -118,7 +117,7 @@
     FIN_NOT_APPROVED: 'A despesa ainda não foi aprovada.', FIN_NOT_PENDING: 'A despesa não está aguardando aprovação.',
     FIN_SELF_APPROVAL: 'Quem solicitou não pode decidir o próprio pedido.', FIN_OPENING_EXISTS: 'Esta conta já tem saldo inicial.',
     FIN_CARD_INVALID: 'Confira os dados do cartão.', FIN_SOURCE_INVALID: 'Origem inválida.', FIN_SOURCE_DONE: 'Este encontro/culto já foi lançado no Livro.',
-    FIN_MATCH_INVALID: 'O lançamento tem conta ou valor diferente da linha do extrato.', FIN_IMPORT_INVALID: 'Arquivo de extrato inválido ou muito grande.',
+    FIN_MATCH_INVALID: 'O lançamento tem conta ou valor diferente da linha do extrato.', FIN_IMPORT_INVALID: 'Arquivo inválido ou grande demais.',
     FIN_SCHEDULE_SUM: 'A soma das parcelas precisa ser igual ao valor total.', FIN_SCHEDULE_LOCKED: 'Já há recebimento: as datas não podem mais mudar.',
     FIN_SCHEDULE_INVALID: 'Confira as datas e os valores das parcelas.', REASON_REQUIRED: 'Informe o motivo (mínimo 5 letras).'
   };
@@ -126,7 +125,7 @@
     var t = String((e && (e.message || e.details || e.hint || e.code)) || e || '');
     var d = String((e && e.details) || '');
     for (var k in MSG) if (t.indexOf(k) >= 0 || d === k) return MSG[k];
-    if (/PGRST202|find the function|does not exist/i.test(t)) return 'Falta rodar o SQL novo no Supabase (v39_campanhas_equipe_c2.sql).';
+    if (/PGRST202|find the function|does not exist/i.test(t)) return 'Falta rodar o SQL novo no Supabase (v39_cartoes_c3.sql).';
     if (/JWT|token|401/i.test(t)) return 'Sua sessão expirou. Entre de novo.';
     if (/Failed to fetch|NetworkError/i.test(t)) return 'Sem conexão. Tente novamente.';
     var m = t.match(/^[A-Z_]+:\s*(.+)$/); if (m) return m[1];
@@ -184,7 +183,7 @@
       '.g2f-ib .g2f-svg{width:16px;height:16px}.g2f-ib.t{width:auto;padding:0 11px}',
       '.g2f-ib.pri{background:var(--pri-s,#EAF0FF);color:var(--pri,#2F5BEA)}.g2f-ib.ok{background:#E7F7EF;color:#16A36A}.g2f-ib.dg{background:#FDECEC;color:#E5484D}',
       '.g2f-ib:focus-visible,.g2f-btn:focus-visible,.g2f-back:focus-visible,.g2f-per button:focus-visible{outline:2px solid var(--pri,#2F5BEA);outline-offset:2px}',
-      '.g2f-acts{flex:0 0 100%;display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}',
+      '.g2f-acts{flex:0 0 100%;display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;align-items:center}',
       '@media(min-width:700px){.g2f-acts{flex:0 0 auto;flex-wrap:nowrap}}',
       '.g2f-mv{flex-wrap:wrap}.g2f-mv .info{flex:1 1 150px}.g2f-mv .nm,.g2f-pt .nm{white-space:normal!important}',
       '.g2f-ri{flex:0 0 40px;width:40px;height:40px;border-radius:14px;display:flex;align-items:center;justify-content:center;background:#F0F1F4;color:var(--tx2,#5E6470)}',
@@ -207,7 +206,6 @@
       '.g2f-tbl td{padding:9px 6px;border-bottom:1px solid var(--ln,#ECEEF1);vertical-align:top}.g2f-tbl td.r,.g2f-tbl th.r{text-align:right;white-space:nowrap}',
       '.g2f-tw{overflow-x:auto}',
       '.g2f-dashper{margin-bottom:12px}',
-      /* dashboard */
       '.g2f-ch{display:flex;align-items:flex-end;gap:5px;height:140px;padding-top:6px}',
       '.g2f-col{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}',
       '.g2f-bars{display:flex;align-items:flex-end;gap:2px;width:100%;height:calc(100% - 16px)}',
@@ -222,10 +220,14 @@
       '.g2f-hb .b{height:7px;border-radius:99px;background:var(--ln,#ECEEF1);margin-top:4px;overflow:hidden}.g2f-hb .b i{display:block;height:100%;border-radius:99px}',
       '.g2f-dh{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 0 4px}.g2f-dh h3{margin:0}.g2f-dh .g2f-mut{white-space:nowrap}',
       '.g2f-click{cursor:pointer}',
+      /* pop-up: sem fechar ao clicar fora; botão X fixo no canto; rodapé com botões alinhados */
       '#g2f-mod{position:fixed;inset:0;background:rgba(20,22,26,.45);z-index:9995;display:flex;align-items:flex-end;justify-content:center}',
-      '#g2f-mod .box{background:#fff;color:#14161A;width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:24px 24px 0 0;padding:18px 16px;font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}',
+      '#g2f-mod .box{position:relative;display:flex;flex-direction:column;background:#fff;color:#14161A;width:100%;max-width:560px;max-height:92vh;overflow:hidden;border-radius:24px 24px 0 0;font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}',
+      '#g2f-mod .bd2{overflow:auto;padding:18px 16px;-webkit-overflow-scrolling:touch}',
       '@media(min-width:700px){#g2f-mod{align-items:center}#g2f-mod .box{border-radius:24px}}',
-      '#g2f-mod h3{margin:0 0 10px;font-size:17px}',
+      '#g2f-mod .g2f-x{position:absolute;top:10px;right:10px;z-index:5;width:34px;height:34px;padding:0;border:none;border-radius:50%;background:#EEF0F4;color:#14161A;display:flex;align-items:center;justify-content:center;cursor:pointer}',
+      '#g2f-mod .g2f-x:hover{background:#E1E4EA}#g2f-mod .g2f-x:focus-visible{outline:2px solid var(--pri,#2F5BEA);outline-offset:2px}',
+      '#g2f-mod h3{margin:0 0 10px;padding-right:42px;font-size:17px}',
       '#g2f-mod label{display:block;font-size:12px;color:#5E6470;margin:10px 0 4px;font-weight:700}',
       '#g2f-mod input,#g2f-mod select,#g2f-mod textarea{width:100%;border:1.5px solid #ECEEF1;border-radius:14px;padding:11px;font:inherit;font-size:15px;background:#fff;color:#14161A}',
       '#g2f-mod input:focus,#g2f-mod select:focus,#g2f-mod textarea:focus{outline:none;border-color:var(--pri,#2F5BEA)}',
@@ -233,8 +235,8 @@
       '#g2f-mod .chk{display:flex;gap:8px;align-items:center;margin-top:10px}#g2f-mod .chk input{width:auto}#g2f-mod .chk label{margin:0}',
       '#g2f-mod .hint{font-size:12px;color:#5E6470;margin-top:4px;line-height:1.45}',
       '#g2f-mod .err{color:#E5484D;font-size:13px;margin-top:10px;min-height:1em}',
-      '#g2f-mod .ft{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}',
-      '#g2f-mod .ft button{height:42px;padding:0 18px;border:none;border-radius:13px;background:var(--pri,#2F5BEA);color:#fff;font:inherit;font-weight:800;font-size:14px;cursor:pointer}',
+      '#g2f-mod .ft{display:flex;gap:8px;justify-content:flex-end;align-items:stretch;flex-wrap:wrap;margin-top:14px}',
+      '#g2f-mod .ft button{display:inline-flex;align-items:center;justify-content:center;height:42px;margin:0;padding:0 18px;border:none;border-radius:13px;background:var(--pri,#2F5BEA);color:#fff;font:inherit;font-weight:800;font-size:14px;line-height:1;cursor:pointer}',
       '#g2f-mod .ft button.sec{background:#EEF0F4;color:#14161A}',
       '#g2f-mod .pl{border:1.5px solid #ECEEF1;border-radius:12px;margin-top:4px;max-height:160px;overflow:auto}',
       '#g2f-mod .pl div{padding:8px 10px;cursor:pointer}#g2f-mod .pl div:hover{background:#F6F7F9}',
@@ -253,7 +255,8 @@
     Enviar: { i: 'send', t: 1, l: 'Enviar' }, Receber: { i: 'cash', t: 1, tone: 'ok' }, Pedir: { i: 'pencil' }, WhatsApp: { i: 'chat', tone: 'ok' },
     Itens: { i: 'list' }, Conferir: { i: 'check', t: 1, tone: 'ok', l: 'Conferir' }, Gerar: { i: 'repeat', t: 1, l: 'Gerar' }, Casar: { i: 'check', t: 1, l: 'Casar' }, Exportar: { i: 'dl' },
     Ignorar: { i: 'x' }, Voltar: { i: 'undo' }, Saldo: { i: 'plus', t: 1, l: 'Saldo inicial' }, Reabrir: { i: 'unlock', t: 1 }, Fechar: { i: 'lock', t: 1 },
-    Participante: { i: 'userplus', t: 1 }, Dispensar: { i: 'x' }
+    Participante: { i: 'userplus', t: 1 }, Dispensar: { i: 'x' },
+    'Lançar': { i: 'card', t: 1, tone: 'ok', l: 'Lançar na fatura' }, Criar: { i: 'plus', t: 1, tone: 'ok', l: 'Criar despesa' }
   };
   function bt(a, v, t, cls) {
     var w = String(t).split(' ')[0], m = BTI[w] || { i: 'dot' };
@@ -266,7 +269,7 @@
   }
   function pill(txt, tom) { return '<span class="pill p-' + (tom || 'cinza') + '">' + esc(txt) + '</span>'; }
 
-  /* ───────────── janela de formulário (com campos que aparecem/mudam conforme a escolha) ───────────── */
+  /* ───────────── janela de formulário (campos que aparecem/mudam conforme a escolha) ───────────── */
   function campoHtml(c, i) {
     var id = 'g2f-f' + i, v = c.v == null ? '' : c.v, rq = c.req ? ' *' : '', h = '<div class="g2f-fld" data-i="' + i + '">';
     if (c.t === 'info') return h + '<div class="hint" style="margin-top:8px">' + c.l + '</div></div>';
@@ -276,7 +279,7 @@
       h += '<select id="' + id + '">' + (c.vazio !== false ? '<option value="">' + esc(c.vazio || '— escolha —') + '</option>' : '') + (c.o || []).map(function (x) {
         return '<option value="' + esc(x[0]) + '"' + (String(x[0]) === String(v) ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join('') + '</select>';
     } else if (c.t === 'textarea') h += '<textarea id="' + id + '">' + esc(v) + '</textarea>';
-    else if (c.t === 'file') h += '<input type="file" id="' + id + '" accept="image/*,application/pdf">';
+    else if (c.t === 'file') h += '<input type="file" id="' + id + '" accept="' + esc(c.accept || 'image/*,application/pdf') + '">';
     else if (c.t === 'pessoa') h += '<input type="text" id="' + id + '" autocomplete="off" placeholder="Digite 3 letras do nome" value="' + esc(c.nome || '') + '" data-pid="' + esc(v) + '"><div class="pl" id="' + id + '-l" hidden></div>';
     else if (c.t === 'parcelas') h += '<div id="' + id + '"></div>';
     else {
@@ -290,13 +293,14 @@
   function form(titulo, campos, okTxt, aoSalvar) {
     fecharMod();
     var o = document.createElement('div'); o.id = 'g2f-mod';
-    var h = '<div class="box" role="dialog" aria-modal="true"><h3>' + esc(titulo) + '</h3><form novalidate>';
+    var h = '<div class="box" role="dialog" aria-modal="true" aria-label="' + esc(titulo) + '"><button type="button" class="g2f-x" data-g2x="1" data-x="fechar" aria-label="Fechar" title="Fechar">' + ic('x', 16) + '</button><div class="bd2"><h3>' + esc(titulo) + '</h3><form novalidate>';
     campos.forEach(function (c, i) { h += campoHtml(c, i); });
-    h += '<div class="err" aria-live="polite"></div><div class="ft"><button type="button" class="sec" data-x="cancelar">Cancelar</button><button type="submit">' + esc(okTxt || 'Salvar') + '</button></div></form></div>';
+    h += '<div class="err" aria-live="polite"></div><div class="ft"><button type="button" class="sec" data-x="cancelar">Cancelar</button><button type="submit">' + esc(okTxt || 'Salvar') + '</button></div></form></div></div>';
     o.innerHTML = h;
-    o.addEventListener('click', function (ev) { if (ev.target === o) fecharMod(); });
+    // Clicar fora do pop-up NÃO fecha mais (evita perder o que foi digitado). Fecha pelo X, por Cancelar ou por Esc.
     document.body.appendChild(o);
     o.querySelector('[data-x="cancelar"]').addEventListener('click', fecharMod);
+    o.querySelector('[data-x="fechar"]').addEventListener('click', fecharMod);
     var f = o.querySelector('form'), btn1 = f.querySelector('button[type="submit"]'), err = f.querySelector('.err');
 
     function wrap(i) { return o.querySelector('.g2f-fld[data-i="' + i + '"]'); }
@@ -336,11 +340,11 @@
             if (c.unico && lista.length === 1 && !el.value) el.value = lista[0][0];
           }
           if (c.fill && el) {
-            var dv = String(vals[c.fill.dep] == null ? '' : vals[c.fill.dep]);
+            var deps = String(c.fill.dep).split(','), dv = deps.map(function (k) { return String(vals[k] == null ? '' : vals[k]); }).join('|');
             if (el.getAttribute('data-dep') !== dv) {
               el.setAttribute('data-dep', dv);
               var nv = c.fill.fn(vals);
-              if (nv != null && (c.fill.sempre || dv !== '')) el.value = c.t === 'money' ? String(nv).replace('.', ',') : nv;
+              if (nv != null && (c.fill.sempre || dv.replace(/\|/g, '') !== '')) el.value = c.t === 'money' ? String(nv).replace('.', ',') : nv;
             }
           }
           if (c.t === 'parcelas' && el) {
@@ -791,7 +795,6 @@
   }
   function abrirFormEntrada() {
     var temCamp = pode('financial.commitments.receive');
-    // a categoria de mesmo nome que já existe no banco é escondida: o tipo "Recebimento de campanha ou voto" aparece UMA vez
     var cats = opCats('income').filter(function (c) { return !temCamp || !/campanha|voto/.test(norm(c[1])); });
     var vistos = {}; cats = cats.filter(function (c) { var k = norm(c[1]).replace(/\(.*\)/, '').trim(); if (vistos[k]) return false; vistos[k] = 1; return true; });
     if (temCamp) cats = [['__camp', 'Recebimento de campanha ou voto']].concat(cats);
@@ -825,39 +828,192 @@
     });
   }
 
+  /* ───────────── CARTÕES: despesa no cartão, fatura prevista e fatura importada ───────────── */
+  var PLANOS = {}, FATIMP = [], CARTSQL = true, FATS = [];
+  function cartao(id) { return ((S.cat && S.cat.cartoes) || []).filter(function (k) { return k.id === id; })[0] || null; }
+  function cartaoNome(id) { var k = cartao(id); return k ? k.nome + ' •' + k.final : 'Cartão'; }
+  function carregarPlanos() {
+    if (!(pode('financial.expenses.view') || pode('financial.expenses.create') || pode('financial.book.view'))) { PLANOS = {}; return Promise.resolve(); }
+    return rpc('v39_fin_expense_cards', C({})).then(function (l) { PLANOS = {}; (l || []).forEach(function (x) { PLANOS[x.expenseId] = x; }); CARTSQL = true; })
+      .catch(function (e) { PLANOS = {}; CARTSQL = false; console.warn('[2Gather][fin] cartões: rode o v39_cartoes_c3.sql no Supabase.', e && (e.message || e)); });
+  }
+  function carregarFaturasImp() {
+    if (!(pode('financial.book.view') || pode('financial.cards.manage'))) { FATIMP = []; return Promise.resolve(); }
+    return rpc('v39_fin_invoices', C({})).then(function (l) { FATIMP = l || []; }).catch(function () { FATIMP = []; });
+  }
+  // mês de FECHAMENTO da fatura em que a compra cai (compra depois do dia de fechamento vai para a fatura seguinte)
+  function mesFechamento(k, dataISO, extra) {
+    var p = String(dataISO).split('-'), y = +p[0], m = +p[1] - 1, d = +p[2], fe = k ? num(k.fechamento) : 0;
+    if (fe > 0 && d > fe) m++;
+    m += (extra || 0); y += Math.floor(m / 12); m = ((m % 12) + 12) % 12;
+    return { ano: y, mes: m + 1 };
+  }
+  // vencimento provável da fatura que fecha em (ano, mes)
+  function vencFatura(k, ano, mes) {
+    if (!k || !(num(k.vencimento) > 0)) return '';
+    var m = mes - 1 + (num(k.vencimento) <= num(k.fechamento) ? 1 : 0), y = ano + Math.floor(m / 12); m = ((m % 12) + 12) % 12;
+    var ult = new Date(y, m + 1, 0).getDate();
+    return isoD(new Date(y, m, Math.min(num(k.vencimento), ult)));
+  }
+  function previstasCartao(abertas) {
+    var out = [];
+    (abertas || []).forEach(function (e) {
+      var pl = PLANOS[e.id]; if (!pl || pl.lancada) return;
+      if (['cancelled', 'rejected', 'reversed', 'paid'].indexOf(e.status) >= 0) return;
+      var k = cartao(pl.cartaoId);
+      out.push({ e: e, pl: pl, k: k, f: mesFechamento(k, String(pl.data).slice(0, 10), 0) });
+    });
+    return out;
+  }
+  function lerArquivoTexto(f) {
+    return new Promise(function (res, rej) {
+      if (f.size > 3 * 1024 * 1024) return rej(new Error('Arquivo grande demais. O máximo é 3 MB.'));
+      var fr = new FileReader();
+      fr.onload = function () { res(String(fr.result || '')); };
+      fr.onerror = function () { rej(new Error('Não foi possível ler o arquivo.')); };
+      fr.readAsText(f, /\.ofx$/i.test(f.name) ? 'ISO-8859-1' : 'UTF-8');
+    });
+  }
+  // lê OFX/CSV de fatura de cartão: separa compras, estornos/créditos e ignora o pagamento da fatura anterior
+  function parseFatura(nome, txt) {
+    var r = lerExtrato(nome, txt), L = r.linhas || [], neg = 0, pos = 0, sinalPag = 0, out = [], soma = 0;
+    var RX_PAG = /pagamento|pgto|saldo anterior|fatura anterior|pag\.? fatura/i;
+    L.forEach(function (l) { if (l.valor < 0) neg++; else if (l.valor > 0) pos++; if (RX_PAG.test(l.descricao || '')) sinalPag += l.valor < 0 ? -1 : 1; });
+    // qual sinal é "compra"? 1º) o sinal contrário ao do pagamento da fatura anterior; 2º) o sinal da maioria; 3º) padrão do formato (OFX: compra negativa; CSV: positiva)
+    var compraNeg = sinalPag !== 0 ? sinalPag > 0 : (neg !== pos ? neg > pos : r.fonte === 'ofx');
+    L.forEach(function (l) {
+      var desc = String(l.descricao || '').replace(/\s+/g, ' ').trim(), abs = arr2(Math.abs(l.valor)); if (!(abs > 0)) return;
+      var ehCompra = compraNeg ? l.valor < 0 : l.valor > 0;
+      if (!ehCompra && RX_PAG.test(desc)) return;
+      var m = desc.match(/(\d{1,2})\s*\/\s*(\d{1,2})\s*$/), parc = '';
+      if (m && +m[2] >= 2 && +m[2] <= 24 && +m[1] >= 1 && +m[1] <= +m[2]) parc = pad(+m[1]) + '/' + pad(+m[2]);
+      out.push({ data: l.data, descricao: desc.slice(0, 200), valor: abs, tipo: ehCompra ? 'purchase' : 'credit', parcela: parc });
+      soma += ehCompra ? abs : -abs;
+    });
+    return { fonte: r.fonte, linhas: out, total: arr2(Math.max(0, soma)) };
+  }
+  function fatDoMes(cid, ano, mes) { return FATS.filter(function (s) { return s.cartaoId === cid && +s.ano === +ano && +s.mes === +mes; })[0] || null; }
+  function impDoMes(cid, ano, mes) { return FATIMP.filter(function (i) { return i.cartaoId === cid && +i.ano === +ano && +i.mes === +mes; })[0] || null; }
+
+  /* compara as linhas da fatura do banco com as compras que o sistema já tem naquela fatura */
+  function conferirFatura(inv) {
+    var s = fatDoMes(inv.cartaoId, inv.ano, inv.mes), sist = s ? arr2(s.compras) : 0;
+    var itens = ((s && s.itens) || []).map(function (i) { return { d: String(i.data).slice(0, 10), v: arr2(i.valor), u: false }; });
+    var linhas = (inv.linhas || []).map(function (l) {
+      var sit;
+      if (l.status === 'expense') sit = 'despesa';
+      else if (l.status === 'ignored') sit = 'ignorada';
+      else if (l.tipo === 'credit') sit = 'credito';
+      else {
+        var ix = -1, bd = 999;
+        itens.forEach(function (it, k) {
+          if (it.u || Math.abs(it.v - num(l.valor)) > 0.009) return;
+          var dd = l.data ? Math.abs(difDias(String(l.data).slice(0, 10), it.d)) : 0;
+          if (dd <= 10 && dd < bd) { bd = dd; ix = k; }
+        });
+        if (ix >= 0) { itens[ix].u = true; sit = 'sistema'; } else sit = 'falta';
+      }
+      return { l: l, sit: sit };
+    });
+    return { s: s, sist: sist, dif: arr2(num(inv.total) - sist), linhas: linhas, sobra: itens.filter(function (i) { return !i.u; }).length,
+      falta: linhas.filter(function (x) { return x.sit === 'falta'; }).length, ok: linhas.filter(function (x) { return x.sit === 'sistema'; }).length };
+  }
+  function cardFaturaImp(inv, ii) {
+    var c = conferirFatura(inv), pode_criar = pode('financial.expenses.create') && pode('financial.cards.manage'), batendo = Math.abs(c.dif) < 0.01;
+    var h = '<div class="card"><div class="row g2f-mv" style="border:none;padding:0 0 8px"><span class="g2f-ri pri">' + ic('file') + '</span><div class="info"><div class="nm">' + esc(cartaoNome(inv.cartaoId)) + ' · fatura ' + pad(inv.mes) + '/' + inv.ano + '</div>' +
+      '<div class="sb">' + esc((inv.vencimento ? 'vence ' + dataBR(inv.vencimento) + ' · ' : '') + 'origem: ' + ({ ofx: 'arquivo OFX', csv: 'arquivo CSV', pdf: 'PDF/foto', manual: 'informada à mão' }[inv.fonte] || inv.fonte)) + '</div></div>' +
+      '<div class="g2f-acts g2f-noprint">' + (inv.arquivoPath ? bt('verComp', inv.arquivoPath, 'Comprovante', 'sec') : '') + (pode('financial.cards.manage') ? bt('cancFatura', inv.id, 'Cancelar', 'red') : '') + '</div></div>' +
+      '<div class="stats">' + stat('Fatura do banco', brl(inv.total), 'pri', 'file') + stat('Lançado no sistema', brl(c.sist), 'pri', 'card', '', c.s ? 'compras desta fatura' : 'ainda sem compras') +
+      stat('Diferença', batendo ? 'Confere ✓' : brl(c.dif), batendo ? 'in' : 'out', 'scale', batendo ? 'g2f-pos' : 'g2f-neg', batendo ? '' : (c.dif > 0 ? 'falta lançar no sistema' : 'sistema tem a mais')) + '</div>';
+    if (!(inv.linhas || []).length) {
+      h += '<div class="g2f-note" style="margin:6px 2px">Esta fatura foi registrada só com o total (sem a lista de compras). A comparação é pelo valor. Para conferir compra por compra, importe o arquivo OFX ou CSV do banco.</div>';
+    } else {
+      h += '<div class="g2f-note" style="margin:2px 2px 6px">' + c.ok + ' compra(s) já estão no sistema · <b>' + c.falta + '</b> faltam lançar' + (c.sobra ? ' · ' + c.sobra + ' do sistema não aparece(m) na fatura do banco' : '') + '.</div><div>';
+      h += c.linhas.map(function (x) {
+        var l = x.l, ico = 'dot', cls = '', pl = '', a = '';
+        if (x.sit === 'sistema') { ico = 'check'; cls = 'in'; pl = pill('no sistema', 'verde'); }
+        else if (x.sit === 'falta') {
+          ico = 'clock'; cls = 'amb'; pl = pill('falta lançar', 'amarelo');
+          a = (pode_criar ? bt('criarFatLinha', ii + '|' + l.id, 'Criar despesa') : '') + (pode('financial.cards.manage') ? bt('ignFatLinha', ii + '|' + l.id, 'Ignorar', 'sec') : '');
+        } else if (x.sit === 'despesa') { ico = 'receipt'; cls = 'pri'; pl = pill('virou despesa', 'dour'); }
+        else if (x.sit === 'ignorada') { ico = 'ban'; pl = pill('ignorada', 'cinza'); }
+        else { ico = 'undo'; cls = 'amb'; pl = pill('crédito/estorno', 'cinza'); }
+        return '<div class="row g2f-mv"><span class="g2f-ri ' + cls + '">' + ic(ico) + '</span><div class="info"><div class="nm">' + esc(l.descricao) + (l.parcela ? ' · ' + esc(l.parcela) : '') + '</div>' +
+          '<div class="sb">' + esc((l.data ? dataBR(l.data) : 'sem data') + (l.nota ? ' · ' + l.nota : '')) + '</div></div><div class="g2f-amt"><span class="' + (l.tipo === 'credit' ? 'g2f-pos' : '') + '">' + (l.tipo === 'credit' ? '− ' : '') + brl(l.valor) + '</span>' + pl + '</div>' +
+          (a ? '<div class="g2f-acts g2f-noprint">' + a + '</div>' : '') + '</div>';
+      }).join('') + '</div>';
+    }
+    return h + '</div>';
+  }
+  function dueISO(k, ano, mes) { return vencFatura(k, ano, mes) || ''; }
+  function formImportarFatura() {
+    var K = opCartoes(); if (!K.length) return toast('Cadastre um cartão primeiro.');
+    var hj = new Date();
+    var ult = function (cid) {
+      var l = FATS.filter(function (x) { return x.cartaoId === cid && x.status !== 'paid'; }).sort(function (a, b) { return (b.ano * 100 + b.mes) - (a.ano * 100 + a.mes); });
+      return l[0] || null;
+    };
+    form('Importar fatura do cartão', [
+      { k: 'cartaoId', l: 'Cartão', t: 'select', o: K, v: K[0][0], req: true, vazio: false },
+      { k: 'mes', l: 'Mês da fatura (mês em que ela fecha)', t: 'select', o: MESES.map(function (m, i) { return [String(i + 1), m]; }), v: String(hj.getMonth() + 1), req: true, vazio: false,
+        fill: { dep: 'cartaoId', fn: function (v) { var u = ult(v.cartaoId); return u ? String(u.mes) : null; } } },
+      { k: 'ano', l: 'Ano', t: 'number', v: hj.getFullYear(), req: true, fill: { dep: 'cartaoId', fn: function (v) { var u = ult(v.cartaoId); return u ? u.ano : null; } } },
+      { k: 'vencimento', l: 'Vencimento da fatura', t: 'date', req: true, fill: { dep: 'cartaoId,mes,ano', sempre: true, fn: function (v) { return dueISO(cartao(v.cartaoId), parseInt(v.ano, 10), parseInt(v.mes, 10)) || null; } } },
+      { k: 'total', l: 'Valor total da fatura', t: 'money', h: 'Se enviar o arquivo OFX/CSV e deixar em branco, o total é a soma das compras do arquivo.' },
+      { k: 'arqLinhas', l: 'Arquivo do banco para conferir compra por compra (OFX ou CSV)', t: 'file', accept: '.ofx,.csv,.txt', h: 'Opcional. Com ele, o sistema mostra o que já está lançado e o que falta lançar.' },
+      { k: 'arqPdf', l: 'Fatura em PDF ou foto (para guardar)', t: 'file' },
+      { t: 'info', l: 'Informe pelo menos o valor total ou o arquivo OFX/CSV. Se já existir fatura importada deste cartão e mês, a nova substitui a antiga.' }
+    ], 'Importar fatura', function (v) {
+      var mes = parseInt(v.mes, 10), ano = parseInt(v.ano, 10);
+      if (!v.arqLinhas && v.total == null) return Promise.reject(new Error('Informe o valor total ou envie o arquivo OFX ou CSV.'));
+      var leitura = v.arqLinhas ? lerArquivoTexto(v.arqLinhas).then(function (t) { return parseFatura(v.arqLinhas.name, t); }) : Promise.resolve(null);
+      return leitura.then(function (pf) {
+        if (v.arqLinhas && (!pf || !pf.linhas.length)) throw new Error('Nenhuma compra reconhecida no arquivo. Use OFX ou CSV com data, descrição e valor.');
+        var total = v.total != null ? v.total : (pf ? pf.total : null);
+        if (total == null) throw new Error('Informe o valor total da fatura.');
+        return enviarComprovante(v.arqPdf).then(function (ev) {
+          return rpc('v39_fin_invoice_save', C({ p: { cartaoId: v.cartaoId, ano: ano, mes: mes, vencimento: v.vencimento || null, total: total, evidenciaId: ev,
+            fonte: pf ? pf.fonte : (v.arqPdf ? 'pdf' : 'manual'),
+            linhas: pf ? pf.linhas.map(function (l) { return { data: l.data, descricao: l.descricao, valor: l.valor, tipo: l.tipo, parcela: l.parcela }; }) : [] } }));
+        });
+      }).then(function (r) { return 'Fatura importada' + (r && r.linhas ? ' · ' + r.linhas + ' compra(s) para conferir.' : '.'); });
+    });
+  }
+
   /* ───────────── DESPESAS ───────────── */
   var DESP = [], RECS = [];
   function linhaDesp(e) {
-    var a = [], st = e.status;
+    var a = [], st = e.status, pl = PLANOS[e.id], noCartao = !!(pl && !pl.lancada);
     if ((st === 'draft' || st === 'correction_requested') && e.meu) { a.push(bt('editDesp', e.id, 'Editar', 'sec')); a.push(bt('enviarDesp', e.id, 'Enviar p/ aprovação')); }
     if (st === 'pending_approval' && !e.souSolicitante) {
       if (pode('financial.expenses.approve')) a.push(bt('aprovarDesp', e.id, 'Aprovar'));
       if (pode('financial.expenses.request_correction')) a.push(bt('corrigirDesp', e.id, 'Pedir correção', 'sec'));
       if (pode('financial.expenses.reject')) a.push(bt('recusarDesp', e.id, 'Recusar', 'red'));
     }
-    if ((st === 'approved' || st === 'partially_paid') && tes() && pode('financial.expenses.pay')) a.push(bt('pagarDesp', e.id, 'Pagar'));
+    if ((st === 'approved' || st === 'partially_paid') && tes() && pode('financial.expenses.pay')) a.push(noCartao ? bt('pagarDesp', e.id, 'Lançar na fatura') : bt('pagarDesp', e.id, 'Pagar'));
     if (['draft', 'correction_requested', 'pending_approval', 'approved'].indexOf(st) >= 0 && (e.meu || tes())) a.push(bt('cancDesp', e.id, 'Cancelar', 'red'));
     if (tes() && pode('financial.expenses.reverse')) (e.pagamentos || []).forEach(function (p) { if (p.status === 'posted') a.push(bt('estPag', p.id, 'Estornar pgto ' + dataBR(p.data), 'red')); });
     if (e.comprovantePath) a.push(bt('verComp', e.comprovantePath, 'Documento', 'sec'));
     var tom = st === 'paid' ? 'verde' : (st === 'pending_approval' || st === 'correction_requested') ? 'amarelo' : (st === 'rejected' || st === 'cancelled') ? 'vermelho' : 'cinza';
-    return '<div class="row g2f-mv"><span class="g2f-ri ' + (st === 'paid' ? 'in' : 'out') + '">' + ic('receipt') + '</span><div class="info"><div class="nm">' + esc(e.descricao) + '</div>' +
+    var chip = pl ? pill(pl.lancada ? 'na fatura do cartão' : 'cartão ' + (cartao(pl.cartaoId) ? '•' + cartao(pl.cartaoId).final : '') + (pl.parcelas > 1 ? ' · ' + pl.parcelas + 'x' : ''), pl.lancada ? 'verde' : 'dour') : '';
+    return '<div class="row g2f-mv"><span class="g2f-ri ' + (st === 'paid' ? 'in' : 'out') + '">' + ic(pl ? 'card' : 'receipt') + '</span><div class="info"><div class="nm">' + esc(e.descricao) + '</div>' +
       '<div class="sb">' + esc([e.categoria, e.fornecedor, e.vencimento ? 'vence ' + dataBR(e.vencimento) : '', e.solicitante ? 'por ' + e.solicitante : ''].filter(Boolean).join(' · ')) + '</div>' +
       (e.motivo ? '<div class="sb">Motivo: ' + esc(e.motivo) + '</div>' : '') + (e.boleto && e.boleto.linha ? '<div class="sb">Boleto: ' + esc(e.boleto.linha) + '</div>' : '') + '</div>' +
-      '<div class="g2f-amt"><span>' + brl(e.aprovado || e.valor) + '</span>' + (num(e.pago) ? '<span class="g2f-mut">pago ' + brl(e.pago) + '</span>' : '') + pill((ROT.desp[st] || st).toLowerCase(), tom) + '</div>' +
+      '<div class="g2f-amt"><span>' + brl(e.aprovado || e.valor) + '</span>' + (num(e.pago) ? '<span class="g2f-mut">pago ' + brl(e.pago) + '</span>' : '') + pill((ROT.desp[st] || st).toLowerCase(), tom) + chip + '</div>' +
       (a.length ? '<div class="g2f-acts g2f-noprint">' + a.join('') + '</div>' : '') + '</div>';
   }
   function tDespesas() {
-    var ps = [rpc('v39_fin_expenses', C({ p_filter: S.despFiltro }))];
-    if (pode('financial.recurrences.manage')) ps.push(rpc('v39_fin_recurrences', C({})));
+    var temRec = pode('financial.recurrences.manage'), ps = [rpc('v39_fin_expenses', C({ p_filter: S.despFiltro })), carregarPlanos()];
+    if (temRec) ps.push(rpc('v39_fin_recurrences', C({})));
     return Promise.all(ps).then(function (r) {
-      DESP = r[0] || []; RECS = r[1] || [];
+      DESP = r[0] || []; RECS = temRec ? (r[2] || []) : [];
       var h = '<div class="g2f-tool g2f-noprint">' + (pode('financial.expenses.create') ? btn('novaDesp', 'Nova despesa', 'plus') : '') +
         (pode('financial.expenses.create') || pode('financial.bills.manage') ? btn('novoFornec', 'Fornecedor', 'plus', 'g2f-soft') : '') + '</div>';
       h += '<div class="chips g2f-noprint">' + [['abertas', 'Em andamento'], ['encerradas', 'Encerradas (120 dias)'], ['todas', 'Todas']].map(function (f) {
         return '<button type="button" data-a="despFiltro" data-v="' + f[0] + '" class="' + (S.despFiltro === f[0] ? 'on' : '') + '">' + f[1] + '</button>'; }).join('') + '</div>';
       h += '<div class="card lp">' + (DESP.length ? DESP.map(linhaDesp).join('') : '<div class="empty">Nenhuma despesa neste filtro.</div>') + '</div>' +
-        '<div class="g2f-note">Solicitar → aprovar → pagar. Aprovar não mexe no saldo; só o pagamento sai da conta. Quem solicitou não decide o próprio pedido.</div>';
-      if (pode('financial.recurrences.manage')) {
+        '<div class="g2f-note">Solicitar → aprovar → pagar. Aprovar não mexe no saldo; só o pagamento sai da conta. Despesa no cartão de crédito é lançada na fatura depois de aprovada. Quem solicitou não decide o próprio pedido.</div>';
+      if (temRec) {
         h += '<div class="sec">Contas fixas</div><div class="g2f-tool g2f-noprint">' + btn('novaRec', 'Conta fixa', 'plus', 'g2f-soft') + '</div><div class="card lp">' + (RECS.length ? RECS.map(function (rc) {
           return '<div class="row g2f-mv"><span class="g2f-ri pri">' + ic('repeat') + '</span><div class="info"><div class="nm">' + esc(rc.nome) + (rc.status !== 'active' ? ' ' + pill('pausada', 'cinza') : '') + '</div>' +
             '<div class="sb">' + esc((ROT.rec[rc.tipo] || rc.tipo) + ' · próximo ' + dataBR(rc.proximo)) + '</div></div><div class="g2f-amt"><span>' + brl(rc.valor) + '</span></div>' +
@@ -868,12 +1024,21 @@
     });
   }
   function despesa(id) { return DESP.filter(function (x) { return x.id === id; })[0] || null; }
-  function formDesp(e) {
-    e = e || {};
-    form(e.id ? 'Editar despesa' : 'Nova despesa', [
-      { k: 'descricao', l: 'Descrição', v: e.descricao, req: true },
+  function formDesp(e, opts) {
+    e = e || {}; opts = opts || {};
+    var pre = opts.pre || {}, pl = e.id ? PLANOS[e.id] : null, K = opCartoes(), travada = !!(pl && pl.lancada);
+    var temC = K.length > 0 && CARTSQL !== false && !travada, noCartao = function (v) { return temC && v.meio === 'cartao'; };
+    var campos = [
+      { k: 'descricao', l: 'Descrição', v: e.descricao || pre.descricao, req: true },
       { k: 'categoriaId', l: 'Categoria', t: 'select', o: opCats('expense'), v: e.categoriaId, req: true },
-      { k: 'valor', l: 'Valor', t: 'money', v: e.valor, req: true },
+      { k: 'valor', l: 'Valor', t: 'money', v: e.valor || pre.valor, req: true },
+      { k: 'meio', l: 'Como foi ou será pago', t: 'select', o: [['', 'A definir (conta ou caixa)'], ['cartao', 'Cartão de crédito']], v: (pl || pre.cartaoId) ? 'cartao' : '', vazio: false, vis: function () { return temC; } },
+      { k: 'cartaoId', l: 'Cartão de crédito', t: 'select', o: K, v: (pl && pl.cartaoId) || pre.cartaoId || '', req: true, vis: noCartao },
+      { k: 'dataCompra', l: 'Data da compra', t: 'date', v: (pl && String(pl.data).slice(0, 10)) || pre.dataCompra || hoje(), req: true, vis: noCartao },
+      { k: 'parcelasCartao', l: 'Parcelas no cartão', t: 'number', v: (pl && pl.parcelas) || pre.parcelas || 1, vis: noCartao,
+        h: '1 = à vista. A despesa entra na fatura do mês em que a compra fecha e nas seguintes. Aprovar não paga: depois de aprovada, a Tesouraria lança na fatura.' },
+      { t: 'info', l: K.length ? 'Despesa já lançada na fatura do cartão.' : 'Para marcar como cartão de crédito, cadastre o cartão em Transf. e cartões.', vis: function () { return travada || !K.length; } },
+      { t: 'info', l: 'Falta rodar o v39_cartoes_c3.sql no Supabase para marcar despesas como cartão de crédito.', vis: function () { return CARTSQL === false && K.length > 0; } },
       { k: 'fornecedorId', l: 'Fornecedor / beneficiário', t: 'select', o: opFornec(), v: e.fornecedorId, vazio: '— nenhum —' },
       { k: 'emissao', l: 'Emissão', t: 'date', v: e.emissao ? String(e.emissao).slice(0, 10) : '' },
       { k: 'vencimento', l: 'Vencimento', t: 'date', v: e.vencimento ? String(e.vencimento).slice(0, 10) : '' },
@@ -881,32 +1046,44 @@
       { k: 'linhaDigitavel', l: 'Linha digitável do boleto (opcional)' },
       { k: 'arq', l: 'Documento / nota / boleto', t: 'file' }, { k: 'obs', l: 'Observação', t: 'textarea', v: e.obs },
       { k: 'enviar', l: 'Já enviar para aprovação', t: 'check', v: !e.id }
-    ], 'Salvar', function (v) {
+    ];
+    form(e.id ? 'Editar despesa' : 'Nova despesa', campos, 'Salvar', function (v) {
+      var id = null;
       return enviarComprovante(v.arq).then(function (ev) {
         return rpc('v39_fin_expense_save', C({ p_id: e.id || null, p: { descricao: v.descricao, categoriaId: v.categoriaId, valor: v.valor, fornecedorId: v.fornecedorId || null, emissao: v.emissao || null, vencimento: v.vencimento || null, competencia: v.competencia || null, linhaDigitavel: v.linhaDigitavel || null, comprovanteId: ev, obs: v.obs || null, chave: uuid() } }));
       }).then(function (r) {
-        var id = r && r.id;
-        if (v.enviar && id && pode('financial.expenses.submit')) return rpc('v39_fin_expense_submit', C({ p_id: id })).then(function () { return 'Despesa enviada para aprovação.'; });
-        return 'Despesa salva como rascunho.';
+        id = r && r.id;
+        if (!id || travada || !(temC || pl)) return '';
+        var n = Math.max(1, Math.min(24, parseInt(v.parcelasCartao, 10) || 1));
+        var p = v.meio === 'cartao' ? rpc('v39_fin_expense_card_set', C({ p_expense_id: id, p_card_id: v.cartaoId, p_date: v.dataCompra, p_installments: n }))
+          : (pl ? rpc('v39_fin_expense_card_set', C({ p_expense_id: id, p_card_id: null })) : Promise.resolve());
+        return p.then(function () { return ''; }).catch(function (er) { return ' O cartão não ficou marcado: ' + traduz(er); });
+      }).then(function (aviso) {
+        var s = (v.enviar && id && pode('financial.expenses.submit')) ? rpc('v39_fin_expense_submit', C({ p_id: id })).then(function () { return 'Despesa enviada para aprovação.'; }) : Promise.resolve('Despesa salva como rascunho.');
+        return s.then(function (m) {
+          if (v.meio === 'cartao' && !aviso) m += ' Marcada como cartão de crédito.';
+          if (opts.aoSalvar && id) return Promise.resolve(opts.aoSalvar(id)).then(function () { return m + (aviso || ''); }, function () { return m + (aviso || '') + ' A linha da fatura não foi atualizada.'; });
+          return m + (aviso || '');
+        });
       });
     });
   }
   function pagarDesp(id) {
     var e = despesa(id); if (!e) return;
-    var saldo = arr2(num(e.aprovado || e.valor) - num(e.pago)), cart = opCartoes();
-    var conta = function (v) { return v.meio !== 'cartao'; }, cartao = function (v) { return v.meio === 'cartao'; };
-    form('Pagar · ' + e.descricao, [
-      { t: 'info', l: 'Aprovado ' + brl(e.aprovado || e.valor) + ' · já pago ' + brl(e.pago) + ' · a pagar ' + brl(saldo) },
-      { k: 'data', l: 'Data do pagamento', t: 'date', v: hoje(), req: true }, { k: 'valor', l: 'Valor pago', t: 'money', v: saldo, req: true },
-      { k: 'meio', l: 'Pagar com', t: 'select', o: [['conta', 'Conta / caixa']].concat(cart.length ? [['cartao', 'Cartão de crédito']] : []), v: 'conta', vazio: false },
+    var saldo = arr2(num(e.aprovado || e.valor) - num(e.pago)), cart = opCartoes(), pl = PLANOS[id], doCartao = !!(pl && !pl.lancada && cart.some(function (c) { return c[0] === pl.cartaoId; }));
+    var conta = function (v) { return v.meio !== 'cartao'; }, cartao2 = function (v) { return v.meio === 'cartao'; };
+    form((doCartao ? 'Lançar na fatura · ' : 'Pagar · ') + e.descricao, [
+      { t: 'info', l: 'Aprovado ' + brl(e.aprovado || e.valor) + ' · já pago ' + brl(e.pago) + ' · a pagar ' + brl(saldo) + (doCartao ? ' · cartão ' + esc(cartaoNome(pl.cartaoId)) : '') },
+      { k: 'data', l: doCartao ? 'Data da compra' : 'Data do pagamento', t: 'date', v: (doCartao && String(pl.data).slice(0, 10)) || hoje(), req: true }, { k: 'valor', l: 'Valor', t: 'money', v: saldo, req: true },
+      { k: 'meio', l: 'Pagar com', t: 'select', o: [['conta', 'Conta / caixa']].concat(cart.length ? [['cartao', 'Cartão de crédito']] : []), v: doCartao ? 'cartao' : 'conta', vazio: false },
       { k: 'contaId', l: 'Conta', t: 'select', o: opContas(true), vis: conta }, { k: 'formaId', l: 'Forma', t: 'select', o: opFormas(true), vis: conta },
       { k: 'arq', l: 'Comprovante do pagamento', t: 'file', vis: conta, h: 'Obrigatório em conta/caixa.' },
-      { k: 'cartaoId', l: 'Cartão', t: 'select', o: cart, vis: cartao }, { k: 'parcelas', l: 'Parcelas no cartão', t: 'number', v: 1, vis: cartao, h: 'No cartão lance o valor total; as parcelas vão para as próximas faturas.' },
+      { k: 'cartaoId', l: 'Cartão', t: 'select', o: cart, v: doCartao ? pl.cartaoId : '', vis: cartao2 }, { k: 'parcelas', l: 'Parcelas no cartão', t: 'number', v: doCartao ? pl.parcelas : 1, vis: cartao2, h: 'No cartão lance o valor total; as parcelas vão para as próximas faturas.' },
       { k: 'obs', l: 'Observação', t: 'textarea' }
-    ], 'Registrar pagamento', function (v) {
+    ], doCartao ? 'Lançar na fatura' : 'Registrar pagamento', function (v) {
       if (v.meio === 'cartao') {
         if (!v.cartaoId) return Promise.reject(new Error('FIN_CARD_INVALID'));
-        return rpc('v39_fin_expense_pay', C({ p_id: id, p: { data: v.data, valor: v.valor, cartaoId: v.cartaoId, parcelas: Math.max(1, Math.min(24, parseInt(v.parcelas, 10) || 1)), obs: v.obs || null, chave: uuid() } })).then(function () { return 'Compra lançada no cartão.'; });
+        return rpc('v39_fin_expense_pay', C({ p_id: id, p: { data: v.data, valor: v.valor, cartaoId: v.cartaoId, parcelas: Math.max(1, Math.min(24, parseInt(v.parcelas, 10) || 1)), obs: v.obs || null, chave: uuid() } })).then(function () { return 'Compra lançada na fatura do cartão.'; });
       }
       if (!v.contaId) return Promise.reject(new Error('FIN_ACCOUNT_INVALID'));
       if (!v.formaId) return Promise.reject(new Error('FIN_METHOD_INVALID'));
@@ -931,11 +1108,12 @@
   }
 
   /* ───────────── TRANSFERÊNCIAS E CARTÕES ───────────── */
-  var FATS = [];
   function tTransf() {
-    var ps = [pode('financial.book.view') ? rpc('v39_fin_transfers', C({ p_year: S.ano, p_month: S.mes })) : Promise.resolve([]), pode('financial.book.view') ? rpc('v39_fin_card_statements', C({})) : Promise.resolve([])];
+    var vb = pode('financial.book.view'), verDesp = vb || pode('financial.expenses.view');
+    var ps = [vb ? rpc('v39_fin_transfers', C({ p_year: S.ano, p_month: S.mes })) : Promise.resolve([]), vb ? rpc('v39_fin_card_statements', C({})) : Promise.resolve([]),
+      carregarPlanos(), carregarFaturasImp(), verDesp ? rpc('v39_fin_expenses', C({ p_filter: 'abertas' })).catch(function () { return []; }) : Promise.resolve([])];
     return Promise.all(ps).then(function (r) {
-      var T = r[0] || []; FATS = r[1] || []; var h = '';
+      var T = r[0] || []; FATS = r[1] || []; DESP = r[4] || []; var h = '';
       if (pode('financial.transfers.manage')) {
         h += '<div class="g2f-tool g2f-noprint">' + (tes() ? btn('novaTransf', 'Transferir', 'swap') : '') + '</div><div class="sec">Transferências</div><div class="card lp">' + (T.length ? T.map(function (t) {
           return '<div class="row g2f-mv"><span class="g2f-ri">' + ic('swap') + '</span><div class="info"><div class="nm">' + esc(t.origem) + ' → ' + esc(t.destino) + '</div><div class="sb">' + esc(dataBR(t.data) + (t.descricao ? ' · ' + t.descricao : '')) + '</div></div>' +
@@ -943,17 +1121,32 @@
             (((t.status === 'posted' || t.status === 'reconciled') && tes()) ? '<div class="g2f-acts">' + bt('estTransf', t.id, 'Estornar', 'red') + '</div>' : '') + '</div>';
         }).join('') : '<div class="empty">Nenhuma transferência em ' + MESES[S.mes - 1] + '.</div>') + '</div><div class="g2f-note">Transferir não é entrada nem saída: tira de uma conta e põe na outra (ex.: depósito do caixa no banco).</div>';
       }
-      if (pode('financial.cards.manage') || FATS.length) {
-        var K = (S.cat && S.cat.cartoes) || [];
-        h += '<div class="sec">Cartões</div><div class="g2f-tool g2f-noprint">' + (pode('financial.cards.manage') ? btn('novoCartao', 'Cartão', 'plus', 'g2f-soft') : '') + '</div><div class="card lp">' + (K.length ? K.map(function (k) {
+      var K = (S.cat && S.cat.cartoes) || [];
+      if (pode('financial.cards.manage') || FATS.length || K.length) {
+        h += '<div class="sec">Cartões de crédito</div><div class="g2f-tool g2f-noprint">' + (pode('financial.cards.manage') ? btn('novoCartao', 'Cartão', 'plus', 'g2f-soft') : '') +
+          (pode('financial.cards.manage') && K.length ? btn('importFatura', 'Importar fatura', 'dl') : '') + '</div><div class="card lp">' + (K.length ? K.map(function (k) {
           return '<div class="row g2f-mv"><span class="g2f-ri pri">' + ic('card') + '</span><div class="info"><div class="nm">' + esc(k.nome) + ' •' + esc(k.final) + (k.status !== 'active' ? ' ' + pill('inativo', 'cinza') : '') + '</div><div class="sb">' + esc((k.banco || '') + ' · fecha dia ' + k.fechamento + ' · vence dia ' + k.vencimento) + '</div></div>' +
             (pode('financial.cards.manage') ? '<div class="g2f-acts">' + bt('editCartao', k.id, 'Editar', 'sec') + '</div>' : '') + '</div>';
         }).join('') : '<div class="empty">Nenhum cartão.</div>') + '</div>';
+        if (CARTSQL === false && pode('financial.expenses.create')) h += '<div class="aviso">Para ligar despesas ao cartão e importar faturas, rode o <b>v39_cartoes_c3.sql</b> no Supabase.</div>';
+        var pv = previstasCartao(DESP);
+        if (pv.length) {
+          h += '<div class="sec" style="display:flex;justify-content:space-between;align-items:center"><span>Despesas no cartão · previstas na fatura</span><span class="g2f-mut">' + brl(arr2(pv.reduce(function (s, x) { return s + num(x.e.aprovado || x.e.valor); }, 0))) + '</span></div><div class="card lp">' + pv.map(function (x) {
+            var e = x.e, pl = x.pl, a = [];
+            if ((e.status === 'approved' || e.status === 'partially_paid') && tes() && pode('financial.expenses.pay')) a.push(bt('pagarDesp', e.id, 'Lançar na fatura'));
+            return '<div class="row g2f-mv"><span class="g2f-ri amb">' + ic('card') + '</span><div class="info"><div class="nm">' + esc(e.descricao) + '</div><div class="sb">' +
+              esc(cartaoNome(pl.cartaoId) + ' · compra ' + dataBR(pl.data) + ' · ' + (pl.parcelas > 1 ? pl.parcelas + 'x' : 'à vista') + ' · entra na fatura ' + pad(x.f.mes) + '/' + x.f.ano + ' · ' + (ROT.desp[e.status] || e.status).toLowerCase()) + '</div></div>' +
+              '<div class="g2f-amt"><span>' + brl(e.aprovado || e.valor) + '</span>' + pill('prevista', 'amarelo') + '</div>' + (a.length ? '<div class="g2f-acts g2f-noprint">' + a.join('') + '</div>' : '') + '</div>';
+          }).join('') + '</div><div class="g2f-note">Despesas marcadas como cartão de crédito em Despesas. Depois de aprovadas, a Tesouraria lança na fatura e a compra passa a valer como despesa. Aprovar não paga nada.</div>';
+        }
         h += '<div class="sec">Faturas</div><div class="card lp">' + (FATS.length ? FATS.map(function (s, i) {
-          return '<div class="row g2f-mv"><span class="g2f-ri amb">' + ic('receipt') + '</span><div class="info"><div class="nm">' + esc(s.cartao) + ' · ' + pad(s.mes) + '/' + s.ano + '</div><div class="sb">' + esc('vence ' + dataBR(s.vencimento) + ' · compras ' + brl(s.compras) + ' · pago ' + brl(s.pago)) + '</div></div>' +
+          var imp = impDoMes(s.cartaoId, s.ano, s.mes), dif = imp ? arr2(num(imp.total) - num(s.compras)) : 0;
+          return '<div class="row g2f-mv"><span class="g2f-ri amb">' + ic('receipt') + '</span><div class="info"><div class="nm">' + esc(s.cartao) + ' · ' + pad(s.mes) + '/' + s.ano + '</div><div class="sb">' + esc('vence ' + dataBR(s.vencimento) + ' · compras ' + brl(s.compras) + ' · pago ' + brl(s.pago)) + '</div>' +
+            (imp ? '<div class="sb ' + (Math.abs(dif) < 0.01 ? 'g2f-pos' : 'g2f-neg') + '">Fatura do banco ' + esc(brl(imp.total)) + (Math.abs(dif) < 0.01 ? ' · confere ✓' : ' · diferença ' + esc(brl(dif))) + '</div>' : '') + '</div>' +
             '<div class="g2f-amt"><span>' + brl(s.aberto) + '</span>' + pill((ROT.fat[s.status] || s.status).toLowerCase(), s.status === 'paid' ? 'verde' : 'amarelo') + '</div>' +
             '<div class="g2f-acts">' + bt('verFatura', i, 'Itens', 'sec') + (tes() && pode('financial.expenses.pay') && num(s.aberto) > 0 && s.status !== 'paid' ? bt('pagarFatura', i, 'Pagar fatura') : '') + '</div></div>';
-        }).join('') : '<div class="empty">Nenhuma fatura.</div>') + '</div><div class="g2f-note">A compra no cartão é a despesa; pagar a fatura só liquida (não duplica a despesa).</div>';
+        }).join('') : '<div class="empty">Nenhuma fatura ainda. Elas aparecem quando uma despesa no cartão é lançada, ou importe a fatura do banco.</div>') + '</div><div class="g2f-note">A compra no cartão é a despesa; pagar a fatura só liquida (não duplica a despesa).</div>';
+        if (FATIMP.length) h += '<div class="sec">Faturas importadas · conferência</div>' + FATIMP.map(cardFaturaImp).join('');
       }
       corpo(h || '<div class="card"><div class="empty">Sem acesso a transferências ou cartões.</div></div>');
     });
@@ -1070,7 +1263,6 @@
         return '<div>' + d.n + 'ª · ' + esc(dataBR(d.venc)) + ' · ' + esc(brl(d.valor)) + ' · ' + (d.status === 'paid' ? 'paga' : num(d.recebido) > 0 ? 'parcial (' + esc(brl(d.recebido)) + ')' : 'a vencer') + '</div>'; }).join('') + '</details>' : '') + '</div>' +
       '<div class="g2f-amt">' + pill((ROT.comp[c.status] || c.status).toLowerCase(), tom) + '</div>' + (a.length ? '<div class="g2f-acts g2f-noprint">' + a.join('') + '</div>' : '') + '</div>';
   }
-  // Meta da campanha em destaque: meta, já recebido, QUANTO FALTA para a meta e o que ainda vai entrar dos acordos
   function blocoMeta(g) {
     var ac = num(g.acordado), rc = num(g.recebido), meta = num(g.meta), aRec = arr2(Math.max(0, ac - rc));
     if (!(meta > 0)) {
@@ -1335,7 +1527,7 @@
       case 'lancarLote': return lancarLote(+v);
       case 'estLote': return motivo('Estornar lote', function (m) { return rpc('v39_fin_source_reverse', C({ p_batch: v, p_reason: m })).then(function () { return 'Lote estornado. O encontro/culto volta para "A conferir".'; }); }, 'Estornar');
       case 'novaEntrada': return novaEntrada();
-      case 'novaDesp': return formDesp(null);
+      case 'novaDesp': return carregarPlanos().then(function () { formDesp(null); });
       case 'editDesp': return formDesp(despesa(v));
       case 'enviarDesp': return acao(rpc('v39_fin_expense_submit', C({ p_id: v })).then(function () { return 'Enviada para aprovação.'; }));
       case 'aprovarDesp': {
@@ -1363,15 +1555,27 @@
       case 'estTransf': return motivo('Estornar transferência', function (m) { return rpc('v39_fin_transfer_reverse', C({ p_id: v, p_reason: m })).then(function () { return 'Transferência estornada.'; }); }, 'Estornar');
       case 'novoCartao': return formCartao(null);
       case 'editCartao': return formCartao(achar(S.cat.cartoes, v));
+      case 'importFatura': return formImportarFatura();
+      case 'criarFatLinha': {
+        var q = String(v).split('|'), inv = FATIMP[+q[0]]; if (!inv) return;
+        var ln = (inv.linhas || []).filter(function (l) { return l.id === q[1]; })[0]; if (!ln) return;
+        return formDesp(null, { pre: { descricao: ln.descricao + (ln.parcela ? ' (' + ln.parcela + ')' : ''), valor: ln.valor, cartaoId: inv.cartaoId, dataCompra: String(ln.data || inv.vencimento || hoje()).slice(0, 10), parcelas: 1 },
+          aoSalvar: function (id) { return rpc('v39_fin_invoice_line_set', C({ p_line: ln.id, p_status: 'expense', p_expense: id, p_note: null })); } });
+      }
+      case 'ignFatLinha': {
+        var q2 = String(v).split('|');
+        return motivo('Ignorar linha da fatura', function (m) { return rpc('v39_fin_invoice_line_set', C({ p_line: q2[1], p_status: 'ignored', p_expense: null, p_note: m })).then(function () { return 'Linha ignorada.'; }); }, 'Ignorar');
+      }
+      case 'cancFatura': return motivo('Cancelar fatura importada', function (m) { return rpc('v39_fin_invoice_cancel', C({ p_invoice: v, p_reason: m })).then(function () { return 'Fatura importada cancelada.'; }); }, 'Cancelar fatura');
       case 'verFatura': {
         var s = FATS[+v]; if (!s) return;
         return form('Fatura ' + s.cartao + ' ' + pad(s.mes) + '/' + s.ano, [{ t: 'info', l: (s.itens || []).map(function (i) { return esc(dataBR(i.data)) + ' · ' + esc(i.descricao) + ' · ' + esc(i.parcela) + ' · ' + esc(brl(i.valor)); }).join('<br>') || 'Sem compras.' }], 'OK', function () { return false; });
       }
       case 'pagarFatura': {
         var f = FATS[+v]; if (!f) return;
-        var ct = (achar(S.cat.cartoes, f.cartaoId) || {}).contaId || '';
+        var ct = (achar(S.cat.cartoes, f.cartaoId) || {}).contaId || '', imp = impDoMes(f.cartaoId, f.ano, f.mes);
         return form('Pagar fatura ' + f.cartao + ' ' + pad(f.mes) + '/' + f.ano, [
-          { t: 'info', l: 'Em aberto: ' + brl(f.aberto) + '. Pagar a fatura não cria despesa nova (as compras já são as despesas).' },
+          { t: 'info', l: 'Em aberto no sistema: ' + brl(f.aberto) + '. Pagar a fatura não cria despesa nova (as compras já são as despesas).' + (imp ? ' <b>Fatura do banco: ' + esc(brl(imp.total)) + '.</b>' + (Math.abs(arr2(num(imp.total) - num(f.compras))) >= 0.01 ? ' Há diferença de ' + esc(brl(arr2(num(imp.total) - num(f.compras)))) + ' entre o banco e o sistema: confira antes de pagar.' : ' Confere com o sistema.') : '') },
           { k: 'data', l: 'Data', t: 'date', v: hoje(), req: true }, { k: 'valor', l: 'Valor pago', t: 'money', v: f.aberto, req: true },
           { k: 'contaId', l: 'Conta', t: 'select', o: opContas(true), v: ct, req: true }, { k: 'formaId', l: 'Forma', t: 'select', o: opFormas(true), req: true },
           { k: 'arq', l: 'Comprovante', t: 'file', req: true }, { k: 'obs', l: 'Observação', t: 'textarea' }
@@ -1381,8 +1585,8 @@
       }
       case 'casar': { var pp = String(v).split('|'); return acao(rpc('v39_fin_statement_match', C({ p_line: pp[0], p_movement: pp[1] })).then(function () { return 'Linha conciliada.'; })); }
       case 'ignLinha': {
-        var ln = achar(CONC && CONC.linhas, v);
-        if (ln && ln.status === 'ignored') return acao(rpc('v39_fin_statement_ignore', C({ p_line: v, p_reason: null })).then(function () { return 'Linha reativada.'; }));
+        var ln2 = achar(CONC && CONC.linhas, v);
+        if (ln2 && ln2.status === 'ignored') return acao(rpc('v39_fin_statement_ignore', C({ p_line: v, p_reason: null })).then(function () { return 'Linha reativada.'; }));
         return motivo('Ignorar linha do extrato', function (m) { return rpc('v39_fin_statement_ignore', C({ p_line: v, p_reason: m })).then(function () { return 'Linha ignorada.'; }); }, 'Ignorar');
       }
       case 'fecharConc':
@@ -1396,15 +1600,15 @@
       case 'receber': return receber(v);
       case 'zap': return zap(v);
       case 'msgEnv': {
-        var q = FILA[+v]; if (!q) return;
-        var gq = CAMPS[q.gi], cq = gq.compromissos[q.ci];
-        marcarMsg(cq.id, q.tipo, q.n, msgTexto(q.tipo, gq, cq, { n: q.n }), false).then(function () { S.cache = null; setTimeout(recarregar, 700); });
+        var qm = FILA[+v]; if (!qm) return;
+        var gq = CAMPS[qm.gi], cq = gq.compromissos[qm.ci];
+        marcarMsg(cq.id, qm.tipo, qm.n, msgTexto(qm.tipo, gq, cq, { n: qm.n }), false).then(function () { S.cache = null; setTimeout(recarregar, 700); });
         return;                                   // o link do WhatsApp segue o caminho normal (abre em nova aba)
       }
       case 'msgDisp': {
-        var q2 = FILA[+v]; if (!q2) return;
-        var c2 = CAMPS[q2.gi].compromissos[q2.ci];
-        return marcarMsg(c2.id, q2.tipo, q2.n, null, true).then(function () { toast('Mensagem dispensada.'); S.cache = null; recarregar(); });
+        var q3 = FILA[+v]; if (!q3) return;
+        var c2 = CAMPS[q3.gi].compromissos[q3.ci];
+        return marcarMsg(c2.id, q3.tipo, q3.n, null, true).then(function () { toast('Mensagem dispensada.'); S.cache = null; recarregar(); });
       }
       case 'cancComp': return motivo('Cancelar participante', function (m) { return rpc('v39_fin_commitment_cancel', C({ p_id: v, p_reason: m })).then(function () { return 'Participante cancelado.'; }); }, 'Cancelar participante');
       case 'estRec': return motivo('Estornar recebimento', function (m) { return rpc('v39_fin_receipt_reverse', C({ p_receipt: v, p_reason: m })).then(function () { return 'Recebimento estornado.'; }); }, 'Estornar');
@@ -1464,7 +1668,6 @@
     }).catch(function (e) { console.warn('[2Gather][fin] ' + traduz(e)); D.dados = { erro: traduz(e) }; })
       .then(function () { D.carregando = false; D.em = Date.now(); var x = $('g2f-dash'); if (x) x.remove(); pintarDash(); });
   }
-  /* gráfico de colunas (HTML puro): barras verdes = entradas, vermelhas = saídas */
   function grafico(cols, classe) {
     var mx = 0; cols.forEach(function (c) { if (c.a > mx) mx = c.a; if (c.b > mx) mx = c.b; }); if (!(mx > 0)) mx = 1;
     var h = function (v) { return v > 0 ? Math.max(3, Math.round(v / mx * 100)) : 0; };
@@ -1486,7 +1689,7 @@
   function variacao(atual, anterior) {
     if (!(anterior > 0)) return '';
     var p = Math.round((atual - anterior) / anterior * 100);
-    return '<span class="g2f-delta ' + (p === 0 ? '' : '') + '">' + (p > 0 ? '▲ ' : p < 0 ? '▼ ' : '= ') + Math.abs(p) + '% vs mês anterior</span>';
+    return (p > 0 ? '▲ ' : p < 0 ? '▼ ' : '= ') + Math.abs(p) + '% vs mês anterior';
   }
   function htmlDash() {
     var d = D.dados || {}, ov = d.ov || {}, t = ov.totais || {}, contas = ov.contas || [], L = ov.livro || [], h = '';
@@ -1497,22 +1700,19 @@
     var nPagar = (d.desp || []).filter(function (e) { return e.status === 'approved' || e.status === 'partially_paid'; }).length;
     var nMsg = d.camps && SENT ? filaMsgs().length : 0, ano = serieAno();
     var pAnt = ano && S.mes > 1 ? ano[S.mes - 2] : null;
-
     if (d.ov) {
       h += '<div class="g2f-per g2f-dashper"><button type="button" data-d="mesAnt" aria-label="Mês anterior">' + ic('chevl') + '</button><b>' + MESES[S.mes - 1] + ' ' + S.ano + '</b><button type="button" data-d="mesProx" aria-label="Próximo mês">' + ic('chevr') + '</button></div>';
       h += '<div class="stats">' + stat('Entradas', brl(t.entradas), 'in', 'down', 'g2f-pos', pAnt ? variacao(num(t.entradas), pAnt.r) || 'no mês' : 'no mês') + stat('Saídas', brl(t.saidas), 'out', 'up', 'g2f-neg', pAnt ? variacao(num(t.saidas), pAnt.d) || 'no mês' : 'no mês') +
         stat('Resultado', brl(t.resultado), 'pri', 'trend', num(t.resultado) < 0 ? 'g2f-neg' : 'g2f-pos', 'entradas − saídas') + stat('Saldo atual', brl(saldo), 'pri', 'wallet', '', 'todas as contas, hoje') + '</div>';
     }
     h += '<div class="big-cta" data-d="abrir" data-v="livro" role="button" tabindex="0"><div class="bi">' + ic('book', 26) + '</div><div><b>Abrir Livro financeiro</b><span>Lançamentos, despesas, campanhas e relatórios</span></div></div>';
-
     var pend = [];
     if (nPend && pode('financial.sources.view')) pend.push({ n: nPend, txt: 'GC/cultos com valores <b>a conferir</b>', aba: 'conferir', i: 'inbox' });
     if (nAprov && pode('financial.expenses.approve')) pend.push({ n: nAprov, txt: 'despesa(s) <b>aguardando sua aprovação</b>', aba: 'despesas', i: 'receipt' });
-    if (nPagar && tes() && pode('financial.expenses.pay')) pend.push({ n: nPagar, txt: 'despesa(s) aprovada(s) <b>a pagar</b>', aba: 'despesas', i: 'cash' });
+    if (nPagar && tes() && pode('financial.expenses.pay')) pend.push({ n: nPagar, txt: 'despesa(s) aprovada(s) <b>a pagar ou lançar na fatura</b>', aba: 'despesas', i: 'cash' });
     if (nMsg) pend.push({ n: nMsg, txt: 'mensagem(ns) de campanha <b>para enviar hoje</b>', aba: 'camp', i: 'chat' });
     if (pend.length) h += '<div class="card lp">' + pend.map(function (p) {
       return '<div class="row g2f-mv g2f-click" data-d="abrir" data-v="' + p.aba + '"><span class="g2f-ri amb">' + ic(p.i) + '</span><div class="info"><div class="nm"><b>' + p.n + '</b> ' + p.txt + '</div></div>' + ic('chevr') + '</div>'; }).join('') + '</div>';
-
     if (ano) {
       var cols = ano.map(function (m) { return { rot: MES3[m.mes - 1], a: m.r, b: m.d, on: m.mes === S.mes, tit: MESES[m.mes - 1] + ': entradas ' + brl(m.r) + ' · saídas ' + brl(m.d) }; });
       var tr = ano.reduce(function (s, m) { return s + m.r; }, 0), td = ano.reduce(function (s, m) { return s + m.d; }, 0);
@@ -1520,7 +1720,7 @@
     }
     if (d.ov) {
       var dias = new Date(S.ano, S.mes, 0).getDate(), porDia = []; for (var i = 1; i <= dias; i++) porDia.push({ a: 0, b: 0 });
-      var catIn = {}, catOut = {};
+      var catIn = {};
       L.forEach(function (m) {
         var ef = num(m.efeitoResultado), v = num(m.valor) * ef, di = parseInt(String(m.data).slice(8, 10), 10);
         if (!ef) return;
@@ -1541,7 +1741,6 @@
         var p = Math.max(0, Math.round(num(a.saldoAtual) / pos * 100));
         return '<div class="g2f-hb"><div class="t"><span>' + esc(a.nome) + (a.naoConciliados ? ' <span class="g2f-mut">· ' + a.naoConciliados + ' a conciliar</span>' : '') + '</span><b>' + brl(a.saldoAtual) + '</b></div><div class="b"><i style="width:' + Math.max(2, p) + '%;background:var(--pri,#2F5BEA)"></i></div></div>'; }).join('') + '</div>';
     } else if (d.ov) h += '<div class="card"><div class="empty">Nenhuma conta cadastrada. Abra o Livro › Cadastros para cadastrar as contas bancárias, o caixa e o plano de contas.</div></div>';
-
     var ativas = (d.camps || []).filter(function (g) { return ['active', 'planned'].indexOf(g.status) >= 0; });
     if (ativas.length) {
       h += '<div class="card"><div class="g2f-dh"><h3>Campanhas e votos</h3><span class="g2f-mut">a receber ' + brl(somaPrev(prev)) + '</span></div>' + ativas.slice(0, 5).map(function (g) {
@@ -1559,7 +1758,6 @@
     }
     return h;
   }
-  // o consolidado anterior (cultos/GC) fica sempre escondido: o dashboard acima o substitui
   function esconderLegado(main, dash) {
     var passou = false;
     Array.prototype.forEach.call(main.children, function (el) {
@@ -1606,14 +1804,14 @@
       var at = $('g2f-atalhos'); if (at) at.remove();
       var u = String(eu().id || eu().usuario || eu().email || '') + '|' + (igrejaId() || '');
       if (u !== ultimoUsuario) {
-        ultimoUsuario = u; S.ctx = null; S.cat = null; S.cache = null; D.dados = null; S.aberto = false; CAMPS = []; SENT = null;
+        ultimoUsuario = u; S.ctx = null; S.cat = null; S.cache = null; D.dados = null; S.aberto = false; CAMPS = []; SENT = null; PLANOS = {}; FATIMP = []; FATS = [];
         var o = $('g2fin'); if (o) o.remove(); var d = $('g2f-dash'); if (d) d.remove(); fecharMod();
       }
       if (!cfg().usuario || !v39()) return;
       if (S.aberto) {
         if (!telaFinanceiro()) { S.aberto = false; var o2 = $('g2fin'); if (o2) o2.remove(); return; }
         var main = $('main');
-        if (main && !$('g2fin')) restaurar();          // o app redesenhou a tela: volta o Livro do que já estava carregado
+        if (main && !$('g2fin')) restaurar();
         else if (main) esconderMain(main, true);
         return;
       }
@@ -1621,7 +1819,6 @@
     } finally { ocupado = false; }
   }
   setInterval(manter, 1500);
-  // reage no mesmo instante em que o app troca o conteúdo da área principal (sem esperar o intervalo)
   (function observar() {
     var main = $('main'); if (!main) { setTimeout(observar, 400); return; }
     try { new MutationObserver(function () { manter(); }).observe(main, { childList: true }); } catch (e) { /* sem observer: o intervalo cobre */ }
@@ -1633,5 +1830,7 @@
   window.G2_FIN._lerValor = lerValor;
   window.G2_FIN._t = { S: S, tLivro: tLivro, tCamp: tCamp, tDespesas: tDespesas, tConferir: tConferir, tCad: tCad, tTransf: tTransf, tConc: tConc, tRel: tRel, htmlDash: htmlDash, D: D,
     setCamps: function (c) { CAMPS = c; }, setSent: function (s) { SENT = s; }, filaMsgs: filaMsgs, previstos: previstos, novaEntrada: novaEntrada, novoComp: novoComp, editParc: editParc, zap: zap, receber: receber,
-    msgTexto: msgTexto, genParcelas: genParcelas, addMeses: addMeses, bt: bt, carregarCtx: carregarCtx, carregarCat: carregarCat, pintarBase: pintarBase, restaurar: restaurar, manter: manter, corpo: corpo };
+    msgTexto: msgTexto, genParcelas: genParcelas, addMeses: addMeses, bt: bt, carregarCtx: carregarCtx, carregarCat: carregarCat, pintarBase: pintarBase, restaurar: restaurar, manter: manter, corpo: corpo,
+    formDesp: formDesp, pagarDesp: pagarDesp, formImportarFatura: formImportarFatura, parseFatura: parseFatura, conferirFatura: conferirFatura, mesFechamento: mesFechamento, vencFatura: vencFatura,
+    previstasCartao: previstasCartao, setPlanos: function (p) { PLANOS = p; }, setFatimp: function (f) { FATIMP = f; }, setFats: function (f) { FATS = f; }, setDesp: function (d) { DESP = d; }, clique: clique };
 })();
