@@ -1,14 +1,16 @@
-/* 2Gather v39 · Financeiro completo · FIN-ALL-1
-   Carregar DEPOIS do app.js e dos módulos v39 (depois de app_v39_setores.js). Não altera o app.js.
-   Requer: v39_financeiro_completo.sql (FIN-ALL-1) rodado no Supabase.
+/* 2Gather v39 · Financeiro completo · FIN-ALL-4
+   Substitui app_v39_financeiro.js (FIN-ALL-1/2/3): no index.html deixe só este arquivo.
+   Carregar DEPOIS do app.js e dos módulos v39. Não altera o app.js. Requer o v39_financeiro_completo.sql (nada muda no SQL).
 
-   Abas (cada uma aparece só para quem tem a permissão):
-   Resumo · Livro · A conferir (GC e cultos) · Nova entrada · Despesas · Transferências e cartões ·
-   Conciliação · Campanhas · Cadastros · Relatórios
-   Regras: somente RPCs v39_fin_* (sem escrita direta em tabela); comprovantes no bucket privado fin-comprovantes. */
+   - Tela Financeiro do app vira PAINEL: Entradas, Saídas, Resultado e Saldo atual do Livro (mês escolhido), saldo por
+     conta, pendências (A conferir, despesas aguardando aprovação / a pagar) e o botão "Abrir Livro financeiro".
+     Os indicadores antigos (consolidado de cultos/GC) ficam escondidos, com o link "Ver consolidado anterior".
+   - O Livro abre DENTRO da área principal, com o layout das outras telas. "‹" volta ao painel.
+   - Sem botão flutuante e sem faixa azul (sobras de versões antigas são removidas).
+   Regras: somente RPCs v39_fin_*; comprovantes no bucket privado fin-comprovantes. */
 (function () {
   'use strict';
-  var VERSAO = 'FIN-ALL-1';
+  var VERSAO = 'FIN-ALL-4';
   if (window.G2_FIN) return;
   window.G2_FIN = { versao: VERSAO };
   console.info('[2Gather] financeiro ' + VERSAO);
@@ -17,7 +19,7 @@
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function G() { return window.__gc || null; }
-  function cfg() { var g = G(); return (g && g.cfg && g.cfg()) || {}; }
+  function cfg() { var g = G(); try { return (g && g.cfg && g.cfg()) || {}; } catch (e) { return {}; } }
   function eu() { return cfg().usuario || {}; }
   function igrejaId() {
     var V = window.G2_V39 || {};
@@ -49,7 +51,6 @@
     conta: { checking: 'Conta corrente', savings: 'Poupança', cash: 'Caixa (dinheiro)', pix: 'PIX', digital_wallet: 'Carteira digital', investment: 'Investimento', other: 'Outra' },
     nat: { income: 'Entrada', expense: 'Saída', neutral: 'Neutra' },
     comp: { draft: 'Rascunho', active: 'Em dia', due_soon: 'Próximo vencimento', overdue: 'Atrasado', paid: 'Quitado', cancelled: 'Cancelado' },
-    parc: { pending: 'A vencer', due_soon: 'Vence logo', overdue: 'Atrasada', partial: 'Parcial', paid: 'Paga', cancelled: 'Cancelada' },
     fat: { open: 'Aberta', closed: 'Fechada', partially_paid: 'Paga em parte', paid: 'Paga', cancelled: 'Cancelada' },
     lote: { draft: 'Rascunho', submitted: 'Enviado', posted: 'Lançado', reversed: 'Estornado', cancelled: 'Cancelado' },
     camp: { draft: 'Rascunho', planned: 'Planejada', active: 'Ativa', completed: 'Concluída', cancelled: 'Cancelada' },
@@ -127,72 +128,81 @@
   function C(extra) { var a = { p_church_id: igrejaId() }; for (var k in extra) a[k] = extra[k]; return a; }
 
   /* ───────────── estado ───────────── */
-  var S = { ctx: null, cat: null, aba: 'resumo', ano: new Date().getFullYear(), mes: new Date().getMonth() + 1, ov: null, despFiltro: 'abertas', concConta: '', relMes: true };
+  var S = { ctx: null, cat: null, aberto: false, aba: 'livro', ano: new Date().getFullYear(), mes: new Date().getMonth() + 1, ov: null, despFiltro: 'abertas', concConta: '', relMes: true };
   function pode(p) { return !!(S.ctx && S.ctx.perms && S.ctx.perms.indexOf(p) >= 0); }
   function algum() { return !!(S.ctx && S.ctx.perms && S.ctx.perms.length); }
   function tes() { return !!(S.ctx && S.ctx.tesouraria); }
 
-  /* ───────────── estilo ───────────── */
+  /* ───────────── estilo (segue o visual das telas do app) ───────────── */
   function css() {
     if ($('g2f-css')) return;
     var s = document.createElement('style'); s.id = 'g2f-css';
     s.textContent = [
-      '#g2fin{position:fixed;inset:0;z-index:9990;background:#f5f6f8;color:#16181d;overflow:auto;font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}',
-      '#g2fin *{box-sizing:border-box}',
-      '#g2fin .hd{position:sticky;top:0;z-index:2;background:#0f3d5e;color:#fff;padding:10px 14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}',
-      '#g2fin .hd h2{margin:0;font-size:17px;flex:1;min-width:120px}',
-      '#g2fin .hd select,#g2fin .hd button{border:0;border-radius:8px;padding:7px 10px;font:inherit}',
-      '#g2fin .tabs{display:flex;gap:6px;overflow-x:auto;padding:8px 12px;background:#fff;border-bottom:1px solid #e3e6ea;position:sticky;top:52px;z-index:1}',
-      '#g2fin .tabs button{white-space:nowrap;border:1px solid #d5dae0;background:#fff;border-radius:999px;padding:6px 12px;font:inherit;cursor:pointer}',
-      '#g2fin .tabs button.on{background:#0f3d5e;color:#fff;border-color:#0f3d5e}',
-      '#g2fin .bd{padding:12px;max-width:1100px;margin:0 auto}',
-      '#g2fin .card{background:#fff;border:1px solid #e3e6ea;border-radius:12px;padding:12px;margin-bottom:12px}',
-      '#g2fin .card h3{margin:0 0 8px;font-size:15px}',
-      '#g2fin .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}',
-      '#g2fin .kpi{background:#fff;border:1px solid #e3e6ea;border-radius:12px;padding:10px}',
-      '#g2fin .kpi b{display:block;font-size:18px}',
-      '#g2fin .mut{color:#667085;font-size:12px}',
-      '#g2fin .pos{color:#067647}#g2fin .neg{color:#b42318}',
-      '#g2fin table{width:100%;border-collapse:collapse;font-size:13px}',
-      '#g2fin th,#g2fin td{padding:7px 6px;border-bottom:1px solid #eef0f3;text-align:left;vertical-align:top}',
-      '#g2fin td.r,#g2fin th.r{text-align:right;white-space:nowrap}',
-      '#g2fin .tw{overflow-x:auto}',
-      '#g2fin .btn{border:1px solid #0f3d5e;background:#0f3d5e;color:#fff;border-radius:8px;padding:7px 12px;font:inherit;cursor:pointer}',
-      '#g2fin .btn.sec{background:#fff;color:#0f3d5e}',
-      '#g2fin .btn.mini{padding:3px 8px;font-size:12px}',
-      '#g2fin .btn.red{background:#b42318;border-color:#b42318}',
-      '#g2fin .btn:disabled{opacity:.5;cursor:default}',
-      '#g2fin .acts{display:flex;gap:6px;flex-wrap:wrap}',
-      '#g2fin .tag{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11px;background:#eef2f6;color:#344054}',
-      '#g2fin .tag.ok{background:#dcfae6;color:#067647}#g2fin .tag.warn{background:#fef0c7;color:#93370d}#g2fin .tag.bad{background:#fee4e2;color:#b42318}',
-      '#g2fin .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}',
-      '#g2fin .row select,#g2fin .row input{border:1px solid #d0d5dd;border-radius:8px;padding:6px 8px;font:inherit}',
-      '#g2fin .vazio{color:#667085;padding:10px 0}',
+      '.g2f-oculto{display:none!important}',
+      '#g2fin,#g2f-dash{font:inherit;color:inherit}',
+      '#g2fin *,#g2f-dash *{box-sizing:border-box}',
+      '.g2f-top{display:flex;align-items:center;gap:10px;margin:4px 0 2px}',
+      '.g2f-back{border:0;background:#eef0f3;border-radius:10px;width:36px;height:36px;font-size:20px;line-height:1;cursor:pointer;color:inherit}',
+      '.g2f-h1{margin:0;font-size:24px;font-weight:800;letter-spacing:-.01em}',
+      '.g2f-sub{color:#667085;font-size:13px;margin:2px 0 12px}',
+      '.g2f-card{background:#fff;border-radius:16px;padding:14px;margin-bottom:12px;box-shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08)}',
+      '.g2f-card h3{margin:0 0 8px;font-size:15px;font-weight:700}',
+      '.g2f-pills{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}',
+      '.g2f-pills button{white-space:nowrap;border:0;background:#f2f4f7;color:#344054;border-radius:999px;padding:7px 14px;font:600 13px/1.2 inherit;font-family:inherit;cursor:pointer}',
+      '.g2f-pills button.on{background:#16181d;color:#fff}',
+      '.g2f-per{display:flex;gap:8px;margin-top:10px}',
+      '.g2f-per select{flex:1;min-width:0;border:1px solid #e4e7ec;border-radius:12px;padding:10px 12px;font:inherit;background:#fff;color:inherit}',
+      '.g2f-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:12px}',
+      '.g2f-kpi{background:#fff;border-radius:16px;padding:12px 14px;box-shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08)}',
+      '.g2f-kpi span{display:block;color:#667085;font-size:12px;font-weight:600}',
+      '.g2f-kpi b{display:block;font-size:20px;font-weight:800;margin-top:2px}',
+      '.g2f-kpi small{display:block;color:#98a2b3;font-size:11px;margin-top:2px}',
+      '.g2f-mut{color:#667085;font-size:12px}',
+      '.g2f-pos{color:#067647}.g2f-neg{color:#b42318}',
+      '#g2fin table,#g2f-dash table{width:100%;border-collapse:collapse;font-size:13px}',
+      '#g2fin th,#g2fin td,#g2f-dash td{padding:8px 6px;border-bottom:1px solid #f2f4f7;text-align:left;vertical-align:top}',
+      '#g2fin th{color:#667085;font-size:12px;font-weight:600}',
+      '#g2fin td.r,#g2fin th.r,#g2f-dash td.r{text-align:right;white-space:nowrap}',
+      '.g2f-tw{overflow-x:auto}',
+      '.g2f-btn{border:0;background:#16181d;color:#fff;border-radius:12px;padding:9px 14px;font:600 13px/1.2 inherit;font-family:inherit;cursor:pointer}',
+      '.g2f-btn.sec{background:#f2f4f7;color:#16181d}',
+      '.g2f-btn.mini{padding:5px 10px;font-size:12px;border-radius:10px}',
+      '.g2f-btn.red{background:#fee4e2;color:#b42318}',
+      '.g2f-btn.big{width:100%;padding:13px;font-size:15px;border-radius:14px;background:#0f3d5e}',
+      '.g2f-btn:disabled{opacity:.5;cursor:default}',
+      '.g2f-acts{display:flex;gap:6px;flex-wrap:wrap}',
+      '.g2f-tag{display:inline-block;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:600;background:#f2f4f7;color:#344054}',
+      '.g2f-tag.ok{background:#dcfae6;color:#067647}.g2f-tag.warn{background:#fef0c7;color:#93370d}.g2f-tag.bad{background:#fee4e2;color:#b42318}',
+      '.g2f-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}',
+      '.g2f-row select,.g2f-row input{border:1px solid #e4e7ec;border-radius:10px;padding:8px 10px;font:inherit;background:#fff;color:inherit}',
+      '.g2f-vazio{color:#667085;padding:10px 0}',
+      '.g2f-pend{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;background:#fff8e6;color:#7a5a12;margin-bottom:8px;cursor:pointer;border:0;width:100%;text-align:left;font:inherit}',
+      '.g2f-pend b{background:#b7791f;color:#fff;border-radius:999px;min-width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center}',
+      '.g2f-link{background:none;border:0;color:#667085;text-decoration:underline;font:inherit;font-size:12px;cursor:pointer;padding:6px 0}',
       '#g2f-mod{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9995;display:flex;align-items:flex-end;justify-content:center}',
-      '#g2f-mod .box{background:#fff;color:#16181d;width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:14px 14px 0 0;padding:14px;font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}',
-      '@media(min-width:700px){#g2f-mod{align-items:center}#g2f-mod .box{border-radius:14px}}',
-      '#g2f-mod h3{margin:0 0 10px;font-size:16px}',
+      '#g2f-mod .box{background:#fff;color:#16181d;width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:16px 16px 0 0;padding:16px;font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}',
+      '@media(min-width:700px){#g2f-mod{align-items:center}#g2f-mod .box{border-radius:16px}}',
+      '#g2f-mod h3{margin:0 0 10px;font-size:17px}',
       '#g2f-mod label{display:block;font-size:12px;color:#475467;margin:8px 0 3px}',
-      '#g2f-mod input,#g2f-mod select,#g2f-mod textarea{width:100%;border:1px solid #d0d5dd;border-radius:8px;padding:8px;font:inherit;background:#fff;color:#16181d}',
+      '#g2f-mod input,#g2f-mod select,#g2f-mod textarea{width:100%;border:1px solid #d0d5dd;border-radius:10px;padding:9px;font:inherit;background:#fff;color:#16181d}',
       '#g2f-mod textarea{min-height:70px}',
       '#g2f-mod .chk{display:flex;gap:6px;align-items:center;margin-top:8px}#g2f-mod .chk input{width:auto}',
       '#g2f-mod .hint{font-size:12px;color:#667085;margin-top:3px}',
       '#g2f-mod .err{color:#b42318;font-size:13px;margin-top:8px;min-height:1em}',
       '#g2f-mod .ft{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}',
-      '#g2f-mod .ft button{border:1px solid #0f3d5e;background:#0f3d5e;color:#fff;border-radius:8px;padding:8px 14px;font:inherit;cursor:pointer}',
-      '#g2f-mod .ft button.sec{background:#fff;color:#0f3d5e}',
-      '#g2f-mod .pl{border:1px solid #e3e6ea;border-radius:8px;margin-top:4px;max-height:160px;overflow:auto}',
-      '#g2f-mod .pl div{padding:6px 8px;cursor:pointer}#g2f-mod .pl div:hover{background:#f2f4f7}',
-      '#g2f-fab{position:fixed;left:12px;bottom:84px;z-index:9980;border:0;border-radius:999px;background:#0f3d5e;color:#fff;padding:10px 14px;font:600 13px system-ui,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.25);cursor:pointer}',
-      '#g2f-toast{position:fixed;left:50%;transform:translateX(-50%);bottom:24px;z-index:9999;background:#16181d;color:#fff;padding:10px 14px;border-radius:10px;max-width:92vw;display:none;font:14px system-ui,sans-serif}',
-      '#g2fin button:focus-visible,#g2f-mod button:focus-visible{outline:2px solid #2e90fa;outline-offset:2px}',
-      '@media print{body>*:not(#g2fin){display:none!important}#g2fin{position:static;overflow:visible;background:#fff}#g2fin .hd,#g2fin .tabs,#g2fin .noprint{display:none!important}#g2fin .card{break-inside:avoid;border:0}}'
+      '#g2f-mod .ft button{border:0;background:#16181d;color:#fff;border-radius:12px;padding:9px 16px;font:inherit;font-weight:600;cursor:pointer}',
+      '#g2f-mod .ft button.sec{background:#f2f4f7;color:#16181d}',
+      '#g2f-mod .pl{border:1px solid #e4e7ec;border-radius:10px;margin-top:4px;max-height:160px;overflow:auto}',
+      '#g2f-mod .pl div{padding:7px 9px;cursor:pointer}#g2f-mod .pl div:hover{background:#f2f4f7}',
+      '#g2f-toast{position:fixed;left:50%;transform:translateX(-50%);bottom:24px;z-index:9999;background:#16181d;color:#fff;padding:10px 14px;border-radius:12px;max-width:92vw;display:none;font:14px system-ui,sans-serif}',
+      '#g2fin button:focus-visible,#g2f-dash button:focus-visible,#g2f-mod button:focus-visible{outline:2px solid #2e90fa;outline-offset:2px}',
+      '@media (prefers-color-scheme:dark){.g2f-card,.g2f-kpi{background:#1d2026}.g2f-pills button,.g2f-btn.sec,.g2f-back{background:#2a2e36;color:#e4e7ec}.g2f-pills button.on{background:#e4e7ec;color:#16181d}.g2f-per select,.g2f-row select,.g2f-row input{background:#1d2026;border-color:#344054}#g2fin th,#g2fin td,#g2f-dash td{border-color:#2a2e36}}',
+      '@media print{body *{visibility:hidden!important}#g2fin,#g2fin *{visibility:visible!important}#g2fin{position:absolute;left:0;top:0;width:100%}.g2f-noprint{display:none!important}.g2f-card{box-shadow:none;break-inside:avoid}}'
     ].join('\n');
     document.head.appendChild(s);
   }
 
   /* ───────────── janela de formulário genérica ───────────── */
-  // campos: {k, l(label), t: text|number|money|date|select|textarea|check|file|pessoa|info, o:[[v,txt]], v, req, h(hint)}
   function form(titulo, campos, okTxt, aoSalvar) {
     fecharMod();
     var o = document.createElement('div'); o.id = 'g2f-mod';
@@ -224,7 +234,6 @@
     o.addEventListener('click', function (ev) { if (ev.target === o) fecharMod(); });
     document.body.appendChild(o);
     o.querySelector('[data-x="cancelar"]').addEventListener('click', fecharMod);
-    // busca de pessoas
     campos.forEach(function (c, i) {
       if (c.t !== 'pessoa') return;
       var inp = $('g2f-f' + i), lst = $('g2f-f' + i + '-l'), tmr;
@@ -262,7 +271,7 @@
       if (falta.length) { err.textContent = 'Preencha: ' + falta.join(', ') + '.'; return; }
       btn.disabled = true; btn.textContent = 'Salvando…';
       Promise.resolve().then(function () { return aoSalvar(val); }).then(function (msg) {
-        fecharMod(); if (msg !== false) toast(msg || 'Salvo.'); recarregar();
+        fecharMod(); if (msg !== false) toast(msg || 'Salvo.'); recarregar(); dashCarregar(true);
       }).catch(function (e) {
         console.warn('[2Gather][fin]', e); err.textContent = traduz(e); btn.disabled = false; btn.textContent = okTxt || 'Salvar';
       });
@@ -304,9 +313,8 @@
   function opCartoes() { return ((S.cat && S.cat.cartoes) || []).filter(function (k) { return k.status === 'active'; }).map(function (k) { return [k.id, k.nome + ' •' + k.final]; }); }
   function opCampanhas() { return ((S.cat && S.cat.campanhas) || []).map(function (c) { return [c.id, c.nome]; }); }
 
-  /* ───────────── abrir / fechar / abas ───────────── */
+  /* ───────────── abas do Livro ───────────── */
   var ABAS = [
-    { id: 'resumo', nome: 'Resumo', ok: function () { return pode('financial.book.view') || pode('financial.reports.view'); } },
     { id: 'livro', nome: 'Livro', ok: function () { return pode('financial.book.view'); } },
     { id: 'conferir', nome: 'A conferir', ok: function () { return pode('financial.sources.view'); } },
     { id: 'entrada', nome: 'Nova entrada', ok: function () { return pode('financial.movements.create') && tes(); } },
@@ -319,6 +327,26 @@
   ];
   function abasVisiveis() { return ABAS.filter(function (a) { return a.ok(); }); }
 
+  /* ───────────── Livro dentro da área principal ───────────── */
+  function esconderMain(main, sim) {
+    Array.prototype.forEach.call(main.children, function (el) {
+      if (el.id === 'g2fin') return;
+      if (sim) { if (!el.classList.contains('g2f-oculto')) { el.classList.add('g2f-oculto'); el.setAttribute('data-g2f-esc', '1'); } }
+      else if (el.getAttribute('data-g2f-esc') === '1') { el.classList.remove('g2f-oculto'); el.removeAttribute('data-g2f-esc'); }
+    });
+  }
+  function montar() {
+    var main = $('main'); if (!main) return false;
+    var o = $('g2fin');
+    if (!o || !main.contains(o)) {
+      if (o) o.remove();
+      o = document.createElement('div'); o.id = 'g2fin';
+      o.addEventListener('click', clique); o.addEventListener('change', mudanca);
+      main.appendChild(o);
+    }
+    esconderMain(main, true);
+    return true;
+  }
   function abrir(aba) {
     if (!v39()) return toast('O Financeiro novo funciona só na versão v39.');
     css();
@@ -327,28 +355,31 @@
       var vis = abasVisiveis();
       if (aba && vis.some(function (a) { return a.id === aba; })) S.aba = aba;
       if (!vis.some(function (a) { return a.id === S.aba; })) S.aba = vis.length ? vis[0].id : 'despesas';
-      var o = $('g2fin');
-      if (!o) {
-        o = document.createElement('div'); o.id = 'g2fin';
-        o.addEventListener('click', clique); o.addEventListener('change', mudanca);
-        document.body.appendChild(o);
-        document.addEventListener('keydown', tecla);
-      }
+      S.aberto = true;
+      if (!montar()) return;
       pintarBase(); recarregar();
+      window.scrollTo(0, 0);
     }).catch(function (e) { toast(traduz(e)); });
   }
-  function fechar() { var o = $('g2fin'); if (o) o.remove(); fecharMod(); document.removeEventListener('keydown', tecla); }
-  function tecla(ev) { if (ev.key === 'Escape') { if ($('g2f-mod')) fecharMod(); else fechar(); } }
+  function fechar() {
+    S.aberto = false; fecharMod();
+    var o = $('g2fin'); if (o) o.remove();
+    var main = $('main'); if (main) esconderMain(main, false);
+    dashCarregar(true);
+    window.scrollTo(0, 0);
+  }
+  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && $('g2f-mod')) fecharMod(); });
 
   function pintarBase() {
     var o = $('g2fin'); if (!o) return;
     var anos = [], y = new Date().getFullYear(); for (var i = y + 1; i >= y - 5; i--) anos.push(i);
-    o.innerHTML = '<div class="hd"><h2>Financeiro</h2>' +
-      '<select data-c="mes" aria-label="Mês">' + MESES.map(function (m, i) { return '<option value="' + (i + 1) + '"' + (i + 1 === S.mes ? ' selected' : '') + '>' + m + '</option>'; }).join('') + '</select>' +
-      '<select data-c="ano" aria-label="Ano">' + anos.map(function (a) { return '<option' + (a === S.ano ? ' selected' : '') + '>' + a + '</option>'; }).join('') + '</select>' +
-      '<button type="button" data-a="fechar" aria-label="Fechar Financeiro">✕ Fechar</button></div>' +
-      '<div class="tabs" role="tablist">' + abasVisiveis().map(function (a) { return '<button type="button" role="tab" data-a="aba" data-v="' + a.id + '"' + (a.id === S.aba ? ' class="on" aria-selected="true"' : '') + '>' + a.nome + '</button>'; }).join('') + '</div>' +
-      '<div class="bd" id="g2f-bd" aria-live="polite"><div class="vazio">Carregando…</div></div>';
+    var nomeAba = (ABAS.filter(function (a) { return a.id === S.aba; })[0] || {}).nome || '';
+    o.innerHTML = '<div class="g2f-top"><button type="button" class="g2f-back g2f-noprint" data-a="fechar" aria-label="Voltar ao painel Financeiro">‹</button><h1 class="g2f-h1">Livro financeiro</h1></div>' +
+      '<div class="g2f-sub">' + esc(nomeAba) + ' · ' + MESES[S.mes - 1] + '/' + S.ano + '</div>' +
+      '<div class="g2f-card g2f-noprint"><div class="g2f-pills" role="tablist">' + abasVisiveis().map(function (a) { return '<button type="button" role="tab" data-a="aba" data-v="' + a.id + '"' + (a.id === S.aba ? ' class="on" aria-selected="true"' : '') + '>' + a.nome + '</button>'; }).join('') + '</div>' +
+      '<div class="g2f-per"><select data-c="mes" aria-label="Mês">' + MESES.map(function (m, i) { return '<option value="' + (i + 1) + '"' + (i + 1 === S.mes ? ' selected' : '') + '>' + m + '</option>'; }).join('') + '</select>' +
+      '<select data-c="ano" aria-label="Ano">' + anos.map(function (a) { return '<option' + (a === S.ano ? ' selected' : '') + '>' + a + '</option>'; }).join('') + '</select></div></div>' +
+      '<div id="g2f-bd" aria-live="polite"><div class="g2f-vazio">Carregando…</div></div>';
   }
   function corpo(h) { var b = $('g2f-bd'); if (b) b.innerHTML = h; }
 
@@ -359,54 +390,40 @@
   function carregarCat() { return rpc('v39_fin_catalogs', C({})).then(function (x) { S.cat = x || {}; }); }
 
   function recarregar() {
-    if (!$('g2fin')) return;
-    corpo('<div class="vazio">Carregando…</div>');
-    var r = { resumo: tResumo, livro: tLivro, conferir: tConferir, entrada: tEntrada, despesas: tDespesas, transf: tTransf, conc: tConc, camp: tCamp, cad: tCad, rel: tRel }[S.aba];
-    carregarCtx().then(carregarCat).then(function () { return r(); }).catch(function (e) { console.warn('[2Gather][fin]', e); corpo('<div class="card">' + esc(traduz(e)) + '</div>'); });
+    if (!S.aberto || !$('g2fin')) return;
+    corpo('<div class="g2f-vazio">Carregando…</div>');
+    var r = { livro: tLivro, conferir: tConferir, entrada: tEntrada, despesas: tDespesas, transf: tTransf, conc: tConc, camp: tCamp, cad: tCad, rel: tRel }[S.aba];
+    carregarCtx().then(carregarCat).then(function () { return r(); }).catch(function (e) { console.warn('[2Gather][fin]', e); corpo('<div class="g2f-card">' + esc(traduz(e)) + '</div>'); });
   }
+  function bt(a, v, t, cls) { return '<button type="button" class="g2f-btn mini ' + (cls || '') + '" data-a="' + a + '" data-v="' + esc(v) + '">' + esc(t) + '</button>'; }
 
-  /* ───────────── RESUMO ───────────── */
   function avisoInicio() {
     if (S.ctx && S.ctx.inicio) return '';
-    return '<div class="card" style="border-color:#f79009"><b>Defina a data de início do Financeiro.</b><div class="mut">Ela marca o primeiro dia do Livro. Lançamentos de GC e cultos a partir dessa data aparecem em "A conferir". ' +
+    return '<div class="g2f-card" style="border-left:4px solid #f79009"><b>Defina a data de início do Financeiro.</b><div class="g2f-mut">Ela marca o primeiro dia do Livro. Lançamentos de GC e cultos a partir dessa data aparecem em "A conferir". ' +
       (S.ctx && S.ctx.master ? 'Vá em Cadastros › Início do Financeiro.' : 'Peça ao Master.') + '</div></div>';
-  }
-  function tResumo() {
-    return rpc('v39_fin_overview', C({ p_year: S.ano, p_month: S.mes })).then(function (x) {
-      S.ov = x; var t = x.totais || {}, per = x.periodo || {};
-      var h = avisoInicio();
-      h += '<div class="grid"><div class="kpi"><span class="mut">Entradas do mês</span><b class="pos">' + brl(t.entradas) + '</b></div>' +
-        '<div class="kpi"><span class="mut">Saídas do mês</span><b class="neg">' + brl(t.saidas) + '</b></div>' +
-        '<div class="kpi"><span class="mut">Resultado</span><b class="' + (num(t.resultado) < 0 ? 'neg' : 'pos') + '">' + brl(t.resultado) + '</b></div>' +
-        '<div class="kpi"><span class="mut">Mês</span><b>' + (per.status === 'closed' ? '🔒 Fechado' : 'Aberto') + '</b>' +
-        (per.status === 'closed' && S.ctx.podeReabrir ? '<button type="button" class="btn mini sec" data-a="reabrir">Reabrir</button>' : '') +
-        (per.status !== 'closed' && S.ctx.podeFechar ? '<button type="button" class="btn mini" data-a="fecharMes">Fechar mês</button>' : '') + '</div></div>';
-      h += '<div class="card"><h3>Saldos por conta</h3><div class="tw"><table><thead><tr><th>Conta</th><th class="r">Início do mês</th><th class="r">Fim do mês</th><th class="r">Hoje</th><th class="r">Não conciliados</th></tr></thead><tbody>' +
-        ((x.contas || []).length ? x.contas.map(function (a) { return '<tr><td>' + esc(a.nome) + '<div class="mut">' + esc(ROT.conta[a.tipo] || a.tipo) + (a.status !== 'active' ? ' · inativa' : '') + '</div></td><td class="r">' + brl(a.saldoInicioMes) + '</td><td class="r">' + brl(a.saldoFimMes) + '</td><td class="r"><b>' + brl(a.saldoAtual) + '</b></td><td class="r">' + (a.naoConciliados || 0) + '</td></tr>'; }).join('') : '<tr><td colspan="5" class="vazio">Nenhuma conta. Cadastre em Cadastros.</td></tr>') +
-        '</tbody></table></div><div class="mut">Saldo = saldo inicial + entradas − saídas ± transferências (lançamentos e estornos). Compromissos e despesas só aprovadas não entram.</div></div>';
-      var fech = (x.meses || []).filter(function (m) { return m.status === 'closed'; });
-      if (fech.length) h += '<div class="card"><h3>Meses fechados</h3>' + fech.map(function (m) { return '<span class="tag">' + MESES[m.mes - 1].slice(0, 3) + '/' + m.ano + '</span> '; }).join('') + '</div>';
-      corpo(h);
-    });
   }
 
   /* ───────────── LIVRO ───────────── */
   function tLivro() {
     return rpc('v39_fin_overview', C({ p_year: S.ano, p_month: S.mes })).then(function (x) {
-      S.ov = x; var L = x.livro || [], fechado = x.periodo && x.periodo.status === 'closed';
-      var h = '<div class="row noprint">' + (pode('financial.reports.export') ? '<button type="button" class="btn sec mini" data-a="csvLivro">Exportar CSV</button>' : '') +
-        '<span class="mut">' + L.length + ' lançamento(s) em ' + MESES[S.mes - 1] + '/' + S.ano + (fechado ? ' · mês fechado' : '') + '</span></div>';
-      h += '<div class="card"><div class="tw"><table><thead><tr><th>Data</th><th>Descrição</th><th>Conta</th><th class="r">Valor</th><th>Situação</th><th class="noprint"></th></tr></thead><tbody>';
+      S.ov = x; var L = x.livro || [], fechado = x.periodo && x.periodo.status === 'closed', t = x.totais || {}, per = x.periodo || {};
+      var h = avisoInicio();
+      h += '<div class="g2f-grid"><div class="g2f-kpi"><span>Entradas</span><b class="g2f-pos">' + brl(t.entradas) + '</b></div><div class="g2f-kpi"><span>Saídas</span><b class="g2f-neg">' + brl(t.saidas) + '</b></div><div class="g2f-kpi"><span>Resultado</span><b class="' + (num(t.resultado) < 0 ? 'g2f-neg' : 'g2f-pos') + '">' + brl(t.resultado) + '</b></div>' +
+        '<div class="g2f-kpi"><span>Mês</span><b>' + (per.status === 'closed' ? '🔒 Fechado' : 'Aberto') + '</b>' +
+        (per.status === 'closed' && S.ctx.podeReabrir ? bt('reabrir', '', 'Reabrir', 'sec') : '') + (per.status !== 'closed' && S.ctx.podeFechar ? bt('fecharMes', '', 'Fechar mês') : '') + '</div></div>';
+      h += '<div class="g2f-row g2f-noprint">' + (pode('financial.reports.export') ? '<button type="button" class="g2f-btn sec mini" data-a="csvLivro">Exportar CSV</button>' : '') +
+        '<span class="g2f-mut">' + L.length + ' lançamento(s)' + (fechado ? ' · mês fechado' : '') + '</span></div>';
+      h += '<div class="g2f-card"><div class="g2f-tw"><table><thead><tr><th>Data</th><th>Descrição</th><th>Conta</th><th class="r">Valor</th><th>Situação</th><th class="g2f-noprint"></th></tr></thead><tbody>';
       h += L.length ? L.map(function (m) {
-        var v = num(m.valor) * num(m.efeitoCaixa || (m.efeitoResultado || 0)), cls = v < 0 ? 'neg' : (v > 0 ? 'pos' : '');
+        var v = num(m.valor) * num(m.efeitoCaixa || (m.efeitoResultado || 0)), cls = v < 0 ? 'g2f-neg' : (v > 0 ? 'g2f-pos' : '');
         var a = [];
-        if (m.comprovantePath) a.push('<button type="button" class="btn mini sec" data-a="verComp" data-v="' + esc(m.comprovantePath) + '">Comprovante</button>');
-        if (tes() && !fechado && pode('financial.reconciliation.manage') && m.status === 'posted' && m.efeitoCaixa !== 0) a.push('<button type="button" class="btn mini sec" data-a="conc" data-v="' + m.id + '">Conciliar</button>');
-        if (tes() && !fechado && pode('financial.reconciliation.manage') && m.status === 'reconciled') a.push('<button type="button" class="btn mini sec" data-a="desconc" data-v="' + m.id + '">Desconciliar</button>');
-        if (tes() && m.manual && m.status === 'posted' && m.tipo === 'income' && pode('financial.movements.update')) a.push('<button type="button" class="btn mini sec" data-a="editMov" data-v="' + m.id + '">Editar</button>');
-        if (tes() && pode('financial.movements.reverse') && (m.status === 'posted' || m.status === 'reconciled') && m.tipo !== 'reversal') a.push('<button type="button" class="btn mini red" data-a="estornar" data-v="' + m.id + '">Estornar</button>');
-        return '<tr><td>' + dataBR(m.data) + '</td><td>' + esc(m.descricao) + '<div class="mut">' + esc(ROT.mov[m.tipo] || m.tipo) + ' · ' + esc(m.categoria || '') + (m.forma ? ' · ' + esc(m.forma) : '') + (m.pessoa ? ' · ' + esc(m.pessoa) : '') + '</div></td><td>' + esc(m.conta) + '</td><td class="r ' + cls + '">' + brl(v) + '</td><td><span class="tag ' + (m.status === 'reconciled' ? 'ok' : (m.status === 'reversed' ? 'bad' : '')) + '">' + esc(ROT.movSt[m.status] || m.status) + '</span></td><td class="noprint"><div class="acts">' + a.join('') + '</div></td></tr>';
-      }).join('') : '<tr><td colspan="6" class="vazio">Nenhum lançamento neste mês.</td></tr>';
+        if (m.comprovantePath) a.push(bt('verComp', m.comprovantePath, 'Comprovante', 'sec'));
+        if (tes() && !fechado && pode('financial.reconciliation.manage') && m.status === 'posted' && m.efeitoCaixa !== 0) a.push(bt('conc', m.id, 'Conciliar', 'sec'));
+        if (tes() && !fechado && pode('financial.reconciliation.manage') && m.status === 'reconciled') a.push(bt('desconc', m.id, 'Desconciliar', 'sec'));
+        if (tes() && m.manual && m.status === 'posted' && m.tipo === 'income' && pode('financial.movements.update')) a.push(bt('editMov', m.id, 'Editar', 'sec'));
+        if (tes() && pode('financial.movements.reverse') && (m.status === 'posted' || m.status === 'reconciled') && m.tipo !== 'reversal') a.push(bt('estornar', m.id, 'Estornar', 'red'));
+        return '<tr><td>' + dataBR(m.data) + '</td><td>' + esc(m.descricao) + '<div class="g2f-mut">' + esc(ROT.mov[m.tipo] || m.tipo) + ' · ' + esc(m.categoria || '') + (m.forma ? ' · ' + esc(m.forma) : '') + (m.pessoa ? ' · ' + esc(m.pessoa) : '') + '</div></td><td>' + esc(m.conta) + '</td><td class="r ' + cls + '">' + brl(v) + '</td><td><span class="g2f-tag ' + (m.status === 'reconciled' ? 'ok' : (m.status === 'reversed' ? 'bad' : '')) + '">' + esc(ROT.movSt[m.status] || m.status) + '</span></td><td class="g2f-noprint"><div class="g2f-acts">' + a.join('') + '</div></td></tr>';
+      }).join('') : '<tr><td colspan="6" class="g2f-vazio">Nenhum lançamento neste mês.</td></tr>';
       corpo(h + '</tbody></table></div></div>');
     });
   }
@@ -415,11 +432,9 @@
     var lin = [['Data', 'Tipo', 'Descricao', 'Categoria', 'Conta', 'Forma', 'Pessoa', 'Valor', 'Situacao']].concat(L.map(function (m) {
       return [dataBR(m.data), ROT.mov[m.tipo] || m.tipo, m.descricao, m.categoria, m.conta, m.forma || '', m.pessoa || '', String((num(m.valor) * num(m.efeitoCaixa || m.efeitoResultado || 0)).toFixed(2)).replace('.', ','), ROT.movSt[m.status] || m.status];
     }));
-    baixar('livro_' + S.ano + '-' + pad(S.mes) + '.csv', '\ufeff' + lin.map(function (r) { return r.map(function (c) { c = String(c == null ? '' : c); return /[;"\n]/.test(c) ? '"' + c.replace(/"/g, '""') + '"' : c; }).join(';'); }).join('\r\n'));
-  }
-  function baixar(nome, txt) {
+    var txt = '\ufeff' + lin.map(function (r) { return r.map(function (c) { c = String(c == null ? '' : c); return /[;"\n]/.test(c) ? '"' + c.replace(/"/g, '""') + '"' : c; }).join(';'); }).join('\r\n');
     var b = new Blob([txt], { type: 'text/csv;charset=utf-8' }), a = document.createElement('a');
-    a.href = URL.createObjectURL(b); a.download = nome; document.body.appendChild(a); a.click();
+    a.href = URL.createObjectURL(b); a.download = 'livro_' + S.ano + '-' + pad(S.mes) + '.csv'; document.body.appendChild(a); a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
   }
   function editMov(id) {
@@ -439,22 +454,22 @@
     });
   }
 
-  /* ───────────── A CONFERIR (GC e cultos) ───────────── */
+  /* ───────────── A CONFERIR ───────────── */
   var PEND = [];
   function tConferir() {
     return Promise.all([rpc('v39_fin_source_pending', C({})), rpc('v39_fin_sources', C({ p_from: null }))]).then(function (r) {
       var p = r[0] || {}, lotes = r[1] || []; PEND = p.itens || [];
       var h = avisoInicio();
-      h += '<div class="card"><h3>A conferir (' + PEND.length + ')</h3><div class="mut">Valores que o líder informou no encontro do GC e os da ficha do culto, desde ' + (p.inicio ? dataBR(p.inicio) : 'o início do Financeiro') + '. Só entram no Livro e no saldo depois que a Tesouraria confere e lança.</div>';
-      h += PEND.length ? '<div class="tw"><table><thead><tr><th>Data</th><th>Origem</th><th class="r">Dízimos</th><th class="r">Ofertas</th><th class="r">Outras</th><th class="r">Total</th><th></th></tr></thead><tbody>' + PEND.map(function (x, i) {
+      h += '<div class="g2f-card"><h3>A conferir (' + PEND.length + ')</h3><div class="g2f-mut">Valores que o líder informou no encontro do GC e os da ficha do culto, desde ' + (p.inicio ? dataBR(p.inicio) : 'o início do Financeiro') + '. Só entram no Livro e no saldo depois que a Tesouraria confere e lança.</div>';
+      h += PEND.length ? '<div class="g2f-tw"><table><thead><tr><th>Data</th><th>Origem</th><th class="r">Dízimos</th><th class="r">Ofertas</th><th class="r">Outras</th><th class="r">Total</th><th></th></tr></thead><tbody>' + PEND.map(function (x, i) {
         var tot = num(x.dizimo) + num(x.oferta) + num(x.outras);
-        return '<tr><td>' + dataBR(x.data) + '</td><td>' + esc(x.titulo) + '<div class="mut">' + (x.tipo === 'gc' ? 'Encontro de GC' : 'Culto/evento') + '</div></td><td class="r">' + brl(x.dizimo) + '</td><td class="r">' + brl(x.oferta) + '</td><td class="r">' + brl(x.outras) + '</td><td class="r"><b>' + brl(tot) + '</b></td><td>' +
-          (tes() && pode('financial.sources.post') ? '<button type="button" class="btn mini" data-a="lancarLote" data-v="' + i + '">Conferir e lançar</button>' : '') + '</td></tr>';
-      }).join('') + '</tbody></table></div>' : '<div class="vazio">Nada pendente.</div>';
-      h += '</div><div class="card"><h3>Lotes lançados</h3>' + (lotes.length ? '<div class="tw"><table><thead><tr><th>Data</th><th>Origem</th><th class="r">Total</th><th>Situação</th><th></th></tr></thead><tbody>' + lotes.slice(0, 200).map(function (b) {
-        return '<tr><td>' + dataBR(b.data) + '</td><td>' + esc(b.titulo) + '<div class="mut">' + esc(b.modulo === 'gc' ? 'GC' : 'Culto/evento') + '</div></td><td class="r">' + brl(b.total) + '</td><td><span class="tag ' + (b.status === 'posted' ? 'ok' : (b.status === 'reversed' ? 'bad' : '')) + '">' + esc(ROT.lote[b.status] || b.status) + '</span></td><td>' +
-          (b.status === 'posted' && tes() && pode('financial.sources.reverse') ? '<button type="button" class="btn mini red" data-a="estLote" data-v="' + b.id + '">Estornar</button>' : '') + '</td></tr>';
-      }).join('') + '</tbody></table></div>' : '<div class="vazio">Nenhum lote ainda.</div>') + '</div>';
+        return '<tr><td>' + dataBR(x.data) + '</td><td>' + esc(x.titulo) + '<div class="g2f-mut">' + (x.tipo === 'gc' ? 'Encontro de GC' : 'Culto/evento') + '</div></td><td class="r">' + brl(x.dizimo) + '</td><td class="r">' + brl(x.oferta) + '</td><td class="r">' + brl(x.outras) + '</td><td class="r"><b>' + brl(tot) + '</b></td><td>' +
+          (tes() && pode('financial.sources.post') ? bt('lancarLote', i, 'Conferir e lançar') : '') + '</td></tr>';
+      }).join('') + '</tbody></table></div>' : '<div class="g2f-vazio">Nada pendente.</div>';
+      h += '</div><div class="g2f-card"><h3>Lotes lançados</h3>' + (lotes.length ? '<div class="g2f-tw"><table><thead><tr><th>Data</th><th>Origem</th><th class="r">Total</th><th>Situação</th><th></th></tr></thead><tbody>' + lotes.slice(0, 200).map(function (b) {
+        return '<tr><td>' + dataBR(b.data) + '</td><td>' + esc(b.titulo) + '<div class="g2f-mut">' + esc(b.modulo === 'gc' ? 'GC' : 'Culto/evento') + '</div></td><td class="r">' + brl(b.total) + '</td><td><span class="g2f-tag ' + (b.status === 'posted' ? 'ok' : (b.status === 'reversed' ? 'bad' : '')) + '">' + esc(ROT.lote[b.status] || b.status) + '</span></td><td>' +
+          (b.status === 'posted' && tes() && pode('financial.sources.reverse') ? bt('estLote', b.id, 'Estornar', 'red') : '') + '</td></tr>';
+      }).join('') + '</tbody></table></div>' : '<div class="g2f-vazio">Nenhum lote ainda.</div>') + '</div>';
       corpo(h);
     });
   }
@@ -484,8 +499,8 @@
 
   /* ───────────── NOVA ENTRADA ───────────── */
   function tEntrada() {
-    var h = avisoInicio() + '<div class="card"><h3>Nova entrada</h3><div class="mut">Dízimos, ofertas, doações, eventos e outras entradas. Campanhas e votos entram pela aba Campanhas (recebimento do compromisso). PIX e transferência exigem comprovante.</div><div class="row" style="margin-top:10px"><button type="button" class="btn" data-a="novaEntrada">+ Registrar entrada</button></div></div>';
-    corpo(h); return Promise.resolve();
+    corpo(avisoInicio() + '<div class="g2f-card"><h3>Nova entrada</h3><div class="g2f-mut">Dízimos, ofertas, doações, eventos e outras entradas. Campanhas e votos entram pela aba Campanhas (recebimento do compromisso). PIX e transferência exigem comprovante.</div><div class="g2f-row" style="margin-top:10px"><button type="button" class="g2f-btn" data-a="novaEntrada">+ Registrar entrada</button></div></div>');
+    return Promise.resolve();
   }
   function novaEntrada() {
     form('Nova entrada', [
@@ -516,11 +531,11 @@
     if (pode('financial.recurrences.manage')) ps.push(rpc('v39_fin_recurrences', C({})));
     return Promise.all(ps).then(function (r) {
       DESP = r[0] || []; RECS = r[1] || [];
-      var h = '<div class="row noprint">' + (pode('financial.expenses.create') ? '<button type="button" class="btn" data-a="novaDesp">+ Nova despesa</button>' : '') +
-        (pode('financial.expenses.create') || pode('financial.bills.manage') ? '<button type="button" class="btn sec" data-a="novoFornec">+ Fornecedor</button>' : '') +
+      var h = '<div class="g2f-row g2f-noprint">' + (pode('financial.expenses.create') ? '<button type="button" class="g2f-btn" data-a="novaDesp">+ Nova despesa</button>' : '') +
+        (pode('financial.expenses.create') || pode('financial.bills.manage') ? '<button type="button" class="g2f-btn sec" data-a="novoFornec">+ Fornecedor</button>' : '') +
         '<select data-c="despFiltro" aria-label="Filtro"><option value="abertas"' + (S.despFiltro === 'abertas' ? ' selected' : '') + '>Em andamento</option><option value="encerradas"' + (S.despFiltro === 'encerradas' ? ' selected' : '') + '>Encerradas (120 dias)</option><option value="todas"' + (S.despFiltro === 'todas' ? ' selected' : '') + '>Todas</option></select></div>';
-      h += '<div class="card"><h3>Despesas</h3><div class="mut">Solicitar → aprovar → pagar. Aprovação não mexe no saldo; só o pagamento sai da conta. Quem solicitou não decide o próprio pedido.</div>';
-      h += DESP.length ? '<div class="tw"><table><thead><tr><th>Despesa</th><th>Vencimento</th><th class="r">Valor</th><th>Situação</th><th></th></tr></thead><tbody>' + DESP.map(function (e) {
+      h += '<div class="g2f-card"><h3>Despesas</h3><div class="g2f-mut">Solicitar → aprovar → pagar. Aprovação não mexe no saldo; só o pagamento sai da conta. Quem solicitou não decide o próprio pedido.</div>';
+      h += DESP.length ? '<div class="g2f-tw"><table><thead><tr><th>Despesa</th><th>Vencimento</th><th class="r">Valor</th><th>Situação</th><th></th></tr></thead><tbody>' + DESP.map(function (e) {
         var a = [], st = e.status;
         if ((st === 'draft' || st === 'correction_requested') && e.meu) { a.push(bt('editDesp', e.id, 'Editar', 'sec')); a.push(bt('enviarDesp', e.id, 'Enviar p/ aprovação')); }
         if (st === 'pending_approval' && !e.souSolicitante) {
@@ -531,20 +546,19 @@
         if ((st === 'approved' || st === 'partially_paid') && tes() && pode('financial.expenses.pay')) a.push(bt('pagarDesp', e.id, 'Pagar'));
         if (['draft', 'correction_requested', 'pending_approval', 'approved'].indexOf(st) >= 0 && (e.meu || tes())) a.push(bt('cancDesp', e.id, 'Cancelar', 'red'));
         if (tes() && pode('financial.expenses.reverse')) (e.pagamentos || []).forEach(function (p) { if (p.status === 'posted') a.push(bt('estPag', p.id, 'Estornar pgto ' + dataBR(p.data), 'red')); });
-        if (e.comprovantePath) a.push('<button type="button" class="btn mini sec" data-a="verComp" data-v="' + esc(e.comprovantePath) + '">Documento</button>');
+        if (e.comprovantePath) a.push(bt('verComp', e.comprovantePath, 'Documento', 'sec'));
         var tag = st === 'paid' ? 'ok' : (st === 'pending_approval' || st === 'correction_requested' ? 'warn' : (st === 'rejected' || st === 'cancelled' ? 'bad' : ''));
-        return '<tr><td>' + esc(e.descricao) + '<div class="mut">' + esc(e.categoria || '') + (e.fornecedor ? ' · ' + esc(e.fornecedor) : '') + (e.solicitante ? ' · por ' + esc(e.solicitante) : '') + (e.motivo ? '<br>Motivo: ' + esc(e.motivo) : '') + (e.boleto && e.boleto.linha ? '<br>Boleto: ' + esc(e.boleto.linha) : '') + '</div></td><td>' + dataBR(e.vencimento) + '</td><td class="r">' + brl(e.aprovado || e.valor) + (num(e.pago) ? '<div class="mut">pago ' + brl(e.pago) + '</div>' : '') + '</td><td><span class="tag ' + tag + '">' + esc(ROT.desp[st] || st) + '</span></td><td><div class="acts">' + a.join('') + '</div></td></tr>';
-      }).join('') + '</tbody></table></div>' : '<div class="vazio">Nenhuma despesa neste filtro.</div>';
+        return '<tr><td>' + esc(e.descricao) + '<div class="g2f-mut">' + esc(e.categoria || '') + (e.fornecedor ? ' · ' + esc(e.fornecedor) : '') + (e.solicitante ? ' · por ' + esc(e.solicitante) : '') + (e.motivo ? '<br>Motivo: ' + esc(e.motivo) : '') + (e.boleto && e.boleto.linha ? '<br>Boleto: ' + esc(e.boleto.linha) : '') + '</div></td><td>' + dataBR(e.vencimento) + '</td><td class="r">' + brl(e.aprovado || e.valor) + (num(e.pago) ? '<div class="g2f-mut">pago ' + brl(e.pago) + '</div>' : '') + '</td><td><span class="g2f-tag ' + tag + '">' + esc(ROT.desp[st] || st) + '</span></td><td><div class="g2f-acts">' + a.join('') + '</div></td></tr>';
+      }).join('') + '</tbody></table></div>' : '<div class="g2f-vazio">Nenhuma despesa neste filtro.</div>';
       h += '</div>';
       if (pode('financial.recurrences.manage')) {
-        h += '<div class="card"><h3>Contas fixas (recorrências)</h3><div class="row"><button type="button" class="btn sec mini" data-a="novaRec">+ Conta fixa</button></div>' + (RECS.length ? '<div class="tw"><table><thead><tr><th>Nome</th><th>Periodicidade</th><th class="r">Valor</th><th>Próximo</th><th></th></tr></thead><tbody>' + RECS.map(function (r) {
-          return '<tr><td>' + esc(r.nome) + (r.status !== 'active' ? ' <span class="tag">pausada</span>' : '') + '</td><td>' + esc(ROT.rec[r.tipo] || r.tipo) + '</td><td class="r">' + brl(r.valor) + '</td><td>' + dataBR(r.proximo) + '</td><td><div class="acts">' + bt('editRec', r.id, 'Editar', 'sec') + (r.status === 'active' ? bt('gerarRec', r.id, 'Gerar despesa do mês') : '') + '</div></td></tr>';
-        }).join('') + '</tbody></table></div>' : '<div class="vazio">Nenhuma conta fixa.</div>') + '</div>';
+        h += '<div class="g2f-card"><h3>Contas fixas (recorrências)</h3><div class="g2f-row"><button type="button" class="g2f-btn sec mini" data-a="novaRec">+ Conta fixa</button></div>' + (RECS.length ? '<div class="g2f-tw"><table><thead><tr><th>Nome</th><th>Periodicidade</th><th class="r">Valor</th><th>Próximo</th><th></th></tr></thead><tbody>' + RECS.map(function (r) {
+          return '<tr><td>' + esc(r.nome) + (r.status !== 'active' ? ' <span class="g2f-tag">pausada</span>' : '') + '</td><td>' + esc(ROT.rec[r.tipo] || r.tipo) + '</td><td class="r">' + brl(r.valor) + '</td><td>' + dataBR(r.proximo) + '</td><td><div class="g2f-acts">' + bt('editRec', r.id, 'Editar', 'sec') + (r.status === 'active' ? bt('gerarRec', r.id, 'Gerar despesa do mês') : '') + '</div></td></tr>';
+        }).join('') + '</tbody></table></div>' : '<div class="g2f-vazio">Nenhuma conta fixa.</div>') + '</div>';
       }
       corpo(h);
     });
   }
-  function bt(a, v, t, cls) { return '<button type="button" class="btn mini ' + (cls || '') + '" data-a="' + a + '" data-v="' + esc(v) + '">' + esc(t) + '</button>'; }
   function despesa(id) { return DESP.filter(function (x) { return x.id === id; })[0] || null; }
   function formDesp(e) {
     e = e || {};
@@ -561,11 +575,10 @@
       { k: 'obs', l: 'Observação', t: 'textarea', v: e.obs },
       { k: 'enviar', l: 'Já enviar para aprovação', t: 'check', v: !e.id }
     ], 'Salvar', function (v) {
-      var id;
       return enviarComprovante(v.arq).then(function (ev) {
         return rpc('v39_fin_expense_save', C({ p_id: e.id || null, p: { descricao: v.descricao, categoriaId: v.categoriaId, valor: v.valor, fornecedorId: v.fornecedorId || null, emissao: v.emissao || null, vencimento: v.vencimento || null, competencia: v.competencia || null, linhaDigitavel: v.linhaDigitavel || null, comprovanteId: ev, obs: v.obs || null, chave: uuid() } }));
       }).then(function (r) {
-        id = r && r.id;
+        var id = r && r.id;
         if (v.enviar && id && pode('financial.expenses.submit')) return rpc('v39_fin_expense_submit', C({ p_id: id })).then(function () { return 'Despesa enviada para aprovação.'; });
         return 'Despesa salva como rascunho.';
       });
@@ -625,20 +638,20 @@
       var T = r[0] || []; FATS = r[1] || [];
       var h = '';
       if (pode('financial.transfers.manage')) {
-        h += '<div class="card"><h3>Transferências entre contas</h3><div class="mut">Não é entrada nem saída: tira de uma conta e põe na outra (ex.: depósito do caixa no banco).</div><div class="row" style="margin-top:8px">' + (tes() ? '<button type="button" class="btn" data-a="novaTransf">+ Transferir</button>' : '') + '</div>' +
-          (T.length ? '<div class="tw"><table><thead><tr><th>Data</th><th>De → Para</th><th class="r">Valor</th><th>Situação</th><th></th></tr></thead><tbody>' + T.map(function (t) {
-            return '<tr><td>' + dataBR(t.data) + '</td><td>' + esc(t.origem) + ' → ' + esc(t.destino) + '<div class="mut">' + esc(t.descricao) + '</div></td><td class="r">' + brl(t.valor) + '</td><td><span class="tag">' + esc(ROT.movSt[t.status] || t.status) + '</span></td><td>' + ((t.status === 'posted' || t.status === 'reconciled') && tes() ? bt('estTransf', t.id, 'Estornar', 'red') : '') + '</td></tr>';
-          }).join('') + '</tbody></table></div>' : '<div class="vazio">Nenhuma transferência em ' + MESES[S.mes - 1] + '.</div>') + '</div>';
+        h += '<div class="g2f-card"><h3>Transferências entre contas</h3><div class="g2f-mut">Não é entrada nem saída: tira de uma conta e põe na outra (ex.: depósito do caixa no banco).</div><div class="g2f-row" style="margin-top:8px">' + (tes() ? '<button type="button" class="g2f-btn" data-a="novaTransf">+ Transferir</button>' : '') + '</div>' +
+          (T.length ? '<div class="g2f-tw"><table><thead><tr><th>Data</th><th>De → Para</th><th class="r">Valor</th><th>Situação</th><th></th></tr></thead><tbody>' + T.map(function (t) {
+            return '<tr><td>' + dataBR(t.data) + '</td><td>' + esc(t.origem) + ' → ' + esc(t.destino) + '<div class="g2f-mut">' + esc(t.descricao) + '</div></td><td class="r">' + brl(t.valor) + '</td><td><span class="g2f-tag">' + esc(ROT.movSt[t.status] || t.status) + '</span></td><td>' + ((t.status === 'posted' || t.status === 'reconciled') && tes() ? bt('estTransf', t.id, 'Estornar', 'red') : '') + '</td></tr>';
+          }).join('') + '</tbody></table></div>' : '<div class="g2f-vazio">Nenhuma transferência em ' + MESES[S.mes - 1] + '.</div>') + '</div>';
       }
       if (pode('financial.cards.manage') || FATS.length) {
         var K = (S.cat && S.cat.cartoes) || [];
-        h += '<div class="card"><h3>Cartões</h3><div class="mut">A compra no cartão é a despesa; pagar a fatura só liquida (não duplica a despesa).</div><div class="row" style="margin-top:8px">' + (pode('financial.cards.manage') ? '<button type="button" class="btn sec" data-a="novoCartao">+ Cartão</button>' : '') + '</div>' +
-          (K.length ? '<div class="tw"><table><tbody>' + K.map(function (k) { return '<tr><td>' + esc(k.nome) + ' •' + esc(k.final) + '<div class="mut">' + esc(k.banco || '') + ' · fecha dia ' + k.fechamento + ' · vence dia ' + k.vencimento + (k.status !== 'active' ? ' · inativo' : '') + '</div></td><td>' + (pode('financial.cards.manage') ? bt('editCartao', k.id, 'Editar', 'sec') : '') + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<div class="vazio">Nenhum cartão.</div>');
-        h += '<h3 style="margin-top:12px">Faturas</h3>' + (FATS.length ? '<div class="tw"><table><thead><tr><th>Fatura</th><th>Vencimento</th><th class="r">Compras</th><th class="r">Pago</th><th class="r">Em aberto</th><th>Situação</th><th></th></tr></thead><tbody>' + FATS.map(function (s, i) {
-          return '<tr><td>' + esc(s.cartao) + '<div class="mut">' + pad(s.mes) + '/' + s.ano + ' · ' + (s.itens || []).length + ' compra(s)</div></td><td>' + dataBR(s.vencimento) + '</td><td class="r">' + brl(s.compras) + '</td><td class="r">' + brl(s.pago) + '</td><td class="r"><b>' + brl(s.aberto) + '</b></td><td><span class="tag">' + esc(ROT.fat[s.status] || s.status) + '</span></td><td><div class="acts">' + bt('verFatura', i, 'Itens', 'sec') + (tes() && pode('financial.expenses.pay') && num(s.aberto) > 0 && s.status !== 'paid' ? bt('pagarFatura', i, 'Pagar fatura') : '') + '</div></td></tr>';
-        }).join('') + '</tbody></table></div>' : '<div class="vazio">Nenhuma fatura.</div>') + '</div>';
+        h += '<div class="g2f-card"><h3>Cartões</h3><div class="g2f-mut">A compra no cartão é a despesa; pagar a fatura só liquida (não duplica a despesa).</div><div class="g2f-row" style="margin-top:8px">' + (pode('financial.cards.manage') ? '<button type="button" class="g2f-btn sec" data-a="novoCartao">+ Cartão</button>' : '') + '</div>' +
+          (K.length ? '<div class="g2f-tw"><table><tbody>' + K.map(function (k) { return '<tr><td>' + esc(k.nome) + ' •' + esc(k.final) + '<div class="g2f-mut">' + esc(k.banco || '') + ' · fecha dia ' + k.fechamento + ' · vence dia ' + k.vencimento + (k.status !== 'active' ? ' · inativo' : '') + '</div></td><td>' + (pode('financial.cards.manage') ? bt('editCartao', k.id, 'Editar', 'sec') : '') + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<div class="g2f-vazio">Nenhum cartão.</div>');
+        h += '<h3 style="margin-top:12px">Faturas</h3>' + (FATS.length ? '<div class="g2f-tw"><table><thead><tr><th>Fatura</th><th>Vencimento</th><th class="r">Compras</th><th class="r">Pago</th><th class="r">Em aberto</th><th>Situação</th><th></th></tr></thead><tbody>' + FATS.map(function (s, i) {
+          return '<tr><td>' + esc(s.cartao) + '<div class="g2f-mut">' + pad(s.mes) + '/' + s.ano + ' · ' + (s.itens || []).length + ' compra(s)</div></td><td>' + dataBR(s.vencimento) + '</td><td class="r">' + brl(s.compras) + '</td><td class="r">' + brl(s.pago) + '</td><td class="r"><b>' + brl(s.aberto) + '</b></td><td><span class="g2f-tag">' + esc(ROT.fat[s.status] || s.status) + '</span></td><td><div class="g2f-acts">' + bt('verFatura', i, 'Itens', 'sec') + (tes() && pode('financial.expenses.pay') && num(s.aberto) > 0 && s.status !== 'paid' ? bt('pagarFatura', i, 'Pagar fatura') : '') + '</div></td></tr>';
+        }).join('') + '</tbody></table></div>' : '<div class="g2f-vazio">Nenhuma fatura.</div>') + '</div>';
       }
-      corpo(h || '<div class="card vazio">Sem acesso a transferências ou cartões.</div>');
+      corpo(h || '<div class="g2f-card g2f-vazio">Sem acesso a transferências ou cartões.</div>');
     });
   }
   function formCartao(k) {
@@ -663,32 +676,31 @@
   function tConc() {
     var contas = opContas(false);
     if (!S.concConta && contas.length) S.concConta = contas[0][0];
-    var h = '<div class="row"><select data-c="concConta" aria-label="Conta">' + contas.map(function (c) { return '<option value="' + esc(c[0]) + '"' + (c[0] === S.concConta ? ' selected' : '') + '>' + esc(c[1]) + '</option>'; }).join('') + '</select>' +
-      '<label class="btn sec" style="display:inline-block">Importar extrato (OFX/CSV)<input type="file" data-c="extrato" accept=".ofx,.csv,.txt" hidden></label>' +
-      '<button type="button" class="btn sec" data-a="fecharConc">Registrar saldo do extrato</button></div>';
-    if (!S.concConta) { corpo(h + '<div class="card vazio">Cadastre uma conta primeiro.</div>'); return Promise.resolve(); }
+    var h = '<div class="g2f-row"><select data-c="concConta" aria-label="Conta">' + contas.map(function (c) { return '<option value="' + esc(c[0]) + '"' + (c[0] === S.concConta ? ' selected' : '') + '>' + esc(c[1]) + '</option>'; }).join('') + '</select>' +
+      '<label class="g2f-btn sec" style="display:inline-block">Importar extrato (OFX/CSV)<input type="file" data-c="extrato" accept=".ofx,.csv,.txt" hidden></label>' +
+      '<button type="button" class="g2f-btn sec" data-a="fecharConc">Registrar saldo do extrato</button></div>';
+    if (!S.concConta) { corpo(h + '<div class="g2f-card g2f-vazio">Cadastre uma conta primeiro.</div>'); return Promise.resolve(); }
     return rpc('v39_fin_statement_view', C({ p_account: S.concConta, p_year: S.ano, p_month: S.mes })).then(function (x) {
       CONC = x || {}; var L = CONC.linhas || [], P = CONC.pendentes || [];
       var difs = CONC.sessao && CONC.sessao.saldoExtrato != null ? num(CONC.sessao.saldoExtrato) - num(CONC.saldoSistema) : null;
-      h += '<div class="grid"><div class="kpi"><span class="mut">Saldo no sistema (fim do mês)</span><b>' + brl(CONC.saldoSistema) + '</b></div>' +
-        '<div class="kpi"><span class="mut">Saldo do extrato</span><b>' + (CONC.sessao && CONC.sessao.saldoExtrato != null ? brl(CONC.sessao.saldoExtrato) : '—') + '</b></div>' +
-        '<div class="kpi"><span class="mut">Diferença</span><b class="' + (difs ? 'neg' : 'pos') + '">' + (difs == null ? '—' : brl(difs)) + '</b></div></div>';
-      h += '<div class="card"><h3>Linhas do extrato</h3>' + (L.length ? '<div class="tw"><table><thead><tr><th>Data</th><th>Descrição</th><th class="r">Valor</th><th>Situação / sugestão</th></tr></thead><tbody>' + L.map(function (l) {
-        var s = l.status === 'matched' ? '<span class="tag ok">Conciliada</span>' : (l.status === 'ignored' ? '<span class="tag">Ignorada</span> ' + bt('ignLinha', l.id, 'Voltar', 'sec') :
-          ((l.sugestoes || []).map(function (m) { return '<div>' + dataBR(m.data) + ' · ' + esc(m.descricao) + ' ' + bt('casar', l.id + '|' + m.id, 'Casar') + '</div>'; }).join('') || '<span class="mut">Sem lançamento igual (±3 dias). Lance a entrada/saída e volte aqui.</span>') + ' ' + bt('ignLinha', l.id, 'Ignorar', 'sec'));
-        return '<tr><td>' + dataBR(l.data) + '</td><td>' + esc(l.descricao) + '</td><td class="r ' + (num(l.valor) < 0 ? 'neg' : 'pos') + '">' + brl(l.valor) + '</td><td>' + s + '</td></tr>';
-      }).join('') + '</tbody></table></div>' : '<div class="vazio">Nenhuma linha importada para este mês. Você também pode conciliar manualmente abaixo.</div>') + '</div>';
-      h += '<div class="card"><h3>Lançamentos do mês nesta conta</h3>' + (P.length ? '<div class="tw"><table><tbody>' + P.map(function (m) {
-        return '<tr><td>' + dataBR(m.data) + '</td><td>' + esc(m.descricao) + '</td><td class="r ' + (num(m.valor) < 0 ? 'neg' : 'pos') + '">' + brl(m.valor) + '</td><td>' + (m.status === 'reconciled' ? '<span class="tag ok">Conciliado</span> ' + bt('desconc', m.id, 'Desfazer', 'sec') : bt('conc', m.id, 'Conciliar')) + '</td></tr>';
-      }).join('') + '</tbody></table></div>' : '<div class="vazio">Nenhum lançamento.</div>') + '</div>';
+      h += '<div class="g2f-grid"><div class="g2f-kpi"><span>Saldo no sistema (fim do mês)</span><b>' + brl(CONC.saldoSistema) + '</b></div>' +
+        '<div class="g2f-kpi"><span>Saldo do extrato</span><b>' + (CONC.sessao && CONC.sessao.saldoExtrato != null ? brl(CONC.sessao.saldoExtrato) : '—') + '</b></div>' +
+        '<div class="g2f-kpi"><span>Diferença</span><b class="' + (difs ? 'g2f-neg' : 'g2f-pos') + '">' + (difs == null ? '—' : brl(difs)) + '</b></div></div>';
+      h += '<div class="g2f-card"><h3>Linhas do extrato</h3>' + (L.length ? '<div class="g2f-tw"><table><thead><tr><th>Data</th><th>Descrição</th><th class="r">Valor</th><th>Situação / sugestão</th></tr></thead><tbody>' + L.map(function (l) {
+        var s = l.status === 'matched' ? '<span class="g2f-tag ok">Conciliada</span>' : (l.status === 'ignored' ? '<span class="g2f-tag">Ignorada</span> ' + bt('ignLinha', l.id, 'Voltar', 'sec') :
+          ((l.sugestoes || []).map(function (m) { return '<div>' + dataBR(m.data) + ' · ' + esc(m.descricao) + ' ' + bt('casar', l.id + '|' + m.id, 'Casar') + '</div>'; }).join('') || '<span class="g2f-mut">Sem lançamento igual (±3 dias). Lance a entrada/saída e volte aqui.</span>') + ' ' + bt('ignLinha', l.id, 'Ignorar', 'sec'));
+        return '<tr><td>' + dataBR(l.data) + '</td><td>' + esc(l.descricao) + '</td><td class="r ' + (num(l.valor) < 0 ? 'g2f-neg' : 'g2f-pos') + '">' + brl(l.valor) + '</td><td>' + s + '</td></tr>';
+      }).join('') + '</tbody></table></div>' : '<div class="g2f-vazio">Nenhuma linha importada para este mês. Você também pode conciliar manualmente abaixo.</div>') + '</div>';
+      h += '<div class="g2f-card"><h3>Lançamentos do mês nesta conta</h3>' + (P.length ? '<div class="g2f-tw"><table><tbody>' + P.map(function (m) {
+        return '<tr><td>' + dataBR(m.data) + '</td><td>' + esc(m.descricao) + '</td><td class="r ' + (num(m.valor) < 0 ? 'g2f-neg' : 'g2f-pos') + '">' + brl(m.valor) + '</td><td>' + (m.status === 'reconciled' ? '<span class="g2f-tag ok">Conciliado</span> ' + bt('desconc', m.id, 'Desfazer', 'sec') : bt('conc', m.id, 'Conciliar')) + '</td></tr>';
+      }).join('') + '</tbody></table></div>' : '<div class="g2f-vazio">Nenhum lançamento.</div>') + '</div>';
       corpo(h);
     });
   }
   function lerExtrato(nome, txt) {
     var linhas = [];
     if (/<STMTTRN>/i.test(txt)) {
-      var blocos = txt.split(/<STMTTRN>/i).slice(1);
-      blocos.forEach(function (b) {
+      txt.split(/<STMTTRN>/i).slice(1).forEach(function (b) {
         function tag(t) { var m = b.match(new RegExp('<' + t + '>([^<\\r\\n]*)', 'i')); return m ? m[1].trim() : ''; }
         var dt = tag('DTPOSTED'), v = lerValor(tag('TRNAMT').replace(',', '.')), id = tag('FITID');
         if (dt.length >= 8 && v != null) linhas.push({ fitid: id || (dt + '|' + v + '|' + tag('MEMO')), data: dt.slice(0, 4) + '-' + dt.slice(4, 6) + '-' + dt.slice(6, 8), valor: v, descricao: (tag('MEMO') || tag('NAME')).slice(0, 300) });
@@ -724,24 +736,24 @@
   function tCamp() {
     return rpc('v39_fin_campaigns', C({})).then(function (L) {
       CAMPS = L || [];
-      var h = '<div class="row">' + (pode('financial.campaigns.manage') ? '<button type="button" class="btn" data-a="novaCamp">+ Campanha / voto</button>' : '') + (pode('financial.commitments.create') ? '<button type="button" class="btn sec" data-a="novoComp">+ Compromisso</button>' : '') + '</div>';
-      h += '<div class="mut" style="margin-bottom:8px">Compromisso não é receita: só o valor recebido entra no Livro e no saldo.</div>';
+      var h = '<div class="g2f-row">' + (pode('financial.campaigns.manage') ? '<button type="button" class="g2f-btn" data-a="novaCamp">+ Campanha / voto</button>' : '') + (pode('financial.commitments.create') ? '<button type="button" class="g2f-btn sec" data-a="novoComp">+ Compromisso</button>' : '') + '</div>';
+      h += '<div class="g2f-mut" style="margin-bottom:8px">Compromisso não é receita: só o valor recebido entra no Livro e no saldo.</div>';
       h += CAMPS.length ? CAMPS.map(function (g, gi) {
         var pc = num(g.meta) ? Math.min(100, Math.round(num(g.recebido) / num(g.meta) * 100)) : null;
-        return '<div class="card"><h3>' + esc(g.nome) + ' <span class="tag">' + esc(ROT.campTipo[g.tipo] || g.tipo) + '</span> <span class="tag ' + (g.status === 'active' ? 'ok' : '') + '">' + esc(ROT.camp[g.status] || g.status) + '</span></h3>' +
-          '<div class="mut">' + esc(g.objetivo) + (g.responsavel ? ' · Responsável: ' + esc(g.responsavel) : '') + ' · ' + dataBR(g.inicio) + (g.fim ? ' a ' + dataBR(g.fim) : '') + '</div>' +
-          '<div class="row" style="margin-top:6px"><span>Acordado <b>' + brl(g.acordado) + '</b></span><span>Recebido <b class="pos">' + brl(g.recebido) + '</b></span>' + (g.meta ? '<span>Meta ' + brl(g.meta) + (pc != null ? ' (' + pc + '%)' : '') + '</span>' : '') +
+        return '<div class="g2f-card"><h3>' + esc(g.nome) + ' <span class="g2f-tag">' + esc(ROT.campTipo[g.tipo] || g.tipo) + '</span> <span class="g2f-tag ' + (g.status === 'active' ? 'ok' : '') + '">' + esc(ROT.camp[g.status] || g.status) + '</span></h3>' +
+          '<div class="g2f-mut">' + esc(g.objetivo) + (g.responsavel ? ' · Responsável: ' + esc(g.responsavel) : '') + ' · ' + dataBR(g.inicio) + (g.fim ? ' a ' + dataBR(g.fim) : '') + '</div>' +
+          '<div class="g2f-row" style="margin-top:6px"><span>Acordado <b>' + brl(g.acordado) + '</b></span><span>Recebido <b class="g2f-pos">' + brl(g.recebido) + '</b></span>' + (g.meta ? '<span>Meta ' + brl(g.meta) + (pc != null ? ' (' + pc + '%)' : '') + '</span>' : '') +
           (pode('financial.campaigns.manage') && ['draft', 'planned', 'active'].indexOf(g.status) >= 0 ? bt('editCamp', gi, 'Editar', 'sec') : '') + '</div>' +
-          ((g.compromissos || []).length ? '<div class="tw"><table><thead><tr><th>Pessoa</th><th class="r">Acordado</th><th class="r">Recebido</th><th class="r">Saldo</th><th>Próxima</th><th>Situação</th><th></th></tr></thead><tbody>' + g.compromissos.map(function (c, ci) {
+          ((g.compromissos || []).length ? '<div class="g2f-tw"><table><thead><tr><th>Pessoa</th><th class="r">Acordado</th><th class="r">Recebido</th><th class="r">Saldo</th><th>Próxima</th><th>Situação</th><th></th></tr></thead><tbody>' + g.compromissos.map(function (c, ci) {
             var a = [];
             if (tes() && pode('financial.commitments.receive') && ['active', 'due_soon', 'overdue'].indexOf(c.status) >= 0 && num(c.saldo) > 0) a.push(bt('receber', gi + '|' + ci, 'Receber'));
             if (pode('financial.commitments.communicate')) a.push(bt('zap', gi + '|' + ci, 'WhatsApp', 'sec'));
             if (pode('financial.commitments.cancel') && ['paid', 'cancelled'].indexOf(c.status) < 0) a.push(bt('cancComp', c.id, 'Cancelar', 'red'));
             if (tes() && pode('financial.commitments.reverse')) (c.recebimentos || []).forEach(function (r) { if (r.status === 'posted') a.push(bt('estRec', r.id, 'Estornar ' + dataBR(r.data), 'red')); });
             var tg = c.status === 'paid' ? 'ok' : (c.status === 'overdue' ? 'bad' : (c.status === 'due_soon' ? 'warn' : ''));
-            return '<tr><td>' + esc(c.pessoa) + '<div class="mut">' + (c.parcelas > 1 ? c.parcelas + ' parcelas' : 'à vista') + '</div></td><td class="r">' + brl(c.acordado) + '</td><td class="r">' + brl(c.recebido) + '</td><td class="r">' + brl(c.saldo) + '</td><td>' + (c.proximo ? dataBR(c.proximo) + '<div class="mut">' + brl(c.proximoValor) + '</div>' : '—') + '</td><td><span class="tag ' + tg + '">' + esc(ROT.comp[c.status] || c.status) + '</span></td><td><div class="acts">' + a.join('') + '</div></td></tr>';
-          }).join('') + '</tbody></table></div>' : '<div class="vazio">Nenhum compromisso.</div>') + '</div>';
-      }).join('') : '<div class="card vazio">Nenhuma campanha.</div>';
+            return '<tr><td>' + esc(c.pessoa) + '<div class="g2f-mut">' + (c.parcelas > 1 ? c.parcelas + ' parcelas' : 'à vista') + '</div></td><td class="r">' + brl(c.acordado) + '</td><td class="r">' + brl(c.recebido) + '</td><td class="r">' + brl(c.saldo) + '</td><td>' + (c.proximo ? dataBR(c.proximo) + '<div class="g2f-mut">' + brl(c.proximoValor) + '</div>' : '—') + '</td><td><span class="g2f-tag ' + tg + '">' + esc(ROT.comp[c.status] || c.status) + '</span></td><td><div class="g2f-acts">' + a.join('') + '</div></td></tr>';
+          }).join('') + '</tbody></table></div>' : '<div class="g2f-vazio">Nenhum compromisso.</div>') + '</div>';
+      }).join('') : '<div class="g2f-card g2f-vazio">Nenhuma campanha.</div>';
       corpo(h);
     });
   }
@@ -825,27 +837,27 @@
   function tCad() {
     var C2 = S.cat || {}, h = '';
     if (S.ctx.master || !S.ctx.inicio) {
-      h += '<div class="card"><h3>Início do Financeiro</h3><div>' + (S.ctx.inicio ? 'Começou em <b>' + dataBR(S.ctx.inicio) + '</b>.' : '<b>Não definido.</b>') + '</div>' +
-        '<div class="mut">Primeiro dia do Livro. GC e cultos com valores a partir desta data aparecem em "A conferir" (inclusive os já registrados antes deste módulo). Só muda enquanto não houver lançamentos.</div>' +
-        (S.ctx.master ? '<div class="row" style="margin-top:8px"><button type="button" class="btn sec" data-a="inicio">Definir data</button></div>' : '') + '</div>';
+      h += '<div class="g2f-card"><h3>Início do Financeiro</h3><div>' + (S.ctx.inicio ? 'Começou em <b>' + dataBR(S.ctx.inicio) + '</b>.' : '<b>Não definido.</b>') + '</div>' +
+        '<div class="g2f-mut">Primeiro dia do Livro. GC e cultos com valores a partir desta data aparecem em "A conferir" (inclusive os já registrados antes deste módulo). Só muda enquanto não houver lançamentos.</div>' +
+        (S.ctx.master ? '<div class="g2f-row" style="margin-top:8px"><button type="button" class="g2f-btn sec" data-a="inicio">Definir data</button></div>' : '') + '</div>';
     }
     if (pode('financial.accounts.manage')) {
-      h += '<div class="card"><h3>Contas e caixas</h3><div class="row"><button type="button" class="btn sec mini" data-a="novaConta">+ Conta</button></div><div class="tw"><table><tbody>' +
+      h += '<div class="g2f-card"><h3>Contas bancárias e caixas</h3><div class="g2f-row"><button type="button" class="g2f-btn sec mini" data-a="novaConta">+ Conta</button></div><div class="g2f-tw"><table><tbody>' +
         ((C2.contas || []).map(function (a) {
-          return '<tr><td>' + esc(a.nome) + '<div class="mut">' + esc(ROT.conta[a.tipo] || a.tipo) + (a.banco ? ' · ' + esc(a.banco) : '') + (a.status !== 'active' ? ' · inativa' : '') + '</div></td><td>' + (a.saldoInicial ? 'Saldo inicial ' + brl(a.saldoInicial.valor) + ' em ' + dataBR(a.saldoInicial.data) : '<span class="tag warn">sem saldo inicial</span>') + '</td><td><div class="acts">' + bt('editConta', a.id, 'Editar', 'sec') + (!a.saldoInicial && tes() ? bt('saldoIni', a.id, 'Saldo inicial') : '') + '</div></td></tr>';
-        }).join('') || '<tr><td class="vazio">Nenhuma conta.</td></tr>') + '</tbody></table></div></div>';
+          return '<tr><td>' + esc(a.nome) + '<div class="g2f-mut">' + esc(ROT.conta[a.tipo] || a.tipo) + (a.banco ? ' · ' + esc(a.banco) : '') + (a.agencia ? ' · ag. ' + esc(a.agencia) : '') + (a.numero ? ' · c/c ' + esc(a.numero) : '') + (a.status !== 'active' ? ' · inativa' : '') + '</div></td><td>' + (a.saldoInicial ? 'Saldo inicial ' + brl(a.saldoInicial.valor) + ' em ' + dataBR(a.saldoInicial.data) : '<span class="g2f-tag warn">sem saldo inicial</span>') + '</td><td><div class="g2f-acts">' + bt('editConta', a.id, 'Editar', 'sec') + (!a.saldoInicial && tes() ? bt('saldoIni', a.id, 'Saldo inicial') : '') + '</div></td></tr>';
+        }).join('') || '<tr><td class="g2f-vazio">Nenhuma conta.</td></tr>') + '</tbody></table></div></div>';
     }
     if (pode('financial.categories.manage')) {
-      h += '<div class="card"><h3>Categorias (plano de contas)</h3><div class="mut">O código contábil é o do contador; preencha quando receber a lista.</div><div class="row" style="margin-top:6px"><button type="button" class="btn sec mini" data-a="novaCat">+ Categoria</button></div><div class="tw"><table><thead><tr><th>Código</th><th>Nome</th><th>Natureza</th><th>Cód. contábil</th><th></th></tr></thead><tbody>' +
+      h += '<div class="g2f-card"><h3>Plano de contas (categorias e código contábil)</h3><div class="g2f-mut">O código contábil é o do contador; preencha quando receber a lista.</div><div class="g2f-row" style="margin-top:6px"><button type="button" class="g2f-btn sec mini" data-a="novaCat">+ Categoria</button></div><div class="g2f-tw"><table><thead><tr><th>Código</th><th>Nome</th><th>Natureza</th><th>Cód. contábil</th><th></th></tr></thead><tbody>' +
         ((C2.categorias || []).map(function (c) {
-          return '<tr><td>' + esc(c.codigo) + '</td><td>' + esc(c.nome) + (c.ativa ? '' : ' <span class="tag">inativa</span>') + (c.sistema ? ' <span class="tag">padrão</span>' : '') + '</td><td>' + esc(ROT.nat[c.natureza] || c.natureza) + '</td><td>' + esc(c.contabil || '—') + '</td><td>' + bt('editCat', c.id, 'Editar', 'sec') + '</td></tr>';
-        }).join('') || '<tr><td colspan="5" class="vazio">Nenhuma categoria.</td></tr>') + '</tbody></table></div></div>';
+          return '<tr><td>' + esc(c.codigo) + '</td><td>' + esc(c.nome) + (c.ativa ? '' : ' <span class="g2f-tag">inativa</span>') + (c.sistema ? ' <span class="g2f-tag">padrão</span>' : '') + '</td><td>' + esc(ROT.nat[c.natureza] || c.natureza) + '</td><td>' + esc(c.contabil || '—') + '</td><td>' + bt('editCat', c.id, 'Editar', 'sec') + '</td></tr>';
+        }).join('') || '<tr><td colspan="5" class="g2f-vazio">Nenhuma categoria.</td></tr>') + '</tbody></table></div></div>';
     }
     if (pode('financial.expenses.create') || pode('financial.bills.manage')) {
-      h += '<div class="card"><h3>Fornecedores / beneficiários</h3><div class="row"><button type="button" class="btn sec mini" data-a="novoFornec">+ Fornecedor</button></div><div class="tw"><table><tbody>' +
-        ((C2.fornecedores || []).map(function (f) { return '<tr><td>' + esc(f.nome) + '<div class="mut">' + esc(f.documento || '') + (f.contato ? ' · ' + esc(f.contato) : '') + (f.status === 'inactive' ? ' · inativo' : '') + '</div></td><td>' + bt('editFornec', f.id, 'Editar', 'sec') + '</td></tr>'; }).join('') || '<tr><td class="vazio">Nenhum fornecedor.</td></tr>') + '</tbody></table></div></div>';
+      h += '<div class="g2f-card"><h3>Fornecedores / beneficiários</h3><div class="g2f-row"><button type="button" class="g2f-btn sec mini" data-a="novoFornec">+ Fornecedor</button></div><div class="g2f-tw"><table><tbody>' +
+        ((C2.fornecedores || []).map(function (f) { return '<tr><td>' + esc(f.nome) + '<div class="g2f-mut">' + esc(f.documento || '') + (f.contato ? ' · ' + esc(f.contato) : '') + (f.status === 'inactive' ? ' · inativo' : '') + '</div></td><td>' + bt('editFornec', f.id, 'Editar', 'sec') + '</td></tr>'; }).join('') || '<tr><td class="g2f-vazio">Nenhum fornecedor.</td></tr>') + '</tbody></table></div></div>';
     }
-    corpo(h || '<div class="card vazio">Sem cadastros disponíveis para o seu perfil.</div>');
+    corpo(h || '<div class="g2f-card g2f-vazio">Sem cadastros disponíveis para o seu perfil.</div>');
     return Promise.resolve();
   }
   function formConta(a) {
@@ -888,45 +900,46 @@
     return rpc('v39_fin_report', C({ p_year: S.ano, p_month: S.relMes ? S.mes : null })).then(function (x) {
       var p = x.periodo || {}, r = x.resultado || {}, f = x.fluxo || {};
       var tit = (S.relMes ? MESES[S.mes - 1] + '/' : 'Ano ') + S.ano;
-      var h = '<div class="row noprint"><select data-c="relMes"><option value="1"' + (S.relMes ? ' selected' : '') + '>Mês selecionado</option><option value="0"' + (!S.relMes ? ' selected' : '') + '>Ano inteiro</option></select>' +
-        '<button type="button" class="btn sec" data-a="imprimir">Imprimir / PDF</button></div>';
-      h += '<div class="card"><h3>' + esc(x.entidade || 'Igreja') + ' — Relatório financeiro ' + esc(tit) + '</h3><div class="mut">' + (x.documento ? 'CNPJ ' + esc(x.documento) + ' · ' : '') + 'Período ' + dataBR(p.inicio) + ' a ' + dataBR(p.fim) + ' · ' + (p.definitivo ? 'meses fechados (definitivo)' : 'PRÉVIA: há mês aberto no período') + ' · gerado em ' + new Date(p.geradoEm || Date.now()).toLocaleString('pt-BR') + '</div></div>';
-      h += '<div class="grid"><div class="kpi"><span class="mut">Receitas</span><b class="pos">' + brl(r.receitas) + '</b></div><div class="kpi"><span class="mut">Despesas</span><b class="neg">' + brl(r.despesas) + '</b></div><div class="kpi"><span class="mut">Superávit / déficit</span><b class="' + (num(r.superavit) < 0 ? 'neg' : 'pos') + '">' + brl(r.superavit) + '</b></div></div>';
+      var h = '<div class="g2f-row g2f-noprint"><select data-c="relMes"><option value="1"' + (S.relMes ? ' selected' : '') + '>Mês selecionado</option><option value="0"' + (!S.relMes ? ' selected' : '') + '>Ano inteiro</option></select>' +
+        '<button type="button" class="g2f-btn sec" data-a="imprimir">Imprimir / PDF</button></div>';
+      h += '<div class="g2f-card"><h3>' + esc(x.entidade || 'Igreja') + ' — Relatório financeiro ' + esc(tit) + '</h3><div class="g2f-mut">' + (x.documento ? 'CNPJ ' + esc(x.documento) + ' · ' : '') + 'Período ' + dataBR(p.inicio) + ' a ' + dataBR(p.fim) + ' · ' + (p.definitivo ? 'meses fechados (definitivo)' : 'PRÉVIA: há mês aberto no período') + ' · gerado em ' + new Date(p.geradoEm || Date.now()).toLocaleString('pt-BR') + '</div></div>';
+      h += '<div class="g2f-grid"><div class="g2f-kpi"><span>Receitas</span><b class="g2f-pos">' + brl(r.receitas) + '</b></div><div class="g2f-kpi"><span>Despesas</span><b class="g2f-neg">' + brl(r.despesas) + '</b></div><div class="g2f-kpi"><span>Superávit / déficit</span><b class="' + (num(r.superavit) < 0 ? 'g2f-neg' : 'g2f-pos') + '">' + brl(r.superavit) + '</b></div></div>';
       var cats = x.categorias || [];
-      h += '<div class="card"><h3>Demonstração do resultado por categoria</h3><div class="tw"><table><thead><tr><th>Cód. contábil</th><th>Categoria</th><th class="r">Lançamentos</th><th class="r">Valor</th></tr></thead><tbody>' +
-        (cats.length ? cats.map(function (c) { return '<tr><td>' + esc(c.contabil || '—') + '</td><td>' + esc(c.nome) + '</td><td class="r">' + c.lancamentos + '</td><td class="r ' + (num(c.valor) < 0 ? 'neg' : 'pos') + '">' + brl(c.valor) + '</td></tr>'; }).join('') : '<tr><td colspan="4" class="vazio">Sem lançamentos.</td></tr>') + '</tbody></table></div></div>';
-      h += '<div class="card"><h3>Fluxo de caixa (método direto)</h3><div class="tw"><table><tbody><tr><td>Caixa inicial (todas as contas)</td><td class="r">' + brl(f.caixaInicial) + '</td></tr>' +
-        (f.recebimentos || []).map(function (y) { return '<tr><td>+ ' + esc(y.nome) + '</td><td class="r pos">' + brl(y.valor) + '</td></tr>'; }).join('') +
-        (f.pagamentos || []).map(function (y) { return '<tr><td>− ' + esc(y.nome) + '</td><td class="r neg">' + brl(y.valor) + '</td></tr>'; }).join('') +
+      h += '<div class="g2f-card"><h3>Demonstração do resultado por categoria</h3><div class="g2f-tw"><table><thead><tr><th>Cód. contábil</th><th>Categoria</th><th class="r">Lançamentos</th><th class="r">Valor</th></tr></thead><tbody>' +
+        (cats.length ? cats.map(function (c) { return '<tr><td>' + esc(c.contabil || '—') + '</td><td>' + esc(c.nome) + '</td><td class="r">' + c.lancamentos + '</td><td class="r ' + (num(c.valor) < 0 ? 'g2f-neg' : 'g2f-pos') + '">' + brl(c.valor) + '</td></tr>'; }).join('') : '<tr><td colspan="4" class="g2f-vazio">Sem lançamentos.</td></tr>') + '</tbody></table></div></div>';
+      h += '<div class="g2f-card"><h3>Fluxo de caixa (método direto)</h3><div class="g2f-tw"><table><tbody><tr><td>Caixa inicial (todas as contas)</td><td class="r">' + brl(f.caixaInicial) + '</td></tr>' +
+        (f.recebimentos || []).map(function (y) { return '<tr><td>+ ' + esc(y.nome) + '</td><td class="r g2f-pos">' + brl(y.valor) + '</td></tr>'; }).join('') +
+        (f.pagamentos || []).map(function (y) { return '<tr><td>− ' + esc(y.nome) + '</td><td class="r g2f-neg">' + brl(y.valor) + '</td></tr>'; }).join('') +
         '<tr><td>Pagamento de faturas de cartão</td><td class="r">' + brl(f.liquidacaoCartao) + '</td></tr><tr><td>Saldos iniciais lançados no período</td><td class="r">' + brl(f.saldosIniciais) + '</td></tr><tr><td>Transferências (líquido)</td><td class="r">' + brl(f.transferencias) + '</td></tr>' + (num(f.ajustes) ? '<tr><td>Ajustes</td><td class="r">' + brl(f.ajustes) + '</td></tr>' : '') +
         '<tr><td><b>Caixa final</b></td><td class="r"><b>' + brl(f.caixaFinal) + '</b></td></tr></tbody></table></div></div>';
-      h += '<div class="card"><h3>Contas: saldo e conciliação</h3><div class="tw"><table><thead><tr><th>Conta</th><th class="r">Inicial</th><th class="r">Entradas</th><th class="r">Saídas</th><th class="r">Final</th><th class="r">Extrato</th><th class="r">Não conciliado</th></tr></thead><tbody>' +
+      h += '<div class="g2f-card"><h3>Contas: saldo e conciliação</h3><div class="g2f-tw"><table><thead><tr><th>Conta</th><th class="r">Inicial</th><th class="r">Entradas</th><th class="r">Saídas</th><th class="r">Final</th><th class="r">Extrato</th><th class="r">Não conciliado</th></tr></thead><tbody>' +
         (x.contas || []).map(function (a) { return '<tr><td>' + esc(a.nome) + '</td><td class="r">' + brl(a.inicial) + '</td><td class="r">' + brl(a.entradas) + '</td><td class="r">' + brl(-num(a.saidas)) + '</td><td class="r"><b>' + brl(a.final) + '</b></td><td class="r">' + (a.saldoExtrato != null ? brl(a.saldoExtrato) : '—') + '</td><td class="r">' + (a.naoConciliados || 0) + ' (' + brl(a.valorNaoConciliado) + ')</td></tr>'; }).join('') + '</tbody></table></div></div>';
       if (S.relMes) {
         (x.contas || []).forEach(function (a) {
           if (!(a.movimentos || []).length) return;
-          h += '<div class="card"><h3>Razão · ' + esc(a.nome) + '</h3><div class="tw"><table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th class="r">Valor</th><th>Comp.</th></tr></thead><tbody>' +
-            a.movimentos.map(function (m) { return '<tr><td>' + dataBR(m.data) + '</td><td>' + esc(m.descricao) + (m.pessoa ? '<div class="mut">' + esc(m.pessoa) + '</div>' : '') + '</td><td>' + esc(m.categoria) + (m.contabil ? ' (' + esc(m.contabil) + ')' : '') + '</td><td class="r ' + (num(m.valor) < 0 ? 'neg' : 'pos') + '">' + brl(m.valor) + '</td><td>' + (m.comprovante ? '✔' : '—') + '</td></tr>'; }).join('') + '</tbody></table></div></div>';
+          h += '<div class="g2f-card"><h3>Razão · ' + esc(a.nome) + '</h3><div class="g2f-tw"><table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th class="r">Valor</th><th>Comp.</th></tr></thead><tbody>' +
+            a.movimentos.map(function (m) { return '<tr><td>' + dataBR(m.data) + '</td><td>' + esc(m.descricao) + (m.pessoa ? '<div class="g2f-mut">' + esc(m.pessoa) + '</div>' : '') + '</td><td>' + esc(m.categoria) + (m.contabil ? ' (' + esc(m.contabil) + ')' : '') + '</td><td class="r ' + (num(m.valor) < 0 ? 'g2f-neg' : 'g2f-pos') + '">' + brl(m.valor) + '</td><td>' + (m.comprovante ? '✔' : '—') + '</td></tr>'; }).join('') + '</tbody></table></div></div>';
         });
       } else if ((x.mensal || []).length) {
-        h += '<div class="card"><h3>Mês a mês</h3><div class="tw"><table><thead><tr><th>Mês</th><th class="r">Receitas</th><th class="r">Despesas</th><th class="r">Resultado</th><th></th></tr></thead><tbody>' +
-          x.mensal.map(function (m) { return '<tr><td>' + MESES[m.mes - 1] + '</td><td class="r">' + brl(m.receitas) + '</td><td class="r">' + brl(m.despesas) + '</td><td class="r ' + (num(m.resultado) < 0 ? 'neg' : 'pos') + '">' + brl(m.resultado) + '</td><td>' + (m.fechado ? '🔒' : '') + '</td></tr>'; }).join('') + '</tbody></table></div></div>';
+        h += '<div class="g2f-card"><h3>Mês a mês</h3><div class="g2f-tw"><table><thead><tr><th>Mês</th><th class="r">Receitas</th><th class="r">Despesas</th><th class="r">Resultado</th><th></th></tr></thead><tbody>' +
+          x.mensal.map(function (m) { return '<tr><td>' + MESES[m.mes - 1] + '</td><td class="r">' + brl(m.receitas) + '</td><td class="r">' + brl(m.despesas) + '</td><td class="r ' + (num(m.resultado) < 0 ? 'g2f-neg' : 'g2f-pos') + '">' + brl(m.resultado) + '</td><td>' + (m.fechado ? '🔒' : '') + '</td></tr>'; }).join('') + '</tbody></table></div></div>';
       }
       var cp = x.contasPagar || [], cr = x.compromissos || [];
-      h += '<div class="card"><h3>Contas a pagar (' + cp.length + ')</h3>' + (cp.length ? '<div class="tw"><table><tbody>' + cp.map(function (e) { return '<tr><td>' + esc(e.descricao) + '<div class="mut">' + esc(e.fornecedor || '') + '</div></td><td>' + dataBR(e.vencimento) + '</td><td class="r">' + brl(e.saldo) + '</td><td>' + esc(ROT.desp[e.status] || e.status) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<div class="vazio">Nada a pagar.</div>') + '</div>';
-      h += '<div class="card"><h3>Compromissos a receber (' + cr.length + ')</h3>' + (cr.length ? '<div class="tw"><table><tbody>' + cr.map(function (c) { return '<tr><td>' + esc(c.pessoa) + '<div class="mut">' + esc(c.campanha) + '</div></td><td class="r">' + brl(c.saldo) + '</td><td>' + (c.proximo ? dataBR(c.proximo) : '—') + '</td><td>' + esc(ROT.comp[c.status] || c.status) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<div class="vazio">Nada a receber.</div>') + '<div class="mut">Compromissos não são receita até o recebimento.</div></div>';
+      h += '<div class="g2f-card"><h3>Contas a pagar (' + cp.length + ')</h3>' + (cp.length ? '<div class="g2f-tw"><table><tbody>' + cp.map(function (e) { return '<tr><td>' + esc(e.descricao) + '<div class="g2f-mut">' + esc(e.fornecedor || '') + '</div></td><td>' + dataBR(e.vencimento) + '</td><td class="r">' + brl(e.saldo) + '</td><td>' + esc(ROT.desp[e.status] || e.status) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<div class="g2f-vazio">Nada a pagar.</div>') + '</div>';
+      h += '<div class="g2f-card"><h3>Compromissos a receber (' + cr.length + ')</h3>' + (cr.length ? '<div class="g2f-tw"><table><tbody>' + cr.map(function (c) { return '<tr><td>' + esc(c.pessoa) + '<div class="g2f-mut">' + esc(c.campanha) + '</div></td><td class="r">' + brl(c.saldo) + '</td><td>' + (c.proximo ? dataBR(c.proximo) : '—') + '</td><td>' + esc(ROT.comp[c.status] || c.status) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<div class="g2f-vazio">Nada a receber.</div>') + '<div class="g2f-mut">Compromissos não são receita até o recebimento.</div></div>';
       var cv = x.comprovantes || [], sem = cv.filter(function (c) { return /sem comprovante/.test(c.arquivo); }).length;
-      h += '<div class="card"><h3>Relação de comprovantes (' + cv.length + (sem ? ', ' + sem + ' sem comprovante' : '') + ')</h3>' + (cv.length ? '<div class="tw"><table><tbody>' + cv.map(function (c) { return '<tr><td>' + dataBR(c.data) + '</td><td>' + esc(c.descricao) + '<div class="mut">' + esc(c.conta) + '</div></td><td class="r">' + brl(c.valor) + '</td><td>' + esc(c.arquivo) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<div class="vazio">Sem movimentos.</div>') + '</div>';
+      h += '<div class="g2f-card"><h3>Relação de comprovantes (' + cv.length + (sem ? ', ' + sem + ' sem comprovante' : '') + ')</h3>' + (cv.length ? '<div class="g2f-tw"><table><tbody>' + cv.map(function (c) { return '<tr><td>' + dataBR(c.data) + '</td><td>' + esc(c.descricao) + '<div class="g2f-mut">' + esc(c.conta) + '</div></td><td class="r">' + brl(c.valor) + '</td><td>' + esc(c.arquivo) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<div class="g2f-vazio">Sem movimentos.</div>') + '</div>';
       corpo(h);
     });
   }
 
-  /* ───────────── eventos ───────────── */
+  /* ───────────── eventos do Livro ───────────── */
   function achar(lista, id) { return (lista || []).filter(function (x) { return x.id === id; })[0] || null; }
-  function acao(p) { return p.then(function (m) { if (m) toast(m); recarregar(); }).catch(function (e) { console.warn('[2Gather][fin]', e); toast(traduz(e)); }); }
+  function acao(p) { return p.then(function (m) { if (m) toast(m); recarregar(); dashCarregar(true); }).catch(function (e) { console.warn('[2Gather][fin]', e); toast(traduz(e)); }); }
   function clique(ev) {
-    var b = ev.target.closest && ev.target.closest('[data-a]'); if (!b) return;
+    var b = ev.target.closest && ev.target.closest('[data-a]'); if (!b || !$('g2fin').contains(b)) return;
     var a = b.getAttribute('data-a'), v = b.getAttribute('data-v');
+    ev.stopPropagation();
     switch (a) {
       case 'fechar': return fechar();
       case 'aba': S.aba = v; pintarBase(); return recarregar();
@@ -967,7 +980,7 @@
           { k: 'descricao', l: 'Descrição', v: 'Depósito do caixa no banco' }, { k: 'arq', l: 'Comprovante', t: 'file' }
         ], 'Transferir', function (x) {
           if (x.origemId === x.destinoId) return Promise.reject(new Error('FIN_ACCOUNT_INVALID'));
-          return enviarComprovante(x.arq).then(function (ev) { return rpc('v39_fin_transfer', C({ p: { origemId: x.origemId, destinoId: x.destinoId, valor: x.valor, data: x.data, descricao: x.descricao, comprovanteId: ev, chave: uuid() } })); }).then(function () { return 'Transferência lançada.'; });
+          return enviarComprovante(x.arq).then(function (ev2) { return rpc('v39_fin_transfer', C({ p: { origemId: x.origemId, destinoId: x.destinoId, valor: x.valor, data: x.data, descricao: x.descricao, comprovanteId: ev2, chave: uuid() } })); }).then(function () { return 'Transferência lançada.'; });
         });
       case 'estTransf': return motivo('Estornar transferência', function (m) { return rpc('v39_fin_transfer_reverse', C({ p_id: v, p_reason: m })).then(function () { return 'Transferência estornada.'; }); }, 'Estornar');
       case 'novoCartao': return formCartao(null);
@@ -985,7 +998,7 @@
           { k: 'contaId', l: 'Conta', t: 'select', o: opContas(true), v: ct, req: true }, { k: 'formaId', l: 'Forma', t: 'select', o: opFormas(true), req: true },
           { k: 'arq', l: 'Comprovante', t: 'file', req: true }, { k: 'obs', l: 'Observação', t: 'textarea' }
         ], 'Pagar', function (x) {
-          return enviarComprovante(x.arq).then(function (ev) { return rpc('v39_fin_card_statement_pay', C({ p_statement_id: f.id, p: { data: x.data, valor: x.valor, contaId: x.contaId, formaId: x.formaId, comprovanteId: ev, obs: x.obs || null, chave: uuid() } })); }).then(function () { return 'Fatura paga.'; });
+          return enviarComprovante(x.arq).then(function (ev2) { return rpc('v39_fin_card_statement_pay', C({ p_statement_id: f.id, p: { data: x.data, valor: x.valor, contaId: x.contaId, formaId: x.formaId, comprovanteId: ev2, obs: x.obs || null, chave: uuid() } })); }).then(function () { return 'Fatura paga.'; });
         });
       }
       case 'casar': { var pp = String(v).split('|'); return acao(rpc('v39_fin_statement_match', C({ p_line: pp[0], p_movement: pp[1] })).then(function () { return 'Linha conciliada.'; })); }
@@ -1016,7 +1029,7 @@
           { t: 'info', l: 'Saldo da conta no dia ' + dataBR(S.ctx.inicio) + ' (início do Financeiro). Use 0 se estava zerada. Só pode ser lançado uma vez.' },
           { k: 'valor', l: 'Saldo', t: 'money', req: true }, { k: 'arq', l: 'Extrato/comprovante', t: 'file' }, { k: 'obs', l: 'Observação', t: 'textarea' }
         ], 'Lançar saldo inicial', function (x) {
-          return enviarComprovante(x.arq).then(function (ev) { return rpc('v39_fin_opening_balance', C({ p: { contaId: v, valor: x.valor, comprovanteId: ev, obs: x.obs || null } })); }).then(function () { return 'Saldo inicial lançado.'; });
+          return enviarComprovante(x.arq).then(function (ev2) { return rpc('v39_fin_opening_balance', C({ p: { contaId: v, valor: x.valor, comprovanteId: ev2, obs: x.obs || null } })); }).then(function () { return 'Saldo inicial lançado.'; });
         });
       }
       case 'novaCat': return formCat(null);
@@ -1027,49 +1040,130 @@
   }
   function mudanca(ev) {
     var el = ev.target, c = el.getAttribute && el.getAttribute('data-c'); if (!c) return;
-    if (c === 'mes') { S.mes = +el.value; return recarregar(); }
-    if (c === 'ano') { S.ano = +el.value; return recarregar(); }
+    if (c === 'mes') { S.mes = +el.value; pintarBase(); return recarregar(); }
+    if (c === 'ano') { S.ano = +el.value; pintarBase(); return recarregar(); }
     if (c === 'despFiltro') { S.despFiltro = el.value; return recarregar(); }
     if (c === 'concConta') { S.concConta = el.value; return recarregar(); }
     if (c === 'relMes') { S.relMes = el.value === '1'; return recarregar(); }
     if (c === 'extrato') { var f = el.files && el.files[0]; el.value = ''; return importarExtrato(f); }
   }
 
-  /* ───────────── entrada no app: botão e aba antiga ───────────── */
-  var fabTentado = false;
-  function botao() {
-    if (!v39() || !igrejaId()) return;
-    if ($('g2f-fab') || fabTentado) return;
-    fabTentado = true;
+  /* ───────────── PAINEL na tela Financeiro do app ───────────── */
+  var D = { dados: null, carregando: false, em: 0, legado: false };
+  function telaFinanceiro() { return /fin/i.test(String(cfg().aba || '')); }
+  // O título real da tela é <div class="ini-ola">Financeiro</div> (seguido de <div class="ini-sub">).
+  function tituloFinanceiro(main) {
+    var o = main.querySelector('.ini-ola'); if (o && /^\s*financeiro\s*$/i.test(o.textContent || '')) return o;
+    var hs = main.querySelectorAll('h1,h2,h3');
+    for (var i = 0; i < hs.length; i++) if (/^\s*financeiro\s*$/i.test(hs[i].textContent || '')) return hs[i];
+    return null;
+  }
+  function dashCarregar(forcar) {
+    if (D.carregando || !igrejaId()) return;
+    if (!forcar && D.dados && Date.now() - D.em < 60000) return;
+    D.carregando = true;
     carregarCtx().then(function () {
-      if (!algum()) return;
-      css();
-      var b = document.createElement('button'); b.type = 'button'; b.id = 'g2f-fab'; b.textContent = 'R$ Financeiro';
-      b.setAttribute('aria-label', 'Abrir o Financeiro');
-      b.addEventListener('click', function () { abrir(); });
-      document.body.appendChild(b);
-    }).catch(function (e) { fabTentado = false; console.warn('[2Gather][fin] ' + traduz(e)); });
+      if (!algum()) { D.dados = { semAcesso: true }; return; }
+      var ps = [pode('financial.book.view') || pode('financial.reports.view') ? rpc('v39_fin_overview', C({ p_year: S.ano, p_month: S.mes })).catch(function () { return null; }) : Promise.resolve(null),
+        pode('financial.sources.view') ? rpc('v39_fin_source_pending', C({})).catch(function () { return null; }) : Promise.resolve(null),
+        (pode('financial.expenses.approve') || pode('financial.expenses.pay')) ? rpc('v39_fin_expenses', C({ p_filter: 'abertas' })).catch(function () { return null; }) : Promise.resolve(null)];
+      return Promise.all(ps).then(function (r) { D.dados = { ov: r[0], pend: r[1], desp: r[2] }; });
+    }).catch(function (e) { console.warn('[2Gather][fin] ' + traduz(e)); D.dados = { erro: traduz(e) }; })
+      .then(function () { D.carregando = false; D.em = Date.now(); var x = $('g2f-dash'); if (x) x.remove(); pintarDash(); });
   }
-  function abaAntiga() {
-    var main = $('main'); if (!main || !v39()) return;
-    if (!/fin/i.test(String(cfg().aba || ''))) return;
-    if ($('g2f-aviso')) return;
-    if (!S.ctx || !algum()) return;
+  function htmlDash() {
+    var d = D.dados || {}, ov = d.ov || {}, t = ov.totais || {}, contas = ov.contas || [];
+    var saldo = contas.reduce(function (s, a) { return s + num(a.saldoAtual); }, 0);
+    var h = '';
+    if (d.erro) return '<div class="g2f-card">' + esc(d.erro) + '</div>';
+    if (d.ov) {
+      h += '<div class="g2f-row" style="margin-bottom:8px"><span class="g2f-mut">Livro financeiro · </span><select data-d="mes" aria-label="Mês do painel">' + MESES.map(function (m, i) { return '<option value="' + (i + 1) + '"' + (i + 1 === S.mes ? ' selected' : '') + '>' + m + '</option>'; }).join('') + '</select><select data-d="ano" aria-label="Ano do painel">' + [0, 1, 2, 3].map(function (k) { var a = new Date().getFullYear() - k; return '<option' + (a === S.ano ? ' selected' : '') + '>' + a + '</option>'; }).join('') + '</select></div>';
+      h += '<div class="g2f-grid"><div class="g2f-kpi"><span>Entradas</span><b class="g2f-pos">' + brl(t.entradas) + '</b><small>' + MESES[S.mes - 1] + '</small></div>' +
+        '<div class="g2f-kpi"><span>Saídas</span><b class="g2f-neg">' + brl(t.saidas) + '</b><small>' + MESES[S.mes - 1] + '</small></div>' +
+        '<div class="g2f-kpi"><span>Resultado</span><b class="' + (num(t.resultado) < 0 ? 'g2f-neg' : 'g2f-pos') + '">' + brl(t.resultado) + '</b><small>entradas − saídas</small></div>' +
+        '<div class="g2f-kpi"><span>Saldo atual</span><b>' + brl(saldo) + '</b><small>todas as contas, hoje</small></div></div>';
+    }
+    var nPend = d.pend && d.pend.itens ? d.pend.itens.length : 0;
+    var nAprov = (d.desp || []).filter(function (e) { return e.status === 'pending_approval' && !e.souSolicitante; }).length;
+    var nPagar = (d.desp || []).filter(function (e) { return e.status === 'approved' || e.status === 'partially_paid'; }).length;
+    if (nPend && pode('financial.sources.view')) h += '<button type="button" class="g2f-pend" data-d="abrir" data-v="conferir"><b>' + nPend + '</b><span>GC/cultos com valores <strong>a conferir</strong></span></button>';
+    if (nAprov && pode('financial.expenses.approve')) h += '<button type="button" class="g2f-pend" data-d="abrir" data-v="despesas"><b>' + nAprov + '</b><span>despesa(s) <strong>aguardando sua aprovação</strong></span></button>';
+    if (nPagar && tes() && pode('financial.expenses.pay')) h += '<button type="button" class="g2f-pend" data-d="abrir" data-v="despesas"><b>' + nPagar + '</b><span>despesa(s) aprovada(s) <strong>a pagar</strong></span></button>';
+    h += '<button type="button" class="g2f-btn big" data-d="abrir" data-v="livro" style="margin:4px 0 12px">Abrir Livro financeiro</button>';
+    if (contas.length) {
+      h += '<div class="g2f-card"><h3>Saldo por conta</h3><table><tbody>' + contas.map(function (a) {
+        return '<tr><td>' + esc(a.nome) + '<div class="g2f-mut">' + esc(ROT.conta[a.tipo] || a.tipo) + (a.naoConciliados ? ' · ' + a.naoConciliados + ' não conciliado(s)' : '') + '</div></td><td class="r"><b>' + brl(a.saldoAtual) + '</b></td></tr>';
+      }).join('') + '</tbody></table></div>';
+    } else if (d.ov) {
+      h += '<div class="g2f-card g2f-mut">Nenhuma conta cadastrada. Abra o Livro › Cadastros para cadastrar as contas bancárias, o caixa e o plano de contas.</div>';
+    }
+    var atalhos = abasVisiveis().filter(function (a) { return ['despesas', 'camp', 'rel', 'cad'].indexOf(a.id) >= 0; });
+    if (atalhos.length) h += '<div class="g2f-pills" style="margin-bottom:10px">' + atalhos.map(function (a) { return '<button type="button" data-d="abrir" data-v="' + a.id + '">' + (a.id === 'cad' ? 'Contas e plano de contas' : a.nome) + '</button>'; }).join('') + '</div>';
+    h += '<button type="button" class="g2f-link" data-d="legado">' + (D.legado ? 'Esconder consolidado anterior' : 'Ver consolidado anterior (cultos e GC)') + '</button>';
+    return h;
+  }
+  function legado(main, dash, mostrar) {
+    var passou = false;
+    Array.prototype.forEach.call(main.children, function (el) {
+      if (el === dash) { passou = true; return; }
+      if (!passou || el.id === 'g2fin') return;
+      if (mostrar) { if (el.getAttribute('data-g2f-leg') === '1') { el.classList.remove('g2f-oculto'); el.removeAttribute('data-g2f-leg'); } }
+      else if (!el.classList.contains('g2f-oculto')) { el.classList.add('g2f-oculto'); el.setAttribute('data-g2f-leg', '1'); }
+    });
+  }
+  function pintarDash() {
+    var main = $('main');
+    if (!main || !v39() || !telaFinanceiro() || S.aberto) return;
+    var dash = $('g2f-dash');
+    if (dash && main.contains(dash)) { legado(main, dash, D.legado); return; }
+    if (!D.dados) { dashCarregar(false); return; }
+    if (D.dados.semAcesso) return;
     css();
-    main.insertAdjacentHTML('afterbegin', '<div id="g2f-aviso" style="background:#0f3d5e;color:#fff;border-radius:12px;padding:12px;margin:10px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:180px"><b>Financeiro novo (Livro único)</b><div style="font-size:12px;opacity:.85">Entradas, despesas, conferência de GC e cultos, conciliação, campanhas e relatórios.</div></div><button type="button" style="border:0;border-radius:8px;padding:8px 12px;font-weight:600;cursor:pointer" data-g2f="abrir">Abrir</button></div>');
-    $('g2f-aviso').querySelector('[data-g2f="abrir"]').addEventListener('click', function () { abrir(); });
+    dash = document.createElement('div'); dash.id = 'g2f-dash';
+    dash.innerHTML = htmlDash();
+    dash.addEventListener('click', function (ev) {
+      var b = ev.target.closest('[data-d]'); if (!b) return;
+      var k = b.getAttribute('data-d');
+      if (k === 'abrir') return abrir(b.getAttribute('data-v'));
+      if (k === 'legado') { D.legado = !D.legado; dash.remove(); pintarDash(); }
+    });
+    dash.addEventListener('change', function (ev) {
+      var k = ev.target.getAttribute('data-d');
+      if (k === 'mes') S.mes = +ev.target.value; else if (k === 'ano') S.ano = +ev.target.value; else return;
+      dashCarregar(true);
+    });
+    var t = tituloFinanceiro(main), ref = null;
+    if (t) {
+      ref = t;
+      var sub = t.nextElementSibling;
+      if (sub && !sub.querySelector('button,select,input') && (sub.textContent || '').trim().length < 160) ref = sub;
+      while (ref.parentNode && ref.parentNode !== main) ref = ref.parentNode;
+    }
+    if (ref && ref.parentNode === main) ref.insertAdjacentElement('afterend', dash); else main.insertAdjacentElement('afterbegin', dash);
+    legado(main, dash, D.legado);
   }
-  // sessão trocou (logout/login): limpa
+
+  /* ───────────── laço de manutenção ───────────── */
   var ultimoUsuario = '';
   setInterval(function () {
+    var f = $('g2f-fab'); if (f) f.remove();
+    var av = $('g2f-aviso'); if (av) av.remove();
+    var at = $('g2f-atalhos'); if (at) at.remove();
     var u = String(eu().id || eu().usuario || eu().email || '') + '|' + (igrejaId() || '');
     if (u !== ultimoUsuario) {
-      ultimoUsuario = u; S.ctx = null; S.cat = null; fabTentado = false;
-      var f = $('g2f-fab'); if (f) f.remove(); fechar();
+      ultimoUsuario = u; S.ctx = null; S.cat = null; D.dados = null; S.aberto = false;
+      var o = $('g2fin'); if (o) o.remove(); var d = $('g2f-dash'); if (d) d.remove(); fecharMod();
     }
-    if (cfg().usuario) botao();
-    abaAntiga();
-  }, 1500);
+    if (!cfg().usuario || !v39()) return;
+    if (S.aberto) {
+      if (!telaFinanceiro()) { S.aberto = false; var o2 = $('g2fin'); if (o2) o2.remove(); return; }
+      var main = $('main');
+      if (main && !$('g2fin')) { montar(); pintarBase(); recarregar(); }      // o app redesenhou a tela: volta o Livro
+      else if (main) esconderMain(main, true);
+      return;
+    }
+    pintarDash();
+  }, 700);
 
   window.G2_FIN.abrir = abrir;
   window.G2_FIN.fechar = fechar;

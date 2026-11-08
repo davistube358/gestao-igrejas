@@ -1,20 +1,20 @@
-/* 2Gather v39 · Correções gerais · CORRECAO-3
+/* 2Gather v39 · Correções gerais · CORRECAO-6
    Carregar DEPOIS do app.js (SYNC-V39-15) e ANTES de app_v39_setores.js. Não altera o app.js. Não exige SQL.
+   Substitui qualquer app_v39_correcoes*.js anterior: no index.html deixe só este.
 
    1) Editar pessoa SEM GC
-      Causa: na ficha, o botão "Editar" (perfilEditar) chama lvEditar(v) para quem não tem GC; lvEditar não existe
-      como função global no app.js → ReferenceError → o botão não fazia nada.
-      Correção: para pessoa sem GC o clique é desviado para a ação "abrirPessoa" (formulário completo), com a opção
-      "— sem GC —" já selecionada (evita transferir a pessoa para o 1º GC da lista ao salvar).
-
-   2) Faixa de destaque dinâmica na tela inicial (carrossel)
+      Na ficha, o botão "Editar" (perfilEditar) chama lvEditar(v) para quem não tem GC e isso não funcionava.
+      Para pessoa sem GC o clique é desviado para a ação "abrirPessoa" (formulário completo), com "— sem GC —" já
+      selecionado (evita transferir a pessoa para o 1º GC da lista ao salvar).
+   2) Faixa de destaque dinâmica na tela INÍCIO (carrossel)
       Quadro original + Palavra do culto, Agenda 7 dias, Aniversariantes, Novos rostos (só número), Passagem da semana.
-      CORRECAO-3: no computador as cores dos quadros não apareciam (fundo preto). Causa: a regra de fundo do .hero no
-      app.js vence a do carrossel na tela larga. Agora a cor é aplicada direto no elemento com prioridade máxima
-      (style.setProperty ... 'important'), igual no celular e no computador. */
+      CAUSA do carrossel aparecer no Financeiro: a tela Financeiro também começa com o bloco "ini-ola" + um quadro
+      ".hero", e a versão anterior montava o carrossel em qualquer tela com esses dois blocos.
+      CORRECAO-6: só monta nas telas de Início (bi = gestor, painel = GC, lvnovo = voluntário). Em qualquer outra tela,
+      desmonta e devolve o quadro original. As cores são aplicadas direto no elemento (celular e computador). */
 (function () {
   'use strict';
-  var VERSAO = 'CORRECAO-3';
+  var VERSAO = 'CORRECAO-6';
   if (window.G2_CORRECOES) return;
   window.G2_CORRECOES = VERSAO;
   console.info('[2Gather] correções ' + VERSAO);
@@ -23,6 +23,7 @@
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function G() { return window.__gc || null; }
   function db() { var g = G(); return (g && g.db()) || {}; }
+  function cfg() { var g = G(); try { return (g && g.cfg && g.cfg()) || {}; } catch (e) { return {}; } }
   function pad(n) { return (n < 10 ? '0' : '') + n; }
   function iso(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
   function hoje() { return iso(new Date()); }
@@ -53,7 +54,7 @@
     setTimeout(opcaoSemGC, 0);
   }, true);
 
-  /* ═════════ 2) FAIXA DINÂMICA DA TELA INICIAL ═════════ */
+  /* ═════════ 2) FAIXA DINÂMICA DA TELA INÍCIO ═════════ */
   var PASSAGENS = [
     ['Eclesiastes 4:9-10', 'Juntos somos mais fortes: quando um cai, o outro ajuda a levantar.'],
     ['Hebreus 10:24-25', 'Encorajar uns aos outros e não abandonar o costume de se reunir.'],
@@ -145,7 +146,6 @@
     l.push(slide('passagem', 'passagem', 'PASSAGEM DA SEMANA', esc(ps[0]), esc(ps[1])));
     return l;
   }
-
   var CSS = '.g2c{position:relative;display:grid}.g2c>.hero{grid-area:1/1;margin:0!important;transition:opacity .55s ease,visibility .55s;opacity:0;visibility:hidden;position:relative;overflow:hidden}' +
     '.g2c>.hero.on{opacity:1;visibility:visible}.g2c .g2c-ic{position:absolute;right:-14px;bottom:-18px;width:130px;height:130px;fill:none;stroke:currentColor;stroke-width:1.2;opacity:.13;pointer-events:none}' +
     '.g2c>.hero.g2c-s,.g2c>.hero.g2c-s *{color:#fff}.g2c .g2c-dim{opacity:.75;font-weight:500}' +
@@ -154,7 +154,6 @@
     '.g2c-dots button.on{width:22px;background:#fff}.g2c-dots button:focus-visible{outline:2px solid #fff;outline-offset:2px}' +
     '@media (prefers-reduced-motion:reduce){.g2c>.hero,.g2c-dots button{transition:none}}';
   function estilo() { if ($('g2c-css')) return; var s = document.createElement('style'); s.id = 'g2c-css'; s.textContent = CSS; document.head.appendChild(s); }
-  // cor com prioridade máxima no próprio elemento (vence qualquer regra do .hero, no celular e no computador)
   function pintarCores(w) {
     var sl = w.querySelectorAll('.hero[data-g2c-tema]');
     for (var i = 0; i < sl.length; i++) {
@@ -164,7 +163,6 @@
       sl[i].style.setProperty('background-color', '#14161A', 'important');
     }
   }
-
   var atualId = null, timer = null, pausado = false, reduz = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   function ir(w, alvo) {
     var sl = w.querySelectorAll(':scope > .hero'), n = sl.length; if (!n) return;
@@ -185,9 +183,21 @@
       if (!pausado && !document.hidden) ir(w, idx(w) + 1);
     }, 8000);
   }
+  // Telas de Início do app.js: bi (gestor), painel (GC), lvnovo (voluntário). O Financeiro usa o mesmo bloco "ini-ola" e fica de fora.
+  var ABAS_INICIO = ['bi', 'painel', 'lvnovo'];
+  function telaInicio(main) { return ABAS_INICIO.indexOf(String(cfg().aba || '')) >= 0 && !!main.querySelector('.ini-ola'); }
+  function desmontar(main) {
+    var w = main.querySelector('.g2c'); if (!w) return;
+    var orig = w.querySelector('.hero[data-g2c-id="principal"]');
+    if (orig) { orig.classList.remove('on'); orig.removeAttribute('aria-hidden'); orig.removeAttribute('inert'); orig.removeAttribute('data-g2c-id'); w.parentNode.insertBefore(orig, w); }
+    w.remove();
+  }
   function melhorar() {
-    var main = $('main'); if (!main || !main.querySelector('.ini-ola')) return;
+    var main = $('main'); if (!main) return;
+    if (!telaInicio(main)) { desmontar(main); return; }
+    var ola = main.querySelector('.ini-ola');
     var hero = main.querySelector('.hero:not(.g2c-s):not([data-g2c-id])'); if (!hero || hero.closest('.g2c')) return;
+    if (!ola.parentNode.contains(hero) || !(ola.compareDocumentPosition(hero) & Node.DOCUMENT_POSITION_FOLLOWING)) return;
     var temAgenda = !!hero.querySelector('[data-a="aba"][data-v="cultos"]');
     var extras; try { extras = montarSlides(temAgenda); } catch (e) { console.warn('[2Gather][destaque]', e); return; }
     if (!extras.length) return;
@@ -202,7 +212,7 @@
     var total = extras.length + 1, dots = document.createElement('div'); dots.className = 'g2c-dots';
     for (var i = 0; i < total; i++) { var b = document.createElement('button'); b.type = 'button'; b.setAttribute('aria-label', 'Destaque ' + (i + 1) + ' de ' + total); b.setAttribute('data-i', i); dots.appendChild(b); }
     w.appendChild(dots);
-    dots.addEventListener('click', function (ev) { var b = ev.target.closest('button'); if (b) ir(w, +b.getAttribute('data-i')); });
+    dots.addEventListener('click', function (ev) { var b2 = ev.target.closest('button'); if (b2) ir(w, +b2.getAttribute('data-i')); });
     w.addEventListener('pointerenter', function () { pausado = true; });
     w.addEventListener('pointerleave', function () { pausado = false; });
     w.addEventListener('focusin', function () { pausado = true; });
@@ -223,4 +233,7 @@
     agendar();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', observar); else observar();
+
+  // limpeza: remove o botão flutuante e a faixa azul que a primeira versão do Financeiro criava
+  setInterval(function () { var f = $('g2f-fab'); if (f) f.remove(); var v = $('g2f-aviso'); if (v) v.remove(); }, 800);
 })();
