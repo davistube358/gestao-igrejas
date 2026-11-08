@@ -1,21 +1,17 @@
-/* 2Gather v39 · Correções gerais · CORRECAO-7
+/* 2Gather v39 · Correções gerais · CORRECAO-8
    Carregar DEPOIS do app.js (SYNC-V39-15) e ANTES de app_v39_setores.js. Não altera o app.js.
    Substitui qualquer app_v39_correcoes*.js anterior: no index.html deixe só este.
    Requer (para o item 3): v39_campanhas_equipe_c2.sql no Supabase.
 
-   1) Editar pessoa SEM GC
-      Na ficha, o botão "Editar" (perfilEditar) chama lvEditar(v) para quem não tem GC e isso não funcionava.
-      Para pessoa sem GC o clique é desviado para a ação "abrirPessoa" (formulário completo), com "— sem GC —" já selecionado.
-   2) Faixa de destaque dinâmica na tela INÍCIO (carrossel)
-      Só monta na tela de Início de cada perfil: a que corresponde ao PRIMEIRO botão do menu. Nas demais telas (Financeiro etc.)
-      desmonta e devolve o quadro original.
-   3) Equipe fora de "Direcionar ao GC" (novo)
-      A lista "Direcionar ao GC", o contador "Visitantes da igreja sem GC" e o aviso do menu usam a regra do app
-      "sem GC e origem diferente de 'usuário do app'". Quem tem acesso de gestão (Master, Pastor, Secretaria, Tesouraria)
-      é cadastrado sem essa marca e por isso aparecia como visitante. Aqui a marca é aplicada a essas pessoas. */
+   1) Editar pessoa SEM GC (botão "Editar" da ficha chamava lvEditar, que não existia).
+   2) Faixa de destaque dinâmica na tela INÍCIO (carrossel). Só na tela do primeiro botão do menu.
+   3) Equipe fora de "Direcionar ao GC": Master, Pastor, Secretaria e Tesouraria recebem a marca "usuário do app".
+      CORRECAO-8: o redesenho da tela só acontece quando a marca realmente MUDOU algum cadastro. Antes, a cada 5 minutos
+      (quando a lista da equipe era relida) a tela era redesenhada mesmo sem nada novo — era uma das causas da tela
+      "atualizando sozinha". */
 (function () {
   'use strict';
-  var VERSAO = 'CORRECAO-7';
+  var VERSAO = 'CORRECAO-8';
   if (window.G2_CORRECOES) return;
   window.G2_CORRECOES = VERSAO;
   console.info('[2Gather] correções ' + VERSAO);
@@ -248,6 +244,12 @@
     return pr.then(function () { if (!V.client) throw new Error('sem cliente'); var b = V.client.schema('app'); return (b.__rpcOriginal || b.rpc).call(b, nome, args || {}); })
       .then(function (r) { if (r.error) throw r.error; return r.data; });
   }
+  function marcarEquipe(lista) {
+    if (!EQ.ids || !Array.isArray(lista)) return false;
+    var mudou = false;
+    for (var i = 0; i < lista.length; i++) { var p = lista[i]; if (p && EQ.ids[p.id] && p.origem !== 'usuário do app') { p.origem = 'usuário do app'; mudou = true; } }
+    return mudou;
+  }
   function carregarEquipe() {
     var ig = igrejaId();
     if (EQ.carregando || !v39() || !ig) return;
@@ -255,17 +257,13 @@
     EQ.carregando = true;
     rpcApp('v39_staff_person_ids', { p_church_id: ig }).then(function (l) {
       var m = {}; (Array.isArray(l) ? l : []).forEach(function (id) { m[id] = 1; });
-      EQ.ids = m; EQ.ig = ig; EQ.t = Date.now(); EQ.pend = true;
+      EQ.ids = m; EQ.ig = ig; EQ.t = Date.now();
+      // só pede redesenho se a marca realmente alterou algum cadastro (antes pedia SEMPRE, a cada 5 minutos)
+      if (marcarEquipe(db().pessoas)) EQ.pend = true;
     }).catch(function (e) {
       EQ.t = Date.now() - 240000;                      // tenta de novo em ~1 min
       console.warn('[2Gather][correções] equipe: rode o v39_campanhas_equipe_c2.sql no Supabase.', e && (e.message || e));
     }).then(function () { EQ.carregando = false; });
-  }
-  function marcarEquipe(lista) {
-    if (!EQ.ids || !Array.isArray(lista)) return false;
-    var mudou = false;
-    for (var i = 0; i < lista.length; i++) { var p = lista[i]; if (p && EQ.ids[p.id] && p.origem !== 'usuário do app') { p.origem = 'usuário do app'; mudou = true; } }
-    return mudou;
   }
   // Toda vez que o app trocar db.pessoas (sincronização), a marca é aplicada antes de a tela ser desenhada.
   function ganchoPessoas() {
@@ -287,7 +285,7 @@
   function ciclo() {
     if (!cfg().usuario || !v39()) { EQ.ids = null; EQ.ig = ''; return; }
     carregarEquipe(); ganchoPessoas();
-    if (EQ.ids && marcarEquipe(db().pessoas)) EQ.pend = true;
+    if (EQ.ids && marcarEquipe(db().pessoas)) EQ.pend = true;            // só quando algo mudou de fato
     if (EQ.pend && !digitando() && !(($('modal') || {}).classList && $('modal').classList.contains('on'))) { EQ.pend = false; redesenharInicio(); }
   }
   setInterval(ciclo, 1500);
