@@ -1,7 +1,12 @@
-/* 2Gather v39 · Financeiro completo · FIN-ALL-7
+/* 2Gather v39 · Financeiro completo · FIN-ALL-8
    Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este arquivo.
    Carregar DEPOIS do app.js e dos módulos v39. Não altera o app.js.
    Requer no Supabase: v39_financeiro_completo.sql, v39_campanhas_equipe_c2.sql e v39_cartoes_c3.sql.
+
+   FIN-ALL-8
+   - COMPROVANTE DA COMPRA NO CARTÃO: a despesa no cartão de crédito agora exige o anexo da compra já na criação (Nova despesa).
+     Em "Lançar na fatura", se a despesa antiga foi criada sem anexo, aparece o campo para anexar e o app avisa com clareza
+     quando o servidor ainda recusar. Despesas que já têm anexo seguem direto, sem pedir de novo.
 
    FIN-ALL-7
    - CARTÃO DE CRÉDITO LIGADO À DESPESA: em "Nova despesa" escolha "Cartão de crédito" (cartão, data da compra, parcelas).
@@ -12,7 +17,7 @@
    - Pop-up: não fecha mais ao clicar fora. Só pelo botão X no canto, por Cancelar ou por Esc. Botões do rodapé alinhados. */
 (function () {
   'use strict';
-  var VERSAO = 'FIN-ALL-7';
+  var VERSAO = 'FIN-ALL-8';
   if (window.G2_FIN) return;
   window.G2_FIN = { versao: VERSAO };
   console.info('[2Gather] financeiro ' + VERSAO);
@@ -1044,11 +1049,12 @@
       { k: 'vencimento', l: 'Vencimento', t: 'date', v: e.vencimento ? String(e.vencimento).slice(0, 10) : '' },
       { k: 'competencia', l: 'Competência (mês de referência)', t: 'date', v: e.competencia ? String(e.competencia).slice(0, 10) : '' },
       { k: 'linhaDigitavel', l: 'Linha digitável do boleto (opcional)' },
-      { k: 'arq', l: 'Documento / nota / boleto', t: 'file' }, { k: 'obs', l: 'Observação', t: 'textarea', v: e.obs },
+      { k: 'arq', l: 'Comprovante da compra / nota / boleto', t: 'file', h: e.comprovantePath ? 'Já existe um anexo nesta despesa. Envie outro só se quiser trocar.' : 'Obrigatório quando a despesa é no cartão de crédito. Nos demais casos, anexe se a configuração financeira exigir.' }, { k: 'obs', l: 'Observação', t: 'textarea', v: e.obs },
       { k: 'enviar', l: 'Já enviar para aprovação', t: 'check', v: !e.id }
     ];
     form(e.id ? 'Editar despesa' : 'Nova despesa', campos, 'Salvar', function (v) {
       var id = null;
+      if (v.meio === 'cartao' && !v.arq && !e.comprovantePath) return Promise.reject(new Error('Anexe o comprovante da compra. Ele é exigido para lançar a despesa na fatura do cartão.'));
       return enviarComprovante(v.arq).then(function (ev) {
         return rpc('v39_fin_expense_save', C({ p_id: e.id || null, p: { descricao: v.descricao, categoriaId: v.categoriaId, valor: v.valor, fornecedorId: v.fornecedorId || null, emissao: v.emissao || null, vencimento: v.vencimento || null, competencia: v.competencia || null, linhaDigitavel: v.linhaDigitavel || null, comprovanteId: ev, obs: v.obs || null, chave: uuid() } }));
       }).then(function (r) {
@@ -1079,11 +1085,21 @@
       { k: 'contaId', l: 'Conta', t: 'select', o: opContas(true), vis: conta }, { k: 'formaId', l: 'Forma', t: 'select', o: opFormas(true), vis: conta },
       { k: 'arq', l: 'Comprovante do pagamento', t: 'file', vis: conta, h: 'Obrigatório em conta/caixa.' },
       { k: 'cartaoId', l: 'Cartão', t: 'select', o: cart, v: doCartao ? pl.cartaoId : '', vis: cartao2 }, { k: 'parcelas', l: 'Parcelas no cartão', t: 'number', v: doCartao ? pl.parcelas : 1, vis: cartao2, h: 'No cartão lance o valor total; as parcelas vão para as próximas faturas.' },
+      { k: 'arqCompra', l: 'Comprovante da compra', t: 'file', vis: function (v) { return cartao2(v) && !e.comprovantePath; }, h: 'Esta despesa foi criada sem comprovante. Anexe a nota ou o comprovante da compra.' },
+      { t: 'info', l: 'Comprovante da compra já anexado à despesa ✓', vis: function (v) { return cartao2(v) && !!e.comprovantePath; } },
       { k: 'obs', l: 'Observação', t: 'textarea' }
     ], doCartao ? 'Lançar na fatura' : 'Registrar pagamento', function (v) {
       if (v.meio === 'cartao') {
         if (!v.cartaoId) return Promise.reject(new Error('FIN_CARD_INVALID'));
-        return rpc('v39_fin_expense_pay', C({ p_id: id, p: { data: v.data, valor: v.valor, cartaoId: v.cartaoId, parcelas: Math.max(1, Math.min(24, parseInt(v.parcelas, 10) || 1)), obs: v.obs || null, chave: uuid() } })).then(function () { return 'Compra lançada na fatura do cartão.'; });
+        if (!e.comprovantePath && !v.arqCompra) return Promise.reject(new Error('Anexe o comprovante da compra. Ele é exigido para lançar a despesa na fatura do cartão.'));
+        return enviarComprovante(v.arqCompra).then(function (ev) {
+          var pay = { data: v.data, valor: v.valor, cartaoId: v.cartaoId, parcelas: Math.max(1, Math.min(24, parseInt(v.parcelas, 10) || 1)), obs: v.obs || null, chave: uuid() };
+          if (ev) pay.comprovanteId = ev;
+          return rpc('v39_fin_expense_pay', C({ p_id: id, p: pay }));
+        }).then(function () { return 'Compra lançada na fatura do cartão.'; }, function (er) {
+          if (/exige comprovante/i.test(String((er && (er.message || er.details)) || ''))) throw new Error('O servidor não encontrou o comprovante nesta despesa. Cancele a despesa e crie de novo anexando a nota da compra, ou peça ao administrador para conferir a função de pagamento no cartão.');
+          throw er;
+        });
       }
       if (!v.contaId) return Promise.reject(new Error('FIN_ACCOUNT_INVALID'));
       if (!v.formaId) return Promise.reject(new Error('FIN_METHOD_INVALID'));
