@@ -1,18 +1,19 @@
-/* 2Gather v39 · Pop-ups seguros · POPUP-1
+/* 2Gather v39 · Pop-ups seguros · POPUP-2
    Carregar por ÚLTIMO, depois de todos os módulos v39 (antes do app_v39_qa.js, se existir). Não altera o app.js. Não exige SQL.
-
    Vale para TODOS os pop-ups do app (os do app.js e os dos módulos v39):
    1) Clicar na área escura FORA do pop-up não fecha mais (evita perder o que foi digitado).
    2) Todo pop-up ganha um botão X pequeno no canto superior direito. O X fecha o pop-up do mesmo jeito que o app já
       fecha (usa o botão "Cancelar/Fechar" do próprio pop-up; se não houver, usa o mesmo caminho do clique no fundo).
    3) Botões lado a lado dentro do pop-up ficam alinhados na vertical (mesma altura, sem desnível de margem).
-   O Esc continua fechando como antes. Se algum pop-up se comportar mal: no Console, G2_POPUPS.off() desliga tudo na hora. */
+   O Esc continua fechando como antes. Se algum pop-up se comportar mal: no Console, G2_POPUPS.off() desliga tudo na hora.
+   POPUP-2 (correção): o Financeiro desenha o próprio X dentro do pop-up (marcado com data-g2x). O POPUP-1 reposicionava esse X
+   com coordenadas de tela e o empurrava para fora da caixa, por isso os pop-ups do Financeiro ficavam sem botão de fechar.
+   Agora só se reposiciona o X que este arquivo criou (position: fixed). O X do módulo fica onde o módulo o colocou. */
 (function () {
   'use strict';
   if (window.G2_POPUPS) return;
-  var P = window.G2_POPUPS = { versao: 'POPUP-1', ativo: true };
+  var P = window.G2_POPUPS = { versao: 'POPUP-2', ativo: true };
   console.info('[2Gather] pop-ups ' + P.versao);
-
   var ATIVOS = [], rodando = false, agendado = false, ocupado = false, ultimo = 0;
   var EVS = ['click', 'dblclick', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'touchstart', 'touchend'];
   var RX_NOME = /(^|[\s_-])(modal|overlay|backdrop|dialog|popup|sheet|scrim|lightbox|mask)/;
@@ -119,7 +120,7 @@
   }
   function criarX(ov) {
     var b = document.createElement('button');
-    b.type = 'button'; b.className = 'g2x-x'; b.setAttribute('data-g2x', '1');
+    b.type = 'button'; b.className = 'g2x-x'; b.setAttribute('data-g2x', '1'); b.setAttribute('data-g2x-meu', '1');
     b.setAttribute('aria-label', 'Fechar'); b.setAttribute('title', 'Fechar'); b.innerHTML = ICONE;
     b.addEventListener('click', function (ev) { if (ev && ev.stopPropagation) ev.stopPropagation(); fecharPopup(ov); });
     ov.appendChild(b);
@@ -128,6 +129,8 @@
   function xDe(ov) { return achar(ov, function (x) { return tem(x, 'data-g2x'); }, 8, 400); }
   function posicionar(ov) {
     var b = xDe(ov); if (!b) return;
+    // POPUP-2: só reposiciona o X criado por este arquivo. O X que o módulo já desenhou dentro da caixa fica onde está.
+    if (!tem(b, 'data-g2x-meu')) return;
     var box = ov._g2box && contem(ov, ov._g2box) ? ov._g2box : ov, r = box.getBoundingClientRect(), W = window.innerWidth || 0;
     var top = Math.max(6, Math.round(r.top + 8)), left = Math.max(6, Math.min(W - 42, Math.round(r.right - 42)));
     if (b._g2t !== top || b._g2l !== left) { b._g2t = top; b._g2l = left; b.style.top = top + 'px'; b.style.left = left + 'px'; }
@@ -237,10 +240,9 @@
     setInterval(varrer, 1500);
     agendar();
   }
-  P.off = function () { P.ativo = false; ATIVOS = []; var xs = document.querySelectorAll ? document.querySelectorAll('[data-g2x].g2x-x') : []; for (var i = 0; i < xs.length; i++) if (xs[i].remove) xs[i].remove(); console.info('[2Gather] pop-ups: desligado'); };
+  P.off = function () { P.ativo = false; ATIVOS = []; var xs = document.querySelectorAll ? document.querySelectorAll('[data-g2x-meu].g2x-x') : []; for (var i = 0; i < xs.length; i++) if (xs[i].remove) xs[i].remove(); console.info('[2Gather] pop-ups: desligado'); };
   P.on = function () { P.ativo = true; agendar(); console.info('[2Gather] pop-ups: ligado'); };
   P.varrer = varrer;
-  P._t = { ehOverlay: ehOverlay, acharBox: acharBox, bloquear: bloquear, decorar: decorar, candidatos: candidatos, fecharPopup: fecharPopup, alinharBotoes: alinharBotoes, setAtivos: function (a) { ATIVOS = a; }, ativos: function () { return ATIVOS; } };
-
+  P._t = { ehOverlay: ehOverlay, acharBox: acharBox, bloquear: bloquear, decorar: decorar, candidatos: candidatos, fecharPopup: fecharPopup, alinharBotoes: alinharBotoes, posicionar: posicionar, setAtivos: function (a) { ATIVOS = a; }, ativos: function () { return ATIVOS; } };
   if (document.body) iniciar(); else document.addEventListener('DOMContentLoaded', iniciar);
 })();

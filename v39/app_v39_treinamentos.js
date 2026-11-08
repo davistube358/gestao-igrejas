@@ -1,8 +1,7 @@
-/* 2Gather v39 · Treinamentos/Reuniões e Cursos do Instituto · TRN-2
-   SUBSTITUI o app_v39_treinamentos.js (TRN-1): no index.html deixe só este arquivo.
+/* 2Gather v39 · Treinamentos/Reuniões e Cursos do Instituto · TRN-3
+   SUBSTITUI o app_v39_treinamentos.js (TRN-2): no index.html deixe só este arquivo.
    Carregar DEPOIS do app.js e dos demais módulos v39. Não altera o app.js.
-   Requer, no Supabase: v39_treinamentos_completo.sql (TRN-1) e v39_treinamentos_avisos_t2.sql (TRN-2).
-
+   Requer, no Supabase: v39_treinamentos_completo.sql (TRN-1) e v39_treinamentos_avisos_t2.sql (TRN-2). NÃO exige SQL novo.
    1) Carrega reuniões, treinamentos, cursos e datas do banco (db.reunioes / db.aulas) e liga as gravações da tela
       (salvarReuniao, salvarAula, conviteEnviado) ao banco.
    2) AVISOS no app: quem é adicionado a um treinamento/reunião/curso, escolhido como responsável pela chamada ou
@@ -10,10 +9,16 @@
       notificação do aparelho (quando o usuário já ativou as notificações do app).
       Lembretes "Hoje" e "Amanhã" aparecem do mesmo jeito.
    3) LEMBRETES PELO WHATSAPP para quem gerencia: na tela de Treinamentos/Cursos aparece a fila das datas de hoje até
-      daqui a 2 dias; cada participante tem o botão "Enviar" (abre o WhatsApp com a mensagem pronta e marca como enviado). */
+      daqui a 2 dias; cada participante tem o botão "Enviar" (abre o WhatsApp com a mensagem pronta e marca como enviado).
+   TRN-3
+   - TELEFONE: a fila vinha do servidor com o telefone que estava gravado na lista de participantes no dia em que a pessoa
+     foi escolhida (quase sempre vazio). Agora o telefone é completado na hora: 1º pelo cadastro que o app já carregou
+     (pessoas/equipe) e, se não houver, pelo WhatsApp principal do cadastro (busca de pessoas do Financeiro).
+   - DUPLICADOS: a mesma pessoa aparecia duas vezes (como "pessoa" e como "usuário do app"). Agora aparece uma vez só, e o
+     "Enviar" marca como enviadas as duas chaves. */
 (function () {
   'use strict';
-  var VERSAO = 'TRN-2';
+  var VERSAO = 'TRN-3';
   if (window.G2_TRN) return;
   window.G2_TRN = { versao: VERSAO };
   console.info('[2Gather] treinamentos ' + VERSAO);
@@ -186,7 +191,87 @@
 
   /* ───────── 3) lembretes pelo WhatsApp (quem gerencia) ───────── */
   var Q = { lista: [], ig: '', t: 0, carregando: false, sig: '' };
+  var FONES = {}, TENTOU = {}, buscandoFones = false;   // TRN-3: telefone achado por chave, chaves já pesquisadas
   function telaCursos() { var a = String(cfg().aba || ''); return a === 'cursos' || a === 'instcursos'; }
+
+  /* TRN-3 · telefone e duplicados */
+  function norm(s) {
+    s = String(s == null ? '' : s).toLowerCase();
+    try { s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch (e) { /* sem normalize */ }
+    return s.replace(/\s+/g, ' ').trim();
+  }
+  function tipoChave(ch) { return String(ch || '').slice(0, 2); }          // 'p:' pessoa · 'u:' usuário do app
+  function idChave(ch) { return String(ch || '').slice(2); }
+  function usuarios() { var d = db() || {}; return (d.equipe || []).concat(d.equipeInst || []); }
+  function usuarioDe(ch) { var id = idChave(ch), l = usuarios(); for (var i = 0; i < l.length; i++) if (String(l[i].id) === id) return l[i]; return null; }
+  function pessoaIdDe(ch) {
+    if (tipoChave(ch) === 'p:') return idChave(ch);
+    var u = usuarioDe(ch); return u && u.pessoaId ? String(u.pessoaId) : '';
+  }
+  function pessoaLocal(pid, nome) {
+    var d = db() || {}, l = d.pessoas || [], i, alvo = norm(nome), achou = [];
+    for (i = 0; i < l.length; i++) if (!l[i].deleted && pid && String(l[i].id) === String(pid)) return l[i];
+    for (i = 0; i < l.length; i++) if (!l[i].deleted && norm(l[i].nome) === alvo) achou.push(l[i]);
+    return achou.length === 1 ? achou[0] : null;
+  }
+  function foneLocal(p) {
+    if (tipoChave(p.chave) === 'u:') { var u = usuarioDe(p.chave); if (u && u.fone) return u.fone; }
+    var pe = pessoaLocal(pessoaIdDe(p.chave), p.nome);
+    return pe && pe.fone ? pe.fone : '';
+  }
+  function foneDe(p) { return p.fone || FONES[p.chave] || ''; }
+  // junta pessoa + usuário da mesma pessoa e completa o telefone pelo cadastro local
+  function ajustar(lista) {
+    var ord = (lista || []).slice().sort(function (a, b) { return (tipoChave(a.chave) === 'p:' ? 0 : 1) - (tipoChave(b.chave) === 'p:' ? 0 : 1); });
+    var porChave = {}, porPessoa = {}, porNome = {}, out = [];
+    ord.forEach(function (p) {
+      var ch = String(p.chave), pid = pessoaIdDe(ch), nk = norm(p.nome), ehU = tipoChave(ch) === 'u:';
+      var ex = porChave[ch] || (pid && porPessoa[pid]) || (ehU && porNome[nk]) || null;
+      var fone = p.fone || foneLocal(p);
+      if (ex) {
+        if (ex.chave !== ch && ex.extras.indexOf(ch) < 0) ex.extras.push(ch);
+        if (p.enviado) ex.enviado = true;
+        if (!ex.fone && fone) ex.fone = fone;
+        return;
+      }
+      var c = {}; for (var k in p) c[k] = p[k];
+      c.fone = fone; c.enviado = !!p.enviado; c.extras = [];
+      porChave[ch] = c; if (pid) porPessoa[pid] = c; if (!porNome[nk]) porNome[nk] = c;
+      out.push(c);
+    });
+    return out;
+  }
+  // busca o WhatsApp principal no cadastro (mesma busca que o Financeiro usa) para quem ainda está sem número
+  function resolverFones() {
+    if (buscandoFones || !ativo()) return;
+    var fila = [];
+    Q.lista.forEach(function (it) {
+      ajustar(it.participantes).forEach(function (p) {
+        if (!foneDe(p) && !p.enviado && !TENTOU[p.chave] && String(p.nome || '').trim().length >= 3 && fila.every(function (x) { return x.chave !== p.chave; })) fila.push(p);
+      });
+    });
+    if (!fila.length) return;
+    buscandoFones = true;
+    var achouAlgum = false;
+    (function proximo(i) {
+      if (i >= fila.length) {
+        buscandoFones = false;
+        if (achouAlgum) { var x = $('g2t-fila'); if (x) x.remove(); }
+        pintarFila();
+        return;
+      }
+      var p = fila[i]; TENTOU[p.chave] = 1;
+      rpc('search_people', { p_church_id: igrejaId(), p_query: String(p.nome).trim(), p_limit: 12 }).then(function (r) {
+        r = Array.isArray(r) ? r : [];
+        var pid = pessoaIdDe(p.chave), alvo = norm(p.nome), a = null;
+        if (pid) a = r.filter(function (x) { return String(x.person_id) === String(pid); })[0] || null;
+        if (!a) { var mesmos = r.filter(function (x) { return norm(x.full_name) === alvo; }); if (mesmos.length === 1) a = mesmos[0]; }
+        if (a && a.primary_whatsapp) { FONES[p.chave] = a.primary_whatsapp; achouAlgum = true; }
+      }).catch(function (e) { console.warn('[2Gather][treinamentos] telefone de ' + p.nome + ': ' + traduz(e)); })
+        .then(function () { proximo(i + 1); });
+    })(0);
+  }
+
   function carregarFila(forcar) {
     var ig = igrejaId();
     if (!ativo() || Q.carregando) return Promise.resolve();
@@ -221,25 +306,33 @@
     var h = '<div class="card" id="g2t-fila" style="border-left:5px solid #25D366"><h3>⏰ Lembretes pelo WhatsApp</h3>' +
       '<div style="font-size:12px;color:#666;line-height:1.5;margin-bottom:8px">Datas de hoje até daqui a 2 dias. Toque em <b>Enviar</b>: o WhatsApp abre com a mensagem pronta e o lembrete fica marcado como enviado.</div>' +
       itens.map(function (it) {
-        var env = it.participantes.filter(function (p) { return p.enviado; }).length;
+        var parts = ajustar(it.participantes);
+        var env = parts.filter(function (p) { return p.enviado; }).length;
         var quando = it.dias === 0 ? 'Hoje' : it.dias === 1 ? 'Amanhã' : dd(it.data);
         return '<details' + (it.dias <= 1 ? ' open' : '') + ' style="border-top:1px solid #eee;padding:6px 0"><summary style="cursor:pointer;font-weight:700;font-size:13px">' +
-          esc(quando) + (it.inicio ? ' · ' + esc(it.inicio) : '') + ' — ' + esc(it.titulo) + ' <span style="font-weight:500;color:#888">(' + it.participantes.length + ' participante(s)' + (env ? ', ' + env + ' enviado(s)' : '') + ')</span></summary>' +
-          it.participantes.map(function (p) {
-            var w = linkWA(p.fone, msgLembrete(it, p));
-            return '<div class="row" id="g2t-p-' + esc(it.aulaId) + '-' + esc(p.chave.replace(':', '_')) + '"><div class="info"><div class="nm">' + esc(p.nome) + '</div><div class="sb">' + esc(p.fone || 'sem telefone') + '</div></div>' +
-              (p.enviado ? '<span class="pill p-verde">enviado ✓</span>' : (w ? '<a class="wa" data-g2t="zap" data-v="' + esc(it.aulaId + '|' + p.chave) + '" href="' + w + '" target="_blank" rel="noopener">Enviar</a>' : '<span class="pill p-cinza">sem nº</span>')) + '</div>';
+          esc(quando) + (it.inicio ? ' · ' + esc(it.inicio) : '') + ' — ' + esc(it.titulo) + ' <span style="font-weight:500;color:#888">(' + parts.length + ' participante(s)' + (env ? ', ' + env + ' enviado(s)' : '') + ')</span></summary>' +
+          parts.map(function (p) {
+            var fone = foneDe(p), w = linkWA(fone, msgLembrete(it, p));
+            var buscando = !fone && !p.enviado && !TENTOU[p.chave] && String(p.nome || '').trim().length >= 3;
+            return '<div class="row" id="g2t-p-' + esc(it.aulaId) + '-' + esc(String(p.chave).replace(':', '_')) + '"><div class="info"><div class="nm">' + esc(p.nome) + '</div><div class="sb">' + esc(fone || (buscando ? 'buscando telefone…' : 'sem telefone no cadastro')) + '</div></div>' +
+              (p.enviado ? '<span class="pill p-verde">enviado ✓</span>' : (w ? '<a class="wa" data-g2t="zap" data-v="' + esc(it.aulaId + '|' + p.chave) + '" href="' + w + '" target="_blank" rel="noopener">Enviar</a>' : '<span class="pill p-cinza">' + (buscando ? '…' : 'sem nº') + '</span>')) + '</div>';
           }).join('') + '</details>';
       }).join('') + '</div>';
     main.insertAdjacentHTML('afterbegin', h);
+    resolverFones();
   }
   function enviouLembrete(v) {
-    var p = String(v).split('|'), aulaId = p[0], chave = p[1];
-    Q.lista.forEach(function (it) { if (it.aulaId === aulaId) it.participantes.forEach(function (q) { if (q.chave === chave) q.enviado = true; }); });
+    var p = String(v).split('|'), aulaId = p[0], chave = p[1], chaves = [chave];
+    Q.lista.forEach(function (it) {
+      if (it.aulaId !== aulaId) return;
+      var alvo = ajustar(it.participantes).filter(function (q) { return q.chave === chave; })[0];
+      if (alvo) chaves = [chave].concat(alvo.extras);
+      it.participantes.forEach(function (q) { if (chaves.indexOf(q.chave) >= 0) q.enviado = true; });
+    });
     Q.sig = JSON.stringify(Q.lista);
     var linha = $('g2t-p-' + aulaId + '-' + String(chave).replace(':', '_'));
     if (linha) { var a = linha.querySelector('a.wa'); if (a) { var s = document.createElement('span'); s.className = 'pill p-verde'; s.textContent = 'enviado ✓'; a.parentNode.replaceChild(s, a); } }
-    rpc('v39_trn_wa_mark', { p_church_id: igrejaId(), p_class_id: aulaId, p_keys: [chave] }).catch(function (e) { console.warn('[2Gather][treinamentos] marcar envio: ' + traduz(e)); });
+    rpc('v39_trn_wa_mark', { p_church_id: igrejaId(), p_class_id: aulaId, p_keys: chaves }).catch(function (e) { console.warn('[2Gather][treinamentos] marcar envio: ' + traduz(e)); });
   }
 
   /* ───────── cliques dos cartões deste módulo ───────── */
@@ -254,9 +347,9 @@
   /* ───────── manutenção ───────── */
   var abaAnt = '', igAnt = '';
   setInterval(function () {
-    if (!cfg().usuario || !v39()) { if (S.ig || N.ig || Q.ig) { S.ig = N.ig = Q.ig = ''; S.sig = N.sig = Q.sig = ''; N.lista = []; N.nao = 0; Q.lista = []; } return; }
+    if (!cfg().usuario || !v39()) { if (S.ig || N.ig || Q.ig) { S.ig = N.ig = Q.ig = ''; S.sig = N.sig = Q.sig = ''; N.lista = []; N.nao = 0; Q.lista = []; FONES = {}; TENTOU = {}; } return; }
     var ig = igrejaId(); if (!uuid(ig)) return;
-    if (ig !== igAnt) { igAnt = ig; S.sig = N.sig = Q.sig = ''; hidratar(true); carregarAvisos(true); }
+    if (ig !== igAnt) { igAnt = ig; S.sig = N.sig = Q.sig = ''; FONES = {}; TENTOU = {}; hidratar(true); carregarAvisos(true); }
     var aba = String(cfg().aba || '');
     if (aba !== abaAnt) { abaAnt = aba; if (/cursos|instcursos/.test(aba)) { hidratar(false); carregarFila(false); } if (ehTelaAvisos()) carregarAvisos(false); }
     carregarAvisos(false);
@@ -265,10 +358,11 @@
   }, 900);
   setInterval(function () { hidratar(true); }, 90000);
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') { hidratar(false); carregarAvisos(true); if (telaCursos()) carregarFila(true); } });
-
   window.G2_TRN.hidratar = function () { return hidratar(true); };
   window.G2_TRN.avisos = function () { return carregarAvisos(true); };
   window.G2_TRN._acoes = ACOES;
   window.G2_TRN._msgLembrete = msgLembrete;
   window.G2_TRN._linkWA = linkWA;
+  window.G2_TRN._ajustar = ajustar;
+  window.G2_TRN._fones = function () { return FONES; };
 })();
