@@ -1,8 +1,20 @@
-/* 2Gather v39 · Financeiro completo · FIN-ALL-10
+/* 2Gather v39 · Financeiro completo · FIN-ALL-12
    Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este arquivo.
    Carregar DEPOIS do app.js e dos módulos v39. Não altera o app.js.
    Requer no Supabase: v39_financeiro_completo.sql, v39_campanhas_equipe_c2.sql e v39_cartoes_c3.sql.
 
+   FIN-ALL-12 (não exige SQL novo; inclui tudo do FIN-ALL-11)
+   - CARTÕES (Transf. e cartões): ao lado de cada cartão aparecem a fatura do mês (valor, vencimento, situação; o mês da fatura é o mês do VENCIMENTO)
+     e o total no cartão (o que ainda falta pagar, lançado + previsto; diminui a cada pagamento). Botão "Detalhar fatura": itens da fatura (já lançados e
+     previstos) com setas para o mês atual e os seguintes; "Pagar fatura" na fatura do mês. A data de cada compra no Livro não muda.
+   - SALDO PREVISTO no Livro (no lugar de "A receber"): receitas previstas − despesas previstas do mês escolhido + atrasadas. Abaixo da lista: "Receitas previstas"
+     e "Despesas previstas" (despesas aprovadas, parcelas, faturas e compras no cartão ainda não lançadas).
+   - COMPRAS NO CARTÃO NO LIVRO: aparecem como "na fatura · a pagar" (sem sinal, em cinza), ficam fora de Entradas/Saídas e do filtro Saídas (filtro novo "No cartão").
+   - Vencimento previsto da fatura passa a seguir a mesma regra do servidor quando fechamento e vencimento caem no mesmo dia.
+   FIN-ALL-11
+   - SAÍDAS DO LIVRO = CAIXA: Entradas, Saídas e Resultado do Livro e do painel passam a ser o que entrou e saiu das contas no mês, e por isso
+     o pagamento da fatura do cartão conciliado entra em Saídas (a compra no cartão, sozinha, não mexe no caixa; ela vira saída quando a fatura é paga).
+   - A PAGAR NO LIVRO e aba "A pagar" com a mesma lista; ABAS em linhas (sem rolagem lateral).
    FIN-ALL-10 (requer FIN_P1_cartao.sql, FIN_P2_parcelas.sql e FIN_P3_correcoes.sql no Supabase; inclui tudo do FIN-ALL-9)
    - CORREÇÃO: despesa aprovada, paga ou lançada no cartão ganha o botão "Corrigir". Mudar o VALOR (para mais ou para menos) devolve a
      despesa para aprovação e estorna os pagamentos / a compra no cartão (a tela avisa antes). Sem mudar o valor, descrição, categoria,
@@ -27,7 +39,7 @@
    - Pop-up: não fecha mais ao clicar fora. Só pelo botão X no canto, por Cancelar ou por Esc. Botões do rodapé alinhados. */
 (function () {
   'use strict';
-  var VERSAO = 'FIN-ALL-10';
+  var VERSAO = 'FIN-ALL-12';
   if (window.G2_FIN) return;
   window.G2_FIN = { versao: VERSAO };
   console.info('[2Gather] financeiro ' + VERSAO);
@@ -190,6 +202,8 @@
       '.g2f-head .ini-ola{margin:0}.g2f-head .ini-sub{margin:2px 0 0}',
       '.g2f-back{flex:0 0 38px;width:38px;height:38px;border:none;border-radius:12px;background:#fff;box-shadow:0 1px 2px rgba(20,22,26,.06);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--tx,#14161A)}',
       '.g2f-tabs button{display:inline-flex;align-items:center;gap:6px}.g2f-tabs button .g2f-svg{width:15px;height:15px}',
+        '#g2fin .g2f-tabs{display:flex!important;flex-wrap:wrap!important;gap:6px!important;overflow:visible!important;white-space:normal!important;margin:0 0 12px!important;padding:0!important}',
+        '#g2fin .g2f-tabs button{flex:0 0 auto!important;margin:0!important;max-width:100%}',
       '.g2f-per{display:flex;align-items:center;gap:8px;background:#fff;border-radius:16px;padding:5px;margin-bottom:12px;box-shadow:0 1px 2px rgba(20,22,26,.05)}',
       '.g2f-per b{flex:1;text-align:center;font-size:14px}',
       '.g2f-per button{width:36px;height:36px;border:none;border-radius:12px;background:var(--bg,#F6F7F9);color:var(--tx,#14161A);display:flex;align-items:center;justify-content:center;cursor:pointer}',
@@ -276,7 +290,7 @@
     Enviar: { i: 'send', t: 1, l: 'Enviar' }, Receber: { i: 'cash', t: 1, tone: 'ok' }, Pedir: { i: 'pencil' }, WhatsApp: { i: 'chat', tone: 'ok' },
     Itens: { i: 'list' }, Conferir: { i: 'check', t: 1, tone: 'ok', l: 'Conferir' }, Gerar: { i: 'repeat', t: 1, l: 'Gerar' }, Casar: { i: 'check', t: 1, l: 'Casar' }, Exportar: { i: 'dl' },
     Ignorar: { i: 'x' }, Voltar: { i: 'undo' }, Saldo: { i: 'plus', t: 1, l: 'Saldo inicial' }, Reabrir: { i: 'unlock', t: 1 }, Fechar: { i: 'lock', t: 1 },
-    Participante: { i: 'userplus', t: 1 }, Dispensar: { i: 'x' }, Corrigir: { i: 'pencil', t: 1, l: 'Corrigir' },
+    Participante: { i: 'userplus', t: 1 }, Dispensar: { i: 'x' }, Detalhar: { i: 'list', t: 1, l: 'Detalhar fatura' }, Corrigir: { i: 'pencil', t: 1, l: 'Corrigir' },
     'Lançar': { i: 'card', t: 1, tone: 'ok', l: 'Lançar na fatura' }, Criar: { i: 'plus', t: 1, tone: 'ok', l: 'Criar despesa' }
   };
   function bt(a, v, t, cls) {
@@ -497,13 +511,13 @@
       var vis = abasVisiveis();
       if (aba && vis.some(function (a) { return a.id === aba; })) S.aba = aba;
       if (!vis.some(function (a) { return a.id === S.aba; })) S.aba = vis.length ? vis[0].id : 'despesas';
-      S.aberto = true; S.cache = null;
+      S.aberto = true; S.cache = null; S.cartDet = null;
       if (!montar()) return;
       pintarBase(); recarregar(); window.scrollTo(0, 0);
     }).catch(function (e) { toast(traduz(e)); });
   }
   function fechar() {
-    S.aberto = false; S.cache = null; fecharMod();
+    S.aberto = false; S.cache = null; S.cartDet = null; fecharMod();
     var o = $('g2fin'); if (o) o.remove();
     var main = $('main'); if (main) esconderMain(main, false);
     dashCarregar(true); window.scrollTo(0, 0);
@@ -670,7 +684,7 @@
     return { i: 'undo', c: 'amb' };
   }
   function linhaMov(m, fechado) {
-    var vis = movVis(m), v = num(m.valor) * num(m.efeitoCaixa || m.efeitoResultado || 0), a = [];
+    var vis = movVis(m), v = num(m.valor) * num(m.efeitoCaixa || m.efeitoResultado || 0), a = [], nc = ehNoCartao(m);
     if (m.comprovantePath) a.push(bt('verComp', m.comprovantePath, 'Comprovante', 'sec'));
     if (tes() && !fechado && pode('financial.reconciliation.manage') && m.status === 'posted' && m.efeitoCaixa !== 0) a.push(bt('conc', m.id, 'Conciliar', 'sec'));
     if (tes() && !fechado && pode('financial.reconciliation.manage') && m.status === 'reconciled') a.push(bt('desconc', m.id, 'Desconciliar', 'sec'));
@@ -678,8 +692,9 @@
     if (tes() && pode('financial.movements.reverse') && (m.status === 'posted' || m.status === 'reconciled') && m.tipo !== 'reversal') a.push(bt('estornar', m.id, 'Estornar', 'red'));
     var st = m.status === 'reconciled' ? pill('conciliado', 'verde') : m.status === 'reversed' ? pill('estornado', 'vermelho') : pill((ROT.movSt[m.status] || m.status).toLowerCase(), 'cinza');
     return '<div class="row g2f-mv"><span class="g2f-ri ' + vis.c + '">' + ic(vis.i) + '</span><div class="info"><div class="nm">' + esc(m.descricao) + '</div>' +
-      '<div class="sb">' + esc([ROT.mov[m.tipo] || m.tipo, m.categoria, m.conta, m.forma, m.pessoa].filter(Boolean).join(' · ')) + '</div></div>' +
-      '<div class="g2f-amt"><span class="' + (v < 0 ? 'g2f-neg' : v > 0 ? 'g2f-pos' : '') + '">' + (v > 0 ? '+ ' : '') + brl(v) + '</span>' + st + '</div>' +
+      '<div class="sb">' + esc([nc ? 'Compra no cartão' : (ROT.mov[m.tipo] || m.tipo), m.categoria, m.conta, m.forma, m.pessoa].filter(Boolean).join(' · ')) + '</div></div>' +
+      (nc ? '<div class="g2f-amt"><span class="g2f-mut">' + brl(m.valor) + '</span>' + pill('na fatura · a pagar', 'amarelo') + '</div>'
+          : '<div class="g2f-amt"><span class="' + (v < 0 ? 'g2f-neg' : v > 0 ? 'g2f-pos' : '') + '">' + (v > 0 ? '+ ' : '') + brl(v) + '</span>' + st + '</div>') +
       (a.length ? '<div class="g2f-acts g2f-noprint">' + a.join('') + '</div>' : '') + '</div>';
   }
   function linhaPrev(p) {
@@ -688,6 +703,116 @@
       '<div class="sb">' + (p.tot > 1 ? 'parcela ' + p.n + '/' + p.tot + ' · ' : '') + (p.atraso ? 'venceu ' : 'vence ') + dataBR(p.venc) + (forma ? ' · ' + esc(forma) : '') + '</div></div>' +
       '<div class="g2f-amt"><span>' + brl(p.valor) + '</span>' + (p.atraso ? pill('atrasada', 'vermelho') : pill('previsto', 'amarelo')) + '</div>' +
       (tes() && pode('financial.commitments.receive') ? '<div class="g2f-acts g2f-noprint">' + bt('receber', p.gi + '|' + p.ci, 'Receber') + '</div>' : '') + '</div>';
+  }
+  /* Caixa do mês: o que entrou e saiu das contas. Transferência e saldo inicial ficam de fora; estornos entram com o efeito contrário. */
+  function efCaixa(m) {
+    if (['posted', 'reconciled', 'reversed'].indexOf(m.status) < 0) return 0;
+    if (m.tipo === 'transfer_in' || m.tipo === 'transfer_out' || m.tipo === 'opening_balance') return 0;
+    var c = num(m.efeitoCaixa); return c > 0 ? 1 : c < 0 ? -1 : 0;
+  }
+  function ehFaturaPaga(m) { return norm(m.descricao).indexOf('liquidacao de fatura') >= 0; }
+  function totaisCaixa(L) {
+    var e = 0, sd = 0, fat = 0;
+    (L || []).forEach(function (m) {
+      var c = efCaixa(m), v = num(m.valor);
+      if (c > 0) e += v; else if (c < 0) { sd += v; if (ehFaturaPaga(m)) fat += v; }
+    });
+    return { entradas: arr2(e), saidas: arr2(sd), resultado: arr2(e - sd), faturas: arr2(fat) };
+  }
+  function ehEntrada(m) { return m.tipo === 'income' || (m.tipo === 'adjustment' && efCaixa(m) > 0); }
+  function ehSaida(m) { return (m.tipo === 'expense' || m.tipo === 'adjustment') && efCaixa(m) < 0; }
+  /* compra no cartão já lançada na fatura: vale como despesa, mas o dinheiro só sai quando a fatura é paga */
+  function ehNoCartao(m) { return m.tipo === 'expense' && num(m.efeitoCaixa) === 0 && ['posted', 'reconciled'].indexOf(m.status) >= 0; }
+
+  /* meses "AAAA-MM" */
+  function ym(iso) { return String(iso || '').slice(0, 7); }
+  function ymAdd(k, n) { var y = +k.slice(0, 4), m = +k.slice(5, 7) - 1 + n; y += Math.floor(m / 12); m = ((m % 12) + 12) % 12; return y + '-' + pad(m + 1); }
+  function ymRot(k) { return MESES[+k.slice(5, 7) - 1] + ' de ' + k.slice(0, 4); }
+  function ymFim(k) { return isoD(new Date(+k.slice(0, 4), +k.slice(5, 7), 0)); }
+  /* previsto do Livro: o que vence no mês escolhido + o que está atrasado (só a partir do mês atual); sem data = vence hoje */
+  function noEscopoLivro() {
+    var k = S.ano + '-' + pad(S.mes), ini = k + '-01', fim = ymFim(k), hj = hoje(), futuro = k >= ym(hj);
+    return function (v) { v = v || hj; return (v >= ini && v <= fim) || (futuro && v < hj); };
+  }
+
+  /* A pagar: parcelas e faturas (servidor) + despesas aprovadas sem parcelas e fora do cartão (saldo = aprovado − pago) */
+  var APAGAR = [], APAGAR_ERRO = '', PREV = [];
+  function listaAPagar(srv, exps) {
+    var out = (srv || []).map(function (x) {
+      var v = String(x.vencimento || '').slice(0, 10);
+      return { tipo: x.tipo, id: x.id, despesaId: x.despesaId, descricao: x.descricao, parcela: x.parcela, vencimento: v, valor: num(x.valor), vencida: !!x.vencida };
+    });
+    (exps || []).forEach(function (e) {
+      if (['approved', 'partially_paid'].indexOf(e.status) < 0) return;
+      if ((e.cronograma || []).filter(function (x) { return x.status !== 'cancelled'; }).length) return;   // parcelada: vem do servidor, parcela a parcela
+      if (e.noCartao || PLANOS[e.id]) return;                                                               // cartão: fatura (lançada) ou compra prevista
+      var saldo = arr2(num(e.aprovado || e.valor) - num(e.pago)); if (!(saldo > 0)) return;
+      var v = e.vencimento ? String(e.vencimento).slice(0, 10) : '';
+      out.push({ tipo: 'despesa', id: e.id, despesaId: e.id, descricao: e.descricao + (e.fornecedor ? ' · ' + e.fornecedor : ''), vencimento: v, valor: saldo, vencida: !!v && v < hoje() });
+    });
+    return out;
+  }
+  /* compras no cartão de despesas aprovadas que ainda não foram lançadas na fatura: uma linha por parcela, no vencimento da fatura em que vão cair */
+  function parcelasPrevistas() {
+    var out = [], pend = 0, hj = hoje();
+    (DESP || []).forEach(function (e) {
+      var pl = PLANOS[e.id]; if (!pl || pl.lancada || e.noCartao) return;
+      if (['cancelled', 'rejected', 'reversed', 'paid'].indexOf(e.status) >= 0) return;
+      if (['approved', 'partially_paid'].indexOf(e.status) < 0) { pend++; return; }
+      var k = cartao(pl.cartaoId); if (!k) return;
+      var n = Math.max(1, parseInt(pl.parcelas, 10) || 1), tot = arr2(num(e.aprovado || e.valor)), base = arr2(tot / n), d = String(pl.data).slice(0, 10);
+      for (var i = 0; i < n; i++) {
+        var f = mesFechamento(k, d, i), venc = vencFatura(k, f.ano, f.mes);
+        out.push({ tipo: 'cartao', id: e.id + ':' + (i + 1), despesaId: e.id, cartaoId: k.id, cartao: k.nome + ' •' + k.final, descricao: e.descricao, parcela: n > 1 ? (i + 1) + '/' + n : '',
+          compra: d, ref: pad(f.mes) + '/' + f.ano, vencimento: venc, valor: i < n - 1 ? base : arr2(tot - base * (n - 1)), vencida: !!venc && venc < hj });
+      }
+    });
+    out.pendentes = pend;
+    return out;
+  }
+  function despesasPrevistas(esc) {
+    var l = APAGAR.concat(PREV);
+    if (esc) l = l.filter(function (x) { return esc(x.vencimento); });
+    l.sort(function (a, b) {
+      var x = a.vencimento || '9999-99-99', y = b.vencimento || '9999-99-99';
+      return x < y ? -1 : x > y ? 1 : String(a.descricao).localeCompare(String(b.descricao), 'pt-BR');
+    });
+    return l;
+  }
+  function carregarAPagar() {
+    APAGAR_ERRO = '';
+    if (!(pode('financial.expenses.view') || pode('financial.book.view') || pode('financial.expenses.pay'))) { APAGAR = []; PREV = []; return Promise.resolve([]); }
+    var verFat = pode('financial.book.view') || pode('financial.cards.manage');
+    return Promise.all([
+      rpc('v39_fin_payables', C({})).catch(function (e) { APAGAR_ERRO = traduz(e); console.warn('[2Gather][fin] a pagar: ' + traduz(e)); return []; }),
+      rpc('v39_fin_expenses', C({ p_filter: 'abertas' })).catch(function () { return []; }),
+      carregarPlanos(),
+      verFat ? rpc('v39_fin_card_statements', C({})).catch(function () { return []; }) : Promise.resolve([])
+    ]).then(function (r) { DESP = r[1] || []; FATS = r[3] || []; APAGAR = listaAPagar(r[0] || [], DESP); PREV = parcelasPrevistas(); return APAGAR; });
+  }
+  function somaPag(l) { return arr2((l || []).reduce(function (t, x) { return t + num(x.valor); }, 0)); }
+  function linhaPagar(x) {
+    var ehF = x.tipo === 'fatura', ehC = x.tipo === 'cartao', podeP = tes() && pode('financial.expenses.pay'), a = '';
+    if (podeP) a = ehF ? bt('pagarFaturaId', x.id, 'Pagar fatura') : ehC ? bt('pagarDesp', x.despesaId, 'Lançar na fatura') : x.tipo === 'parcela' ? bt('pagarParc', x.despesaId + '|' + x.id, 'Pagar parcela') : bt('pagarDesp', x.despesaId, 'Pagar');
+    var sub = ehC ? 'prevista na fatura ' + x.ref + ' · ' + x.cartao + (x.vencimento ? ' · vence ' + dataBR(x.vencimento) : '')
+      : (x.vencimento ? (x.vencida ? 'venceu ' : 'vence ') + dataBR(x.vencimento) : 'sem vencimento') + (ehF ? ' · fatura do cartão' : '');
+    return '<div class="row g2f-mv"><span class="g2f-ri ' + (x.vencida ? 'out' : 'amb') + '">' + ic(ehF || ehC ? 'card' : 'receipt') + '</span><div class="info"><div class="nm">' + esc(x.descricao) + (x.parcela ? ' · parcela ' + esc(x.parcela) : '') + '</div>' +
+      '<div class="sb">' + esc(sub) + '</div></div><div class="g2f-amt"><span>' + brl(x.valor) + '</span>' + (ehC ? pill('prevista', 'amarelo') : x.vencida ? pill('vencida', 'vermelho') : pill('a vencer', 'amarelo')) + '</div>' +
+      (a ? '<div class="g2f-acts g2f-noprint">' + a + '</div>' : '') + '</div>';
+  }
+  function blocoRecPrev(lim, esc) {
+    var prev = previstos().filter(function (p) { return esc(p.venc); }); if (!prev.length) return '';
+    var vis = prev.slice(0, lim || 12);
+    return '<div class="sec" style="display:flex;justify-content:space-between;align-items:center"><span>Receitas previstas</span><span class="g2f-mut">' + brl(somaPrev(prev)) + '</span></div><div class="card lp">' + vis.map(linhaPrev).join('') + '</div>' +
+      (prev.length > vis.length ? '<div class="g2f-note">Mostrando ' + vis.length + ' de ' + prev.length + '. A lista completa está em Campanhas.</div>' : '') +
+      '<div class="g2f-note">Valores acordados em campanhas e votos que vencem neste mês ou estão atrasados. Só entram no Livro e no saldo quando forem recebidos.</div>';
+  }
+  function blocoDespPrev(lim, dp) {
+    if (!dp.length) return '';
+    var vis = dp.slice(0, lim || 12);
+    return '<div class="sec" style="display:flex;justify-content:space-between;align-items:center"><span>Despesas previstas</span><span class="g2f-mut">' + brl(somaPag(dp)) + '</span></div><div class="card lp">' + vis.map(linhaPagar).join('') + '</div>' +
+      (dp.length > vis.length ? '<div class="g2f-note">Mostrando ' + vis.length + ' de ' + dp.length + '. A lista completa está na aba A pagar.</div>' : '') +
+      '<div class="g2f-note">Despesas aprovadas, parcelas, faturas de cartão e compras no cartão ainda não lançadas, que vencem neste mês ou estão atrasadas. A saída só entra no Livro e no saldo quando for paga.</div>';
   }
   function blocoPrevisto(lim) {
     var prev = previstos(); if (!prev.length) return '';
@@ -698,35 +823,40 @@
   }
   function tLivro() {
     var pc = pode('financial.campaigns.view');
-    return Promise.all([rpc('v39_fin_overview', C({ p_year: S.ano, p_month: S.mes })), pc ? rpc('v39_fin_campaigns', C({})).catch(function () { return []; }) : Promise.resolve([])]).then(function (r) {
+    return Promise.all([rpc('v39_fin_overview', C({ p_year: S.ano, p_month: S.mes })), pc ? rpc('v39_fin_campaigns', C({})).catch(function () { return []; }) : Promise.resolve([]),
+      carregarAPagar().catch(function () { APAGAR = []; PREV = []; return []; })]).then(function (r) {
       S.ov = r[0] || {}; CAMPS = r[1] || []; desenharLivro();
     });
   }
   function desenharLivro() {
-    var x = S.ov, L = x.livro || [], t = x.totais || {}, per = x.periodo || {}, fechado = per.status === 'closed', prev = previstos();
-    var cont = { tudo: L.length, in: 0, out: 0, tr: 0, conc: 0 };
+    var x = S.ov, L = x.livro || [], t = totaisCaixa(L), per = x.periodo || {}, fechado = per.status === 'closed', esc = noEscopoLivro(),
+      rp = previstos().filter(function (p) { return esc(p.venc); }), dp = despesasPrevistas(esc), sRec = somaPrev(rp), sDesp = somaPag(dp), saldoPrev = arr2(sRec - sDesp);
+    var cont = { tudo: L.length, in: 0, out: 0, tr: 0, conc: 0, cartao: 0 };
     L.forEach(function (m) {
-      if (m.tipo === 'income') cont.in++; else if (m.tipo === 'expense') cont.out++; else if (m.tipo === 'transfer_in' || m.tipo === 'transfer_out') cont.tr++;
+      if (ehEntrada(m)) cont.in++; else if (ehSaida(m)) cont.out++; else if (ehNoCartao(m)) cont.cartao++; else if (m.tipo === 'transfer_in' || m.tipo === 'transfer_out') cont.tr++;
       if (m.status === 'posted' && m.efeitoCaixa !== 0) cont.conc++;
     });
     var h = avisoInicio();
-    h += '<div class="stats">' + stat('Entradas', brl(t.entradas), 'in', 'down', 'g2f-pos') + stat('Saídas', brl(t.saidas), 'out', 'up', 'g2f-neg') +
-      stat('Resultado', brl(t.resultado), 'pri', 'trend', num(t.resultado) < 0 ? 'g2f-neg' : 'g2f-pos', 'entradas − saídas') +
-      stat('A receber', brl(somaPrev(prev)), 'amb', 'clock', '', 'campanhas e votos') + '</div>';
+    h += '<div class="stats">' + stat('Entradas', brl(t.entradas), 'in', 'down', 'g2f-pos') +
+      stat('Saídas', brl(t.saidas), 'out', 'up', 'g2f-neg', num(t.faturas) > 0 ? 'inclui ' + brl(t.faturas) + ' de fatura de cartão' : 'pagas no caixa') +
+      stat('Resultado', brl(t.resultado), 'pri', 'trend', num(t.resultado) < 0 ? 'g2f-neg' : 'g2f-pos', 'entradas − saídas (caixa)') +
+      stat('Saldo previsto', brl(saldoPrev), 'amb', 'clock', saldoPrev < 0 ? 'g2f-neg' : 'g2f-pos', 'a receber ' + brl(sRec) + ' − a pagar ' + brl(sDesp)) + '</div>';
+    var chipsDef = [['tudo', 'Tudo'], ['in', 'Entradas'], ['out', 'Saídas']]; if (cont.cartao) chipsDef.push(['cartao', 'No cartão']); chipsDef.push(['tr', 'Transferências'], ['conc', 'A conciliar']);
     h += '<div class="g2f-tool g2f-noprint"><div class="busca"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input data-c="busca" placeholder="Buscar descrição, pessoa ou conta" value="' + esc(S.livroBusca) + '" autocomplete="off"></div>' +
       (pode('financial.reports.export') ? bt('csvLivro', '', 'Exportar CSV', 'sec') : '') +
       (fechado ? (S.ctx.podeReabrir ? bt('reabrir', '', 'Reabrir mês', 'sec') : '<span class="pill p-cinza">mês fechado</span>') : (S.ctx.podeFechar ? bt('fecharMes', '', 'Fechar mês', 'sec') : '')) + '</div>';
-    h += '<div class="chips g2f-noprint">' + [['tudo', 'Tudo'], ['in', 'Entradas'], ['out', 'Saídas'], ['tr', 'Transferências'], ['conc', 'A conciliar']].map(function (f) {
+    h += '<div class="chips g2f-noprint">' + chipsDef.map(function (f) {
       return '<button type="button" data-a="livroFiltro" data-v="' + f[0] + '" class="' + (S.livroFiltro === f[0] ? 'on' : '') + '">' + f[1] + ' <span>' + cont[f[0]] + '</span></button>'; }).join('') + '</div>';
-    h += '<div id="g2f-lista"></div>' + blocoPrevisto(12);
+    h += '<div id="g2f-lista"></div>' + blocoRecPrev(12, esc) + blocoDespPrev(12, dp);
     corpo(h); pintarLista();
   }
   function pintarLista() {
     var el = $('g2f-lista'); if (!el) return;
     var x = S.ov || {}, L = x.livro || [], fechado = x.periodo && x.periodo.status === 'closed', q = norm(S.livroBusca), f = S.livroFiltro;
     var l = L.filter(function (m) {
-      if (f === 'in' && m.tipo !== 'income') return false;
-      if (f === 'out' && m.tipo !== 'expense') return false;
+      if (f === 'in' && !ehEntrada(m)) return false;
+      if (f === 'out' && !ehSaida(m)) return false;
+      if (f === 'cartao' && !ehNoCartao(m)) return false;
       if (f === 'tr' && m.tipo !== 'transfer_in' && m.tipo !== 'transfer_out') return false;
       if (f === 'conc' && !(m.status === 'posted' && m.efeitoCaixa !== 0)) return false;
       return !q || norm([m.descricao, m.pessoa, m.conta, m.categoria, m.forma].join(' ')).indexOf(q) >= 0;
@@ -879,7 +1009,7 @@
   // vencimento provável da fatura que fecha em (ano, mes)
   function vencFatura(k, ano, mes) {
     if (!k || !(num(k.vencimento) > 0)) return '';
-    var m = mes - 1 + (num(k.vencimento) <= num(k.fechamento) ? 1 : 0), y = ano + Math.floor(m / 12); m = ((m % 12) + 12) % 12;
+    var m = mes - 1 + (num(k.vencimento) < num(k.fechamento) ? 1 : 0), y = ano + Math.floor(m / 12); m = ((m % 12) + 12) % 12;
     var ult = new Date(y, m + 1, 0).getDate();
     return isoD(new Date(y, m, Math.min(num(k.vencimento), ult)));
   }
@@ -1230,28 +1360,20 @@
       });
     });
   }
-  var PAGAR = [];
   function tPagar() {
-    var verFat = pode('financial.book.view') || pode('financial.cards.manage');
-    return Promise.all([rpc('v39_fin_payables', C({})), carregarPlanos(), rpc('v39_fin_expenses', C({ p_filter: 'abertas' })).catch(function () { return []; }),
-      verFat ? rpc('v39_fin_card_statements', C({})).catch(function () { return []; }) : Promise.resolve([])]).then(function (r) {
-      PAGAR = r[0] || []; DESP = r[2] || []; FATS = r[3] || [];
-      var tot = arr2(PAGAR.reduce(function (s, x) { return s + num(x.valor); }, 0)), venc = PAGAR.filter(function (x) { return x.vencida; }), totV = arr2(venc.reduce(function (s, x) { return s + num(x.valor); }, 0));
-      var h = '<div class="stats">' + stat('Total a pagar', brl(tot), 'out', 'cash', 'g2f-neg', PAGAR.length + ' item(ns)') +
+    return carregarAPagar().then(function () {
+      var L = despesasPrevistas(null), tot = somaPag(L), venc = L.filter(function (x) { return x.vencida; }), totV = somaPag(venc);
+      var h = (APAGAR_ERRO ? '<div class="aviso">' + esc(APAGAR_ERRO) + ' Parcelas e faturas podem estar faltando na lista.</div>' : '') +
+        '<div class="stats">' + stat('Total a pagar', brl(tot), 'out', 'cash', 'g2f-neg', L.length + ' item(ns)') +
         stat('Vencidas', brl(totV), venc.length ? 'out' : 'in', 'clock', venc.length ? 'g2f-neg' : 'g2f-pos', venc.length + ' item(ns)') + '</div>';
-      if (!PAGAR.length) return corpo(h + '<div class="card"><div class="empty">Nada a pagar no momento.</div></div>');
+      if (!L.length) return corpo(h + '<div class="card"><div class="empty">Nada a pagar no momento.</div></div>');
       var meses = [], por = {};
-      PAGAR.forEach(function (x) { var k = String(x.vencimento).slice(0, 7); if (!por[k]) { por[k] = []; meses.push(k); } por[k].push(x); });
+      L.forEach(function (x) { var k = x.vencimento ? x.vencimento.slice(0, 7) : '9999-99'; if (!por[k]) { por[k] = []; meses.push(k); } por[k].push(x); });
       meses.sort();
       h += meses.map(function (k) {
-        var l = por[k], t = arr2(l.reduce(function (s, x) { return s + num(x.valor); }, 0));
-        return '<div class="sec" style="display:flex;justify-content:space-between;align-items:center"><span>' + MESES[+k.slice(5, 7) - 1] + ' de ' + k.slice(0, 4) + '</span><span class="g2f-mut">' + brl(t) + '</span></div><div class="card lp">' + l.map(function (x) {
-          var ehF = x.tipo === 'fatura', pode_ = tes() && pode('financial.expenses.pay');
-          return '<div class="row g2f-mv"><span class="g2f-ri ' + (x.vencida ? 'out' : 'amb') + '">' + ic(ehF ? 'card' : 'receipt') + '</span><div class="info"><div class="nm">' + esc(x.descricao) + (x.parcela ? ' · parcela ' + esc(x.parcela) : '') + '</div>' +
-            '<div class="sb">' + esc('vence ' + dataBR(x.vencimento) + (ehF ? ' · fatura do cartão' : '')) + '</div></div><div class="g2f-amt"><span>' + brl(x.valor) + '</span>' + (x.vencida ? pill('vencida', 'vermelho') : pill('a vencer', 'amarelo')) + '</div>' +
-            (pode_ ? '<div class="g2f-acts g2f-noprint">' + (ehF ? bt('pagarFaturaId', x.id, 'Pagar fatura') : bt('pagarParc', x.despesaId + '|' + x.id, 'Pagar parcela')) + '</div>' : '') + '</div>';
-        }).join('') + '</div>';
-      }).join('') + '<div class="g2f-note">Parcelas de despesas sem cartão e faturas de cartão em aberto, por vencimento. A compra no cartão já é a despesa; pagar a fatura só liquida.</div>';
+        var l = por[k], t = somaPag(l), rot = k === '9999-99' ? 'Sem vencimento' : ymRot(k);
+        return '<div class="sec" style="display:flex;justify-content:space-between;align-items:center"><span>' + rot + '</span><span class="g2f-mut">' + brl(t) + '</span></div><div class="card lp">' + l.map(linhaPagar).join('') + '</div>';
+      }).join('') + '<div class="g2f-note">Despesas aprovadas, parcelas, faturas de cartão em aberto e compras no cartão ainda não lançadas ("prevista"), por vencimento. A compra no cartão já é a despesa; pagar a fatura só liquida.</div>';
       corpo(h);
     });
   }
@@ -1270,12 +1392,67 @@
   }
 
   /* ───────────── TRANSFERÊNCIAS E CARTÕES ───────────── */
+/* ───────────── CARTÕES: fatura do mês, total no cartão e detalhe da fatura (mês = mês do vencimento) ───────────── */
+  function mapaCartao(k) {
+    var m = {};
+    FATS.forEach(function (st) { if (st.cartaoId !== k.id || st.status === 'cancelled') return; var q = ym(st.vencimento); (m[q] = m[q] || { s: null, pv: [] }).s = st; });
+    PREV.forEach(function (p) { if (p.cartaoId !== k.id || !p.vencimento) return; var q = ym(p.vencimento); (m[q] = m[q] || { s: null, pv: [] }).pv.push(p); });
+    return m;
+  }
+  function resumoMes(g) {
+    var compras = g.s ? num(g.s.compras) : 0, prev = somaPrev(g.pv);
+    return { compras: compras, prev: prev, total: arr2(compras + prev), pago: g.s ? num(g.s.pago) : 0, aberto: g.s ? num(g.s.aberto) : 0 };
+  }
+  function pillFatura(g) { return g.s ? pill((ROT.fat[g.s.status] || g.s.status).toLowerCase(), g.s.status === 'paid' ? 'verde' : 'amarelo') : pill('prevista', 'amarelo'); }
+  function mesInicialCartao(k) {
+    var m = mapaCartao(k), cur = ym(hoje()), ks = Object.keys(m).sort();
+    if (m[cur]) return cur;
+    var fut = ks.filter(function (q) { return q > cur; }); if (fut.length) return fut[0];
+    return ks.length ? ks[ks.length - 1] : cur;
+  }
+  function linhaCartao(k) {
+    var m = mapaCartao(k), cur = ym(hoje()), ks = Object.keys(m).sort(), q = m[cur] ? cur : (ks.filter(function (z) { return z > cur; })[0] || ''), g = q ? m[q] : null, r = g ? resumoMes(g) : null;
+    var lanc = 0, prevT = 0;
+    ks.forEach(function (z) { var rr = resumoMes(m[z]); if (m[z].s && m[z].s.status !== 'paid') lanc += rr.aberto; prevT += rr.prev; });
+    lanc = arr2(lanc); prevT = arr2(prevT);
+    var venc = g ? (g.s ? g.s.vencimento : (g.pv[0] && g.pv[0].vencimento) || '') : '';
+    var l1 = g ? esc((q === cur ? 'Fatura de ' : 'Próxima fatura · ') + MESES[+q.slice(5, 7) - 1].toLowerCase()) + ': <b>' + brl(r.total) + '</b>' + (venc ? ' · vence ' + esc(dataBR(venc)) : '') + ' ' + pillFatura(g) + (r.prev > 0 ? ' <span class="g2f-mut">inclui ' + brl(r.prev) + ' previsto</span>' : '')
+      : esc('Sem fatura em ' + MESES[+cur.slice(5, 7) - 1].toLowerCase());
+    var l2 = 'Total no cartão: <b>' + brl(arr2(lanc + prevT)) + '</b> <span class="g2f-mut">(' + brl(lanc) + ' lançado' + (prevT > 0 ? ' + ' + brl(prevT) + ' previsto' : '') + ')</span>';
+    return '<div class="row g2f-mv"><span class="g2f-ri pri">' + ic('card') + '</span><div class="info"><div class="nm">' + esc(k.nome) + ' •' + esc(k.final) + (k.status !== 'active' ? ' ' + pill('inativo', 'cinza') : '') + '</div>' +
+      '<div class="sb">' + esc((k.banco || '') + ' · fecha dia ' + k.fechamento + ' · vence dia ' + k.vencimento) + '</div><div class="sb">' + l1 + '</div><div class="sb">' + l2 + '</div></div>' +
+      '<div class="g2f-acts">' + bt('detCartao', k.id, 'Detalhar fatura') + (pode('financial.cards.manage') ? bt('editCartao', k.id, 'Editar', 'sec') : '') + '</div></div>';
+  }
+  function htmlDetCartao(k) {
+    var d = S.cartDet, g = mapaCartao(k)[d.ym] || { s: null, pv: [] }, st = g.s, r = resumoMes(g), cur = ym(hoje()), podeP = tes() && pode('financial.expenses.pay'), itens = [];
+    if (st) (st.itens || []).forEach(function (i) { itens.push({ data: String(i.data || '').slice(0, 10), desc: i.descricao, parc: i.parcela && i.parcela !== '1/1' ? i.parcela : '', valor: num(i.valor), prev: false }); });
+    g.pv.forEach(function (p) { itens.push({ data: p.compra, desc: p.descricao, parc: p.parcela, valor: p.valor, prev: true, p: p }); });
+    itens.sort(function (a, b) { return a.data < b.data ? -1 : a.data > b.data ? 1 : String(a.desc).localeCompare(String(b.desc), 'pt-BR'); });
+    var venc = st ? st.vencimento : (g.pv[0] && g.pv[0].vencimento) || '';
+    var h = '<div class="g2f-tool g2f-noprint">' + btn('detVoltar', 'Cartões', 'chevl', 'g2f-soft') + '</div>' +
+      '<div class="sec">' + esc(k.nome) + ' •' + esc(k.final) + ' · fecha dia ' + esc(k.fechamento) + ' · vence dia ' + esc(k.vencimento) + '</div>' +
+      '<div class="g2f-per g2f-noprint"><button type="button" data-a="detMes" data-v="-1" aria-label="Mês anterior">' + ic('chevl') + '</button><b>' + esc(ymRot(d.ym)) + '</b>' +
+      (d.ym === cur ? '' : '<button type="button" class="g2f-hoje" data-a="detHoje">Hoje</button>') + '<button type="button" data-a="detMes" data-v="1" aria-label="Próximo mês">' + ic('chevr') + '</button></div>' +
+      '<div class="stats">' + stat('Total da fatura', brl(r.total), 'pri', 'card', '', venc ? 'vence ' + esc(dataBR(venc)) : 'sem lançamentos') +
+      stat('Já pago', brl(r.pago), 'in', 'down', 'g2f-pos', st ? esc((ROT.fat[st.status] || st.status).toLowerCase()) : 'fatura ainda não criada') +
+      stat('Em aberto', brl(arr2(r.aberto + r.prev)), 'amb', 'clock', '', r.prev > 0 ? 'inclui ' + brl(r.prev) + ' previsto' : 'lançado') + '</div>';
+    h += itens.length ? '<div class="card lp">' + itens.map(function (i) {
+      var a = i.prev && podeP ? '<div class="g2f-acts g2f-noprint">' + bt('pagarDesp', i.p.despesaId, 'Lançar na fatura') + '</div>' : '';
+      return '<div class="row g2f-mv"><span class="g2f-ri ' + (i.prev ? 'amb' : 'pri') + '">' + ic(i.prev ? 'clock' : 'receipt') + '</span><div class="info"><div class="nm">' + esc(i.desc) + (i.parc ? ' · parcela ' + esc(i.parc) : '') + '</div>' +
+        '<div class="sb">compra de ' + esc(dataBR(i.data)) + '</div></div><div class="g2f-amt"><span>' + brl(i.valor) + '</span>' + (i.prev ? pill('prevista', 'amarelo') : '') + '</div>' + a + '</div>';
+    }).join('') + '</div>' : '<div class="card"><div class="empty">Nenhuma compra nesta fatura.</div></div>';
+    if (st && num(st.aberto) > 0 && st.status !== 'paid' && podeP) h += '<div class="g2f-tool g2f-noprint">' + btn('pagarFatura', 'Pagar fatura', 'cash', '', String(FATS.indexOf(st))) + '</div>';
+    h += '<div class="g2f-note">O mês da fatura é o mês do vencimento. A data de cada compra no Livro não muda: o dinheiro só sai quando a fatura é paga. Compras "previstas" (despesas aprovadas ainda não lançadas) entram na fatura quando a Tesouraria lançar.' +
+      (PREV.pendentes ? ' ' + PREV.pendentes + ' despesa(s) no cartão aguardando aprovação não entram nesta soma.' : '') + '</div>';
+    return h;
+  }
   function tTransf() {
     var vb = pode('financial.book.view'), verDesp = vb || pode('financial.expenses.view');
     var ps = [vb ? rpc('v39_fin_transfers', C({ p_year: S.ano, p_month: S.mes })) : Promise.resolve([]), vb ? rpc('v39_fin_card_statements', C({})) : Promise.resolve([]),
       carregarPlanos(), carregarFaturasImp(), verDesp ? rpc('v39_fin_expenses', C({ p_filter: 'abertas' })).catch(function () { return []; }) : Promise.resolve([])];
     return Promise.all(ps).then(function (r) {
-      var T = r[0] || []; FATS = r[1] || []; DESP = r[4] || []; var h = '';
+      var T = r[0] || []; FATS = r[1] || []; DESP = r[4] || []; PREV = parcelasPrevistas(); var h = '';
+      if (S.cartDet) { var kd0 = cartao(S.cartDet.id); if (kd0) return corpo(htmlDetCartao(kd0)); S.cartDet = null; }
       if (pode('financial.transfers.manage')) {
         h += '<div class="g2f-tool g2f-noprint">' + (tes() ? btn('novaTransf', 'Transferir', 'swap') : '') + '</div><div class="sec">Transferências</div><div class="card lp">' + (T.length ? T.map(function (t) {
           return '<div class="row g2f-mv"><span class="g2f-ri">' + ic('swap') + '</span><div class="info"><div class="nm">' + esc(t.origem) + ' → ' + esc(t.destino) + '</div><div class="sb">' + esc(dataBR(t.data) + (t.descricao ? ' · ' + t.descricao : '')) + '</div></div>' +
@@ -1287,8 +1464,7 @@
       if (pode('financial.cards.manage') || FATS.length || K.length) {
         h += '<div class="sec">Cartões de crédito</div><div class="g2f-tool g2f-noprint">' + (pode('financial.cards.manage') ? btn('novoCartao', 'Cartão', 'plus', 'g2f-soft') : '') +
           (pode('financial.cards.manage') && K.length ? btn('importFatura', 'Importar fatura', 'dl') : '') + '</div><div class="card lp">' + (K.length ? K.map(function (k) {
-          return '<div class="row g2f-mv"><span class="g2f-ri pri">' + ic('card') + '</span><div class="info"><div class="nm">' + esc(k.nome) + ' •' + esc(k.final) + (k.status !== 'active' ? ' ' + pill('inativo', 'cinza') : '') + '</div><div class="sb">' + esc((k.banco || '') + ' · fecha dia ' + k.fechamento + ' · vence dia ' + k.vencimento) + '</div></div>' +
-            (pode('financial.cards.manage') ? '<div class="g2f-acts">' + bt('editCartao', k.id, 'Editar', 'sec') + '</div>' : '') + '</div>';
+          return linhaCartao(k);
         }).join('') : '<div class="empty">Nenhum cartão.</div>') + '</div>';
         if (CARTSQL === false && pode('financial.expenses.create')) h += '<div class="aviso">Para ligar despesas ao cartão e importar faturas, rode o <b>v39_cartoes_c3.sql</b> no Supabase.</div>';
         var pv = previstasCartao(DESP);
@@ -1669,7 +1845,7 @@
     ev.stopPropagation();
     switch (a) {
       case 'fechar': return fechar();
-      case 'aba': S.aba = v; S.cache = null; pintarBase(); return recarregar();
+      case 'aba': S.aba = v; S.cartDet = null; S.cache = null; pintarBase(); return recarregar();
       case 'mesAnt': return mover(-1);
       case 'mesProx': return mover(1);
       case 'mesHoje': S.ano = new Date().getFullYear(); S.mes = new Date().getMonth() + 1; S.cache = null; pintarBase(); return recarregar();
@@ -1738,6 +1914,14 @@
         return motivo('Ignorar linha da fatura', function (m) { return rpc('v39_fin_invoice_line_set', C({ p_line: q2[1], p_status: 'ignored', p_expense: null, p_note: m })).then(function () { return 'Linha ignorada.'; }); }, 'Ignorar');
       }
       case 'cancFatura': return motivo('Cancelar fatura importada', function (m) { return rpc('v39_fin_invoice_cancel', C({ p_invoice: v, p_reason: m })).then(function () { return 'Fatura importada cancelada.'; }); }, 'Cancelar fatura');
+      case 'detCartao': { var kd = cartao(v); if (!kd) return; S.cartDet = { id: v, ym: mesInicialCartao(kd) }; corpo(htmlDetCartao(kd)); return window.scrollTo(0, 0); }
+      case 'detMes': {
+        var kd2 = S.cartDet && cartao(S.cartDet.id); if (!kd2) return;
+        var nx = ymAdd(S.cartDet.ym, +v), cur2 = ym(hoje()); if (nx < ymAdd(cur2, -24) || nx > ymAdd(cur2, 36)) return;
+        S.cartDet.ym = nx; return corpo(htmlDetCartao(kd2));
+      }
+      case 'detHoje': { var kd3 = S.cartDet && cartao(S.cartDet.id); if (!kd3) return; S.cartDet.ym = ym(hoje()); return corpo(htmlDetCartao(kd3)); }
+      case 'detVoltar': S.cartDet = null; S.cache = null; return recarregar();
       case 'verFatura': {
         var s = FATS[+v]; if (!s) return;
         return form('Fatura ' + s.cartao + ' ' + pad(s.mes) + '/' + s.ano, [{ t: 'info', l: (s.itens || []).map(function (i) { return esc(dataBR(i.data)) + ' · ' + esc(i.descricao) + ' · ' + esc(i.parcela) + ' · ' + esc(brl(i.valor)); }).join('<br>') || 'Sem compras.' }], 'OK', function () { return false; });
@@ -1750,7 +1934,7 @@
       case 'pagarFatura': {
         var f = FATS[+v]; if (!f) return;
         var ct = (achar(S.cat.cartoes, f.cartaoId) || {}).contaId || '', imp = impDoMes(f.cartaoId, f.ano, f.mes);
-        return form('Pagar fatura ' + f.cartao + ' ' + pad(f.mes) + '/' + f.ano, [
+        return form('Pagar fatura ' + f.cartao + ' · vence ' + dataBR(f.vencimento), [
           { t: 'info', l: 'Em aberto no sistema: ' + brl(f.aberto) + '. Pagar a fatura não cria despesa nova (as compras já são as despesas).' + (imp ? ' <b>Fatura do banco: ' + esc(brl(imp.total)) + '.</b>' + (Math.abs(arr2(num(imp.total) - num(f.compras))) >= 0.01 ? ' Há diferença de ' + esc(brl(arr2(num(imp.total) - num(f.compras)))) + ' entre o banco e o sistema: confira antes de pagar.' : ' Confere com o sistema.') : '') },
           { k: 'data', l: 'Data', t: 'date', v: hoje(), req: true }, { k: 'valor', l: 'Valor pago', t: 'money', v: f.aberto, req: true },
           { k: 'contaId', l: 'Conta', t: 'select', o: opContas(true), v: ct, req: true }, { k: 'formaId', l: 'Forma', t: 'select', o: opFormas(true), req: true },
@@ -1868,7 +2052,7 @@
     return (p > 0 ? '▲ ' : p < 0 ? '▼ ' : '= ') + Math.abs(p) + '% vs mês anterior';
   }
   function htmlDash() {
-    var d = D.dados || {}, ov = d.ov || {}, t = ov.totais || {}, contas = ov.contas || [], L = ov.livro || [], h = '';
+    var d = D.dados || {}, ov = d.ov || {}, contas = ov.contas || [], L = ov.livro || [], t = totaisCaixa(L), h = '';
     if (d.erro) return '<div class="card">' + esc(d.erro) + '</div>';
     var saldo = contas.reduce(function (s, a) { return s + num(a.saldoAtual); }, 0), prev = d.camps ? previstos() : [];
     var nPend = d.pend && d.pend.itens ? d.pend.itens.length : 0;
@@ -1878,8 +2062,8 @@
     var pAnt = ano && S.mes > 1 ? ano[S.mes - 2] : null;
     if (d.ov) {
       h += '<div class="g2f-per g2f-dashper"><button type="button" data-d="mesAnt" aria-label="Mês anterior">' + ic('chevl') + '</button><b>' + MESES[S.mes - 1] + ' ' + S.ano + '</b><button type="button" data-d="mesProx" aria-label="Próximo mês">' + ic('chevr') + '</button></div>';
-      h += '<div class="stats">' + stat('Entradas', brl(t.entradas), 'in', 'down', 'g2f-pos', pAnt ? variacao(num(t.entradas), pAnt.r) || 'no mês' : 'no mês') + stat('Saídas', brl(t.saidas), 'out', 'up', 'g2f-neg', pAnt ? variacao(num(t.saidas), pAnt.d) || 'no mês' : 'no mês') +
-        stat('Resultado', brl(t.resultado), 'pri', 'trend', num(t.resultado) < 0 ? 'g2f-neg' : 'g2f-pos', 'entradas − saídas') + stat('Saldo atual', brl(saldo), 'pri', 'wallet', '', 'todas as contas, hoje') + '</div>';
+      h += '<div class="stats">' + stat('Entradas', brl(t.entradas), 'in', 'down', 'g2f-pos', pAnt ? variacao(num(t.entradas), pAnt.r) || 'no mês' : 'no mês') + stat('Saídas', brl(t.saidas), 'out', 'up', 'g2f-neg', num(t.faturas) > 0 ? 'inclui fatura de cartão' : 'pagas no caixa') +
+        stat('Resultado', brl(t.resultado), 'pri', 'trend', num(t.resultado) < 0 ? 'g2f-neg' : 'g2f-pos', 'entradas − saídas (caixa)') + stat('Saldo atual', brl(saldo), 'pri', 'wallet', '', 'todas as contas, hoje') + '</div>';
     }
     h += '<div class="big-cta" data-d="abrir" data-v="livro" role="button" tabindex="0"><div class="bi">' + ic('book', 26) + '</div><div><b>Abrir Livro financeiro</b><span>Lançamentos, despesas, campanhas e relatórios</span></div></div>';
     var pend = [];
@@ -1898,7 +2082,7 @@
       var dias = new Date(S.ano, S.mes, 0).getDate(), porDia = []; for (var i = 1; i <= dias; i++) porDia.push({ a: 0, b: 0 });
       var catIn = {};
       L.forEach(function (m) {
-        var ef = num(m.efeitoResultado), v = num(m.valor) * ef, di = parseInt(String(m.data).slice(8, 10), 10);
+        var ef = efCaixa(m), v = num(m.valor) * ef, di = parseInt(String(m.data).slice(8, 10), 10);
         if (!ef) return;
         if (di >= 1 && di <= dias) { if (v > 0) porDia[di - 1].a += v; else porDia[di - 1].b += -v; }
         var n = m.categoria || 'Sem categoria'; catIn[n] = (catIn[n] || 0) + v;
@@ -2007,6 +2191,6 @@
   window.G2_FIN._t = { S: S, tLivro: tLivro, tCamp: tCamp, tDespesas: tDespesas, tConferir: tConferir, tCad: tCad, tTransf: tTransf, tConc: tConc, tRel: tRel, htmlDash: htmlDash, D: D,
     setCamps: function (c) { CAMPS = c; }, setSent: function (s) { SENT = s; }, filaMsgs: filaMsgs, previstos: previstos, novaEntrada: novaEntrada, novoComp: novoComp, editParc: editParc, zap: zap, receber: receber,
     msgTexto: msgTexto, genParcelas: genParcelas, addMeses: addMeses, bt: bt, carregarCtx: carregarCtx, carregarCat: carregarCat, pintarBase: pintarBase, restaurar: restaurar, manter: manter, corpo: corpo,
-    formDesp: formDesp, pagarDesp: pagarDesp, tPagar: tPagar, previaFatura: previaFatura, linhaDesp: linhaDesp, formCorrDesp: formCorrDesp, editMov: editMov, interceptForm: null, formImportarFatura: formImportarFatura, parseFatura: parseFatura, conferirFatura: conferirFatura, mesFechamento: mesFechamento, vencFatura: vencFatura,
+    formDesp: formDesp, pagarDesp: pagarDesp, tPagar: tPagar, previaFatura: previaFatura, linhaDesp: linhaDesp, formCorrDesp: formCorrDesp, editMov: editMov, interceptForm: null, totaisCaixa: totaisCaixa, despesasPrevistas: despesasPrevistas, carregarAPagar: carregarAPagar, desenharLivro: desenharLivro, htmlDetCartao: htmlDetCartao, linhaCartao: linhaCartao, parcelasPrevistas: parcelasPrevistas, formImportarFatura: formImportarFatura, parseFatura: parseFatura, conferirFatura: conferirFatura, mesFechamento: mesFechamento, vencFatura: vencFatura,
     previstasCartao: previstasCartao, setPlanos: function (p) { PLANOS = p; }, setFatimp: function (f) { FATIMP = f; }, setFats: function (f) { FATS = f; }, setDesp: function (d) { DESP = d; }, clique: clique };
 })();
