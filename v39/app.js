@@ -1699,7 +1699,7 @@ function blocoConta() {
     '<div class="card" style="font-size:12.5px;color:var(--tx2,#5E6470);line-height:1.55;display:flex;gap:10px;align-items:center">' +
       '<span style="flex:0 0 30px;height:30px;border-radius:50%;background:var(--pri);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:11px">' + esc(ini(u.nome || '?')) + '</span>' +
       '<span>Sincronizar, trocar a senha e sair do app ficam no botão com as suas iniciais, no canto superior direito.</span></div>' +
-    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-15</div>';
+    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-16</div>';
 }
 function rConta() { return blocoConta(); }
 function trocarSenha() {
@@ -6567,29 +6567,6 @@ setInterval(function () { if (cfg.token && (document.visibilityState === 'visibl
 document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible' && cfg.token) sincronizar(false); });
 if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', function (e) { if (e.data && e.data.tipo === 'ABRIR' && cfg.token) irRaiz(cfg.modo === 'gc' ? 'alertas' : 'avisos'); });
 
-/* ───────── início ───────── */
-pwaIniciar();
-if (EXIGE_HOSPEDADO && !MODO_SCRIPT && !pwaOrigemOk()) {
-  // aberto como arquivo ou por outro endereço: não acessa dados
-  limparSessao(); mostrarTela('s-login');
-  var box = document.querySelector('#s-login .box');
-  if (box) box.innerHTML = '<h2>Abra pelo endereço oficial</h2><p class="sub" style="line-height:1.55">Por segurança, este app só funciona pelo link oficial da igreja. ' +
-    'Peça o link à liderança ou toque abaixo.</p><div style="height:12px"></div><a class="btn pr" style="text-align:center;text-decoration:none" href="' + esc(APP.appUrl || URL_PADRAO) + '" target="_top">Abrir o app oficial</a>';
-  ['b-ir-cadastro', 'b-politica'].forEach(function (x) { if ($(x)) $(x).classList.add('hide'); });
-  return;
-}
-aplicarLogo();
-if (!(window.APP_CONFIG && APP_CONFIG.build === 'P1.2')) {
-  chamarBruto({ acao: 'ping' }).then(function (r) { if (r && r.ok) { servidorV = +r.versao || 0; if (cfg.token && servidorV < SERVIDOR_ESPERADO) render(); } }).catch(function () {});
-  chamarBruto({ acao: 'configPublica' }).then(function (r) { if (r && r.ok) return atualizarConfig(r.config); }).then(function (m) { avisoNovoEndereco(); if (m && cfg.token) render(); }).catch(function () {});
-}
-if (cfg.token && cfg.usuario) {
-  if (cfg.token === 'supabase-v39') v39AplicarContextoIgreja(cfg.usuario, window.G2_V39 && G2_V39.runtime && G2_V39.runtime.state ? G2_V39.runtime.state.context : null);
-  iniciarApp(); sincronizar(false); setTimeout(verificarSenhaTemp, 400);
-}
-else mostrarTela('s-login');
-
-window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }, render: function () { render(); }, sincronizar: sincronizar, metricas: metricas, pendentes: pendentesLocais };
 
 
 /* ═══════════════════ v37: TREINAMENTOS/REUNIÕES × CURSOS DO INSTITUTO ═══════════════════
@@ -6751,6 +6728,10 @@ function estUn(tipo, id) { var p = estProd(tipo, id); return p ? p.unidade : 'un
 function carregarEst(tipo, forcar) {
   var s = estD[tipo];
   if (s.carregando || (!forcar && s.t && Date.now() - s.t < 30000)) return Promise.resolve();
+  // SYNC-V39-16: no v39, o Mercado/Farmácia são atendidos pelo app_v39_instituto.js; se ele ainda não carregou, espera em vez de dar erro
+  if (cfg.token === 'supabase-v39' && window.G2_V39 && G2_V39.p1 && typeof G2_V39.p1.isRead === 'function' && !G2_V39.p1.isRead('estDados')) {
+    s.erro = 'Carregando o módulo do Instituto… Se esta mensagem continuar, atualize a página.'; s.t = Date.now(); return Promise.resolve();
+  }
   s.carregando = true;
   return chamar('estDados', { tipo: tipo }).then(function (r) { s.d = r; s.t = Date.now(); s.erro = ''; })
     .catch(function (e) { s.erro = e.message; s.t = Date.now(); toast(e.message, 5000); })
@@ -7240,6 +7221,33 @@ function estExportar(modo) {
   toast('Arquivo gerado ✓');
 }
 
+/* SYNC-V39-16: o início do app roda aqui, no fim, depois de TODAS as variáveis do arquivo existirem.
+   Antes, ele rodava antes de estD/estUI/EST_NOME (Mercado e Farmácia): quem reabria o app na tela do Mercado
+   via "Cannot read properties of undefined (reading 'mercado')" e o app parava. */
+/* ───────── início ───────── */
+pwaIniciar();
+if (EXIGE_HOSPEDADO && !MODO_SCRIPT && !pwaOrigemOk()) {
+  // aberto como arquivo ou por outro endereço: não acessa dados
+  limparSessao(); mostrarTela('s-login');
+  var box = document.querySelector('#s-login .box');
+  if (box) box.innerHTML = '<h2>Abra pelo endereço oficial</h2><p class="sub" style="line-height:1.55">Por segurança, este app só funciona pelo link oficial da igreja. ' +
+    'Peça o link à liderança ou toque abaixo.</p><div style="height:12px"></div><a class="btn pr" style="text-align:center;text-decoration:none" href="' + esc(APP.appUrl || URL_PADRAO) + '" target="_top">Abrir o app oficial</a>';
+  ['b-ir-cadastro', 'b-politica'].forEach(function (x) { if ($(x)) $(x).classList.add('hide'); });
+  return;
+}
+aplicarLogo();
+if (!(window.APP_CONFIG && APP_CONFIG.build === 'P1.2')) {
+  chamarBruto({ acao: 'ping' }).then(function (r) { if (r && r.ok) { servidorV = +r.versao || 0; if (cfg.token && servidorV < SERVIDOR_ESPERADO) render(); } }).catch(function () {});
+  chamarBruto({ acao: 'configPublica' }).then(function (r) { if (r && r.ok) return atualizarConfig(r.config); }).then(function (m) { avisoNovoEndereco(); if (m && cfg.token) render(); }).catch(function () {});
+}
+if (cfg.token && cfg.usuario) {
+  if (cfg.token === 'supabase-v39') v39AplicarContextoIgreja(cfg.usuario, window.G2_V39 && G2_V39.runtime && G2_V39.runtime.state ? G2_V39.runtime.state.context : null);
+  iniciarApp(); sincronizar(false); setTimeout(verificarSenhaTemp, 400);
+}
+else mostrarTela('s-login');
+
+window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }, render: function () { render(); }, sincronizar: sincronizar, metricas: metricas, pendentes: pendentesLocais,
+  estRecarregar: function () { estD = { mercado: estNovo(), farmacia: estNovo() }; if (cfg.token && /^inst(mercado|farmacia)$/.test(cfg.aba || '')) render(); } };
 } catch (err) { mostrarErro((err && err.message) || String(err), 'inicialização'); }
 })();
 
@@ -7254,7 +7262,7 @@ function estExportar(modo) {
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'SYNC-V39-15';
+  var BUILD = 'SYNC-V39-16';
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 

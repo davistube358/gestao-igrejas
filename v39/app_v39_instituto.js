@@ -1,15 +1,14 @@
-/* 2Gather v39 · Instituto · INST-1 (Mercado Solidário)
+/* 2Gather v39 · Instituto · INST-2 (Mercado Solidário)
    Carregar DEPOIS do app.js e dos demais módulos v39 (antes do app_v39_popups.js). Não altera o app.js.
-   Requer no Supabase: INST_S1_seguranca.sql e INST_S2_mercado.sql.
-   Liga ao banco as ações que o app.js já usa no Mercado Solidário e que hoje caíam em "Acao v39 nao mapeada":
-     estDados, estSalvarProduto, estEntrada, estBaixa, estEstornar, estPessoaResumo, estSaida (tipo "mercado")
-     e instBuscarPessoa (busca de pessoas do Instituto, usada na entrega).
-   Farmácia Solidária (tipo "farmacia" e estReceita): ainda NÃO migrada — o app mostra um aviso claro em vez de erro técnico.
-   Agendas/atendimentos (instDados, instAgendar, …) e cadastro de atendido (instCriarPessoa): próximas etapas.
+   Requer no Supabase: INST_S1_seguranca.sql e INST_S2_mercado_v2.sql.
+   INST-2: as leituras (estDados, estPessoaResumo, instBuscarPessoa) passam por G2_V39.p1.read, que o app.js usa para ações de leitura.
+           O INST-1 só ligava execute e as leituras continuavam caindo em "não mapeada".
+   Liga ao banco as ações que o app.js já usa no Mercado Solidário: estDados, estSalvarProduto, estEntrada, estBaixa, estEstornar,
+   estPessoaResumo, estSaida (tipo "mercado") e instBuscarPessoa. Farmácia (tipo "farmacia" e estReceita): ainda não migrada — aviso claro.
    Diagnóstico no Console: G2_INST.versao · G2_INST.acoes() */
 (function () {
   'use strict';
-  var VERSAO = 'INST-1';
+  var VERSAO = 'INST-2';
   if (window.G2_INST) return;
   var M = window.G2_INST = { versao: VERSAO };
   console.info('[2Gather] instituto ' + VERSAO);
@@ -49,10 +48,10 @@
   function traduz(e) {
     var t = String((e && (e.message || e.code)) || e || ''), det = (e && e.details) || '';
     for (var k in MSG) if (t === k || t.indexOf(k) === 0) {
-      if (k === 'STOCK_INSUFFICIENT' || k === 'PERMISSION_DENIED') { try { var j = JSON.parse(det); if (j && j.message && k === 'STOCK_INSUFFICIENT') return 'Saldo insuficiente: ' + j.message.replace(/^Saldo insuficiente de /, '') + '.'; } catch (x) { /* sem detalhe */ } }
+      if (k === 'STOCK_INSUFFICIENT') { try { var j = JSON.parse(det); if (j && j.message) return 'Saldo insuficiente: ' + j.message.replace(/^Saldo insuficiente de /, '') + '.'; } catch (x) { /* sem detalhe */ } }
       return MSG[k];
     }
-    if (/PGRST202|find the function|does not exist/i.test(t)) return 'O servidor ainda não tem esta função. Rode o INST_S2_mercado.sql no Supabase.';
+    if (/PGRST202|find the function|does not exist/i.test(t)) return 'O servidor ainda não tem esta função. Rode o INST_S2_mercado_v2.sql no Supabase.';
     if (/Failed to fetch|NetworkError|Load failed/i.test(t)) return 'Sem conexão. Tente novamente.';
     if (/JWT|401/i.test(t)) return 'Sua sessão expirou. Entre de novo.';
     try { var d = JSON.parse(det); if (d && d.message) return d.message; } catch (x) { /* sem detalhe */ }
@@ -61,8 +60,10 @@
   function erro(e) { console.warn('[2Gather][instituto]', e); return new Error(traduz(e)); }
   function ehMercado(d) { return String((d && d.tipo) || 'mercado') === 'mercado'; }
   function naoMigrado() { return Promise.reject(new Error(MSG.EST_NOT_MIGRATED)); }
-  function semIgreja() { return Promise.reject(new Error('Igreja não identificada. Atualize a página.')); }
-  function chamarRpc(nome, args) { var ig = igrejaId(); if (!ig) return semIgreja(); args.p_church_id = ig; return rpc(nome, args).catch(function (e) { throw erro(e); }); }
+  function chamarRpc(nome, args) {
+    var ig = igrejaId(); if (!ig) return Promise.reject(new Error('Igreja não identificada. Atualize a página.'));
+    args.p_church_id = ig; return rpc(nome, args).catch(function (e) { throw erro(e); });
+  }
   function limpo(d) { var o = {}; for (var k in d) if (d[k] !== undefined && typeof d[k] !== 'function') o[k] = d[k]; return o; }
 
   var LEITURA = { estDados: 1, estPessoaResumo: 1, instBuscarPessoa: 1, estReceita: 1 };
@@ -88,12 +89,16 @@
   function instalar() {
     var V = window.G2_V39; if (!V || !V.p1) return false;
     var P = V.p1; if (P.__inst) return true;
-    if (typeof P.isMutation !== 'function' || typeof P.isRead !== 'function' || typeof P.execute !== 'function') return false;
-    var isM = P.isMutation, isR = P.isRead, ex = P.execute;
+    if (typeof P.isMutation !== 'function' || typeof P.isRead !== 'function') return false;
+    var isM = P.isMutation, isR = P.isRead, ex = P.execute, rd = P.read;
     P.isMutation = function (a) { return ACOES[a] ? !LEITURA[a] : isM.apply(P, arguments); };
     P.isRead = function (a) { return ACOES[a] ? !!LEITURA[a] : isR.apply(P, arguments); };
-    P.execute = function (a, d) { return ACOES[a] ? ACOES[a](d || {}) : ex.apply(P, arguments); };
-    P.__inst = true; return true;
+    P.execute = function (a, d) { return ACOES[a] ? ACOES[a](d || {}) : (typeof ex === 'function' ? ex.apply(P, arguments) : Promise.reject(new Error('Acao v39 nao mapeada: ' + a))); };
+    P.read = function (a, d) { return ACOES[a] ? ACOES[a](d || {}) : (typeof rd === 'function' ? rd.apply(P, arguments) : Promise.reject(new Error('Acao v39 nao mapeada: ' + a))); };
+    P.__inst = true;
+    // o app pode ter aberto direto no Mercado antes deste módulo: recarrega o estoque já pelo banco
+    try { var g = window.__gc; if (g && typeof g.estRecarregar === 'function') g.estRecarregar(); } catch (e) { console.warn('[2Gather][instituto]', e); }
+    return true;
   }
   var tent = 0, tm = setInterval(function () { if (instalar() || ++tent > 240) clearInterval(tm); }, 250);
   instalar();
