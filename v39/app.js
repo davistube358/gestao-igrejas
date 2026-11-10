@@ -82,7 +82,23 @@ function carregando(on, txt) { $('carregando').classList.toggle('on', !!on); $('
 
 var DIAS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 var PAPEL_NOME = { master: 'Master', pastor: 'Pastor(a)', supervisor: 'Supervisor', lider: 'Líder', discipulo: 'Discípulo', secretaria: 'Secretaria', tesouraria: 'Tesouraria', voluntario: 'Voluntário', voluntarioLV: 'Voluntário Lar de Vida', voluntarioInst: 'Voluntário Instituto', profissional: 'Profissional de saúde' };
-var ETAPAS = ['1. Visitou', '2. Frequentando', '3. Membro da igreja', '4. Batizado', '5. Em discipulado', '6. Em formação de líder'];
+var ETAPAS = ['1. Visitou', '2. Frequentando', '3. Membro da igreja', '4. Batizado', '5. Em discipulado', '6. Em formação de líder', 'Instituto'];
+/* SYNC-V39-17: etapas da jornada vêm da configuração da igreja (v39_journey_stages); 'Instituto' é fixa. */
+var JORNADA = { visitante: '1. Visitou', promovido: '2. Frequentando', membro: '3. Membro da igreja', emUso: {}, podeEditar: false };
+function JV() { return JORNADA.visitante || ETAPAS[0]; }
+function JP() { return JORNADA.promovido || ETAPAS[1]; }
+function JM() { return JORNADA.membro || ETAPAS[2]; }
+function aplicarJornada(r) {
+  if (!r || !Array.isArray(r.etapas) || !r.etapas.length) return;
+  ETAPAS.length = 0; r.etapas.forEach(function (e) { ETAPAS.push(e); });
+  if (ETAPAS.indexOf('Instituto') < 0) ETAPAS.push('Instituto');
+  JORNADA = { visitante: r.visitante, promovido: r.promovido, membro: r.membro, emUso: r.emUso || {}, podeEditar: !!r.podeEditar };
+}
+var INST_ATIV = { Mercado: 'Mercado Solidário', Farmacia: 'Farmácia Solidária', 'Farmácia': 'Farmácia Solidária', Atendimento: 'Atendimentos', Curso: 'Cursos' };
+function auxiliosInstituto(p) {
+  var l = (p && p.instAtividades) || [];
+  return l.length ? 'Instituto: ' + l.map(function (a) { return INST_ATIV[a] || a; }).join(', ') : '';
+}
 var CANAIS = ['Evangelismo', 'Convite de membros', 'GC', 'Redes sociais', 'Outros'];
 
 /* ───────── SHA-256 (puro JS, funciona em qualquer navegador) ───────── */
@@ -662,6 +678,7 @@ function sincronizar(avisar) {
           var loc = (db.pessoas || []).filter(function (l) { return l.id === x.id; })[0];
           return Object.assign({}, loc || {}, x, { _pend: false });
         });
+        v39RpcApp('v39_journey_stages', { p_church_id: cfg.usuario && cfg.usuario.igrejaId }).then(aplicarJornada).catch(function (eJ) { console.warn('[2Gather][jornada] usando etapas padrão', eJ); });
         return v39CarregarLarDeVida(r).then(v39CarregarEquipeFotos);
       }).catch(function (err) { console.warn('[2Gather][pessoas] leitura falhou', err); r.errors = (r.errors || []).concat(['Pessoas: ' + (err && err.message)]); return r; });
     }).then(function (r) {
@@ -1125,7 +1142,7 @@ function render() {
     $('main').innerHTML = '<div class="empty">' + (db.gcs.length ? 'Você ainda não está vinculado a um GC. Fale com a liderança.' : 'Carregando dados do GC...') + '</div>';
   } else $('main').innerHTML = f ? f() : '';
   if (cfg.aba === 'usuarios') carregarUsuarios();
-  if (cfg.aba !== 'config') { if (cfgDraft) aplicarCor(igr.config && igr.config.cor); cfgDraft = null; logoNovo = null; iconeNovo = null; }
+  if (cfg.aba !== 'config') { if (cfgDraft) aplicarCor(igr.config && igr.config.cor); cfgDraft = null; jorDraft = null; logoNovo = null; iconeNovo = null; }
   if (cfg.aba !== 'painel' && cfg.aba !== 'bi') mapaGcs = null;
   if (cfg.aba === 'lv') setTimeout(lvGeoFila, 0);
   setTimeout(desenharMapa, 0);
@@ -1699,7 +1716,7 @@ function blocoConta() {
     '<div class="card" style="font-size:12.5px;color:var(--tx2,#5E6470);line-height:1.55;display:flex;gap:10px;align-items:center">' +
       '<span style="flex:0 0 30px;height:30px;border-radius:50%;background:var(--pri);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:11px">' + esc(ini(u.nome || '?')) + '</span>' +
       '<span>Sincronizar, trocar a senha e sair do app ficam no botão com as suas iniciais, no canto superior direito.</span></div>' +
-    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-16</div>';
+    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-17</div>';
 }
 function rConta() { return blocoConta(); }
 function trocarSenha() {
@@ -1810,8 +1827,8 @@ function abrirPessoa(id, ctx) {
     (ro ? '' : campoFotoPessoa(id || '')) +
     '<label>Nome completo *</label><input id="f-nome" value="' + g('nome') + '"' + dis + '>' +
     '<label>Como gostaria de ser chamado(a) / apelido</label><input id="f-apelido" value="' + g('apelido') + '" placeholder="Ex.: Juninho, Dona Cida"' + dis + '>' +
-    '<div class="g2"><div><label>Tipo</label><select id="f-tipo"' + dis + '>' + opts([['Membro', 'Membro'], ['Visitante', 'Visitante'], ['Criança/Adolescente', 'Criança/Adolescente']], p ? p.tipo : 'Visitante') + '</select></div>' +
-    '<div><label>Status</label><select id="f-status"' + dis + '>' + opts([['Em visita', 'Em visita'], ['Ativo', 'Ativo'], ['Inativo', 'Inativo'], ['Mudou de GC', 'Mudou de GC'], ['Afastado', 'Afastado']], p ? p.status : (ctx.tipo === 'Membro' ? 'Ativo' : 'Em visita')) + '</select></div></div>' +
+    '<div class="g2"><div><label>Tipo</label><select id="f-tipo"' + dis + '>' + opts([['Membro', 'Membro'], ['Visitante', 'Visitante'], ['Criança/Adolescente', 'Criança/Adolescente'], ['Instituto', 'Instituto']], p ? p.tipo : 'Visitante') + '</select></div>' +
+    '<div><label>Status</label><select id="f-status"' + dis + '>' + opts([['Em visita', 'Em visita'], ['Ativo', 'Ativo'], ['Inativo', 'Inativo'], ['Mudou de GC', 'Mudou de GC'], ['Afastado', 'Afastado'], ['Instituto', 'Instituto']], p ? p.status : (ctx.tipo === 'Membro' ? 'Ativo' : 'Em visita')) + '</select></div></div>' +
     '<div class="g2"><div><label>WhatsApp</label><input id="f-fone" type="tel" inputmode="numeric" value="' + g('fone') + '"' + dis + '></div>' +
     '<div><label>Nascimento</label><input id="f-nasc" type="date" value="' + g('nasc') + '"' + dis + '></div></div>' +
     campoSexo('f', p, dis, false) +
@@ -1823,13 +1840,14 @@ function abrirPessoa(id, ctx) {
     '<div><label>Cidade</label><input id="f-cidade" value="' + esc(end.cidade || (p ? '' : cidadePadrao(ctx.gcId))) + '" placeholder="Ex.: Matão/SP"' + dis + '></div></div>' +
     '<div style="font-size:11px;color:#999;margin-top:4px">Bairro e cidade definem a posição no mapa de calor.</div>' +
     (p && p.status === 'Em visita' ? '<div style="font-size:11.5px;color:#8a5b00;margin-top:6px">' + visitasDe(p) + ' de ' + VISITAS_PARA_ATIVO + ' visitas — passa para Ativo automaticamente na ' + VISITAS_PARA_ATIVO + 'ª presença.</div>' : '') +
-    '<label>Etapa da jornada</label><select id="f-jornada"' + dis + '>' + opts(ETAPAS.map(function (e) { return [e, e]; }), p ? p.jornada : ETAPAS[0]) + '</select>' +
+    '<label>Etapa da jornada</label><select id="f-jornada"' + dis + '>' + opts(ETAPAS.map(function (e) { return [e, e]; }), p ? (p.jornada || (p.status === 'Instituto' ? 'Instituto' : '')) : JV()) + '</select>' +
     campoCanal('f', p, dis) +
     camposIgrejaVisita('f', p, dis) +
     '<div class="g2"><div><label>Convidado por</label><input id="f-conv" value="' + g('conv') + '"' + dis + '></div>' +
     '<div><label>Discipulador</label><input id="f-disc" value="' + g('disc') + '"' + dis + '></div></div>' +
     (ehGestor() ? '<label>GC</label><select id="f-gc">' + opts(GCS().map(function (x) { return [x.id, x.nome]; }), p ? p.gcId : gcA()) + '</select>' : '') +
     camposConsent('f', p, dis) +
+    (auxiliosInstituto(p) ? '<div class="aviso" style="margin:12px 0 0;font-size:12.5px;line-height:1.5;background:#EAF0FF;border-left-color:#2F5BEA;color:#1d3d9e"><b>' + esc(auxiliosInstituto(p)) + '</b><br><span style="font-size:11px">Atualizado automaticamente pelas entregas, atendimentos e cursos do Instituto.</span></div>' : '') +
     '<label>Observações</label><textarea id="f-obs" rows="2"' + dis + '>' + g('obs') + '</textarea><div style="height:16px"></div>' +
     (ro ? '' : '<button class="btn pr" data-a="salvarPessoa">Salvar</button><div class="gap"></div>') +
     (p && !ro ? '<button class="btn dg" data-a="excluirPessoa">Excluir pessoa</button><div class="gap"></div>' : '') +
@@ -1892,7 +1910,7 @@ function promoverVisitantes(gcId) {
   PES(gcId).forEach(function (p) {
     if (p.status !== 'Em visita' || visitasDe(p) < VISITAS_PARA_ATIVO) return;
     p.status = 'Ativo';
-    if (!p.jornada || p.jornada === ETAPAS[0]) p.jornada = ETAPAS[1];
+    if (!p.jornada || p.jornada === JV()) p.jornada = JP();
     p.updatedAt = agora(); p._pend = true;
     promovidos.push(nomeChamado(p));
   });
@@ -2476,7 +2494,7 @@ var nomes = String((g && g.discipulosNomes) || '').split(', ');
 return ids.map(function (id, i) { return { id: id, nome: nomes[i] || 'Discípulo' }; });
 }
 function lvAguardando(gcId) { return PES(gcId).filter(function (p) { return p.lvStatus === 'pendente'; }); }
-function lvFila() { return PES().filter(function (p) { return !p.gcId && p.status !== 'Inativo' && p.origem !== 'usuário do app' && p.origem !== 'instituto'; }); }
+function lvFila() { return PES().filter(function (p) { return !p.gcId && p.status !== 'Inativo' && p.status !== 'Instituto' && p.tipo !== 'Instituto' && p.origem !== 'usuário do app' && p.origem !== 'instituto'; }); }
 function lvBadgeGC() {
 if (cfg.modo !== 'gc') return 0;
 var g = gcPor(gcA()); if (!g) return 0;
@@ -2770,7 +2788,7 @@ function lvConfirmarEncerrar(pid) {
 var p = pessoaPor(pid); if (!p) return;
 var res = $('v-res').value;
 p.lvStatus = 'encerrado'; p.lvResultado = res; p.lvObsFinal = $('lv-obsfim').value.trim(); p.lvEncerradoEm = hoje();
-if (res === 'Ficou') { p.status = 'Ativo'; if (!p.jornada || p.jornada === ETAPAS[0]) p.jornada = ETAPAS[1]; }
+if (res === 'Ficou') { p.status = 'Ativo'; if (!p.jornada || p.jornada === JV()) p.jornada = JP(); }
 p.updatedAt = agora(); p._pend = true;
 salvarDB(); fechar(); render(); sincAuto();
 toast(res === 'Ficou' ? nomeChamado(p) + ' agora está Ativo ✓' : 'Acompanhamento encerrado');
@@ -2958,12 +2976,12 @@ if (ant) for (var k in ant) o[k] = ant[k];
 else if (modo === 'membro') {
   if (!v('v-gc')) return toast('Escolha o GC para onde o membro será direcionado.');
   o.id = 'p' + Date.now() + Math.floor(Math.random() * 1000); o.tipo = 'Membro'; o.status = 'Ativo'; o.gcId = v('v-gc');
-  o.origem = 'membro igreja'; o.prim = hoje(); o.jornada = ETAPAS[2]; o.criadoPor = eu().id; o.deleted = false;
+  o.origem = 'membro igreja'; o.prim = hoje(); o.jornada = JM(); o.criadoPor = eu().id; o.deleted = false;
   o.direcionadoPor = eu().nome; o.direcionadoEm = hoje(); o.lvStatus = '';
 }
 else {
   o.id = 'p' + Date.now() + Math.floor(Math.random() * 1000); o.tipo = 'Visitante'; o.status = 'Em visita'; o.gcId = '';
-  o.origem = 'visita igreja'; o.prim = hoje(); o.jornada = ETAPAS[0]; o.criadoPor = eu().id; o.deleted = false;
+  o.origem = 'visita igreja'; o.prim = hoje(); o.jornada = JV(); o.criadoPor = eu().id; o.deleted = false;
 }
 o.nome = v('v-nome'); o.apelido = v('v-apelido'); o.fone = v('v-fone'); o.nasc = v('v-nasc'); o.cep = mascaraCep(v('v-cep'));
 o.bairro = v('v-bairro'); o.cidade = v('v-cidade'); o.frequentaIgreja = v('v-freqig'); o.igrejaQual = o.frequentaIgreja === 'Sim' ? v('v-igreja') : '';
@@ -3544,7 +3562,56 @@ function rConfig() {
       : '<textarea id="cf-politica" rows="12" style="font-size:13px;line-height:1.5">' + esc(c.politica) + '</textarea>') +
     '<div style="font-size:11px;color:#999;margin-top:6px;line-height:1.5">É um <b>modelo</b> — revise com um advogado antes de divulgar. Ao alterar o texto, todos os usuários precisarão aceitar a nova versão no próximo acesso.</div>' +
     (c.politicaModelo ? '<div style="text-align:right;margin-top:6px"><span class="pill p-cinza" data-a="cfModeloPolitica" style="cursor:pointer">restaurar modelo</span></div>' : '') + '</div>' +
+    blocoJornadaCfg() +
     '<button class="btn pr" data-a="cfSalvar">Salvar configurações</button>';
+}
+/* SYNC-V39-17: etapas da jornada (salvas à parte, com o botão do próprio quadro) */
+var jorDraft = null;
+function jorLer() {
+  if (!jorDraft) return;
+  var ins = document.querySelectorAll('.cf-jor');
+  for (var i = 0; i < ins.length; i++) jorDraft.etapas[+ins[i].getAttribute('data-i')].nome = ins[i].value;
+  ['visitante', 'promovido', 'membro'].forEach(function (k) { var el = $('cf-jor-' + k); if (el) jorDraft[k] = +el.value; });
+}
+function blocoJornadaCfg() {
+  if (!jorDraft) jorDraft = { etapas: ETAPAS.filter(function (e) { return e !== 'Instituto'; }).map(function (e) { return { nome: e, orig: e }; }),
+    visitante: Math.max(0, ETAPAS.indexOf(JV())), promovido: Math.max(0, ETAPAS.indexOf(JP())), membro: Math.max(0, ETAPAS.indexOf(JM())) };
+  var ed = JORNADA.podeEditar, d = jorDraft, opE = d.etapas.map(function (e, i) { return [String(i), e.nome || '(sem nome)']; });
+  var h = '<div class="card"><h3>Jornada da pessoa</h3><div style="font-size:11.5px;color:#888;line-height:1.5;margin-bottom:6px">Etapas usadas na ficha e nos relatórios. A etapa <b>Instituto</b> é fixa (pessoas atendidas pelo Instituto). Etapa com pessoas não pode ser excluída: renomeie ou mova as pessoas antes.</div>' +
+    d.etapas.map(function (e, i) {
+      var n = (JORNADA.emUso || {})[e.orig] || 0;
+      return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><input class="cf-jor" data-i="' + i + '" value="' + esc(e.nome) + '" maxlength="60"' + (ed ? '' : ' disabled') + ' style="flex:1">' +
+        (n ? '<span class="pill p-cinza" title="pessoas nesta etapa">' + n + '</span>' : '') +
+        (ed ? '<button class="btn gh sm" data-a="cfJorMover" data-v="' + i + '|-1" style="padding:0 10px"' + (i ? '' : ' disabled') + ' aria-label="Subir">↑</button>' +
+              '<button class="btn gh sm" data-a="cfJorMover" data-v="' + i + '|1" style="padding:0 10px"' + (i < d.etapas.length - 1 ? '' : ' disabled') + ' aria-label="Descer">↓</button>' +
+              '<button class="btn dg sm" data-a="cfJorRem" data-v="' + i + '" style="padding:0 12px"' + (n ? ' disabled title="Há pessoas nesta etapa"' : '') + ' aria-label="Excluir">×</button>' : '') + '</div>';
+    }).join('') +
+    '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px"><input value="Instituto" disabled style="flex:1"><span class="pill p-cinza">fixa</span></div>' +
+    (ed ? '<button class="btn gh sm" data-a="cfJorAdd">+ Adicionar etapa</button>' : '') +
+    '<div class="g2" style="margin-top:6px"><div><label>Etapa de quem visita</label><select id="cf-jor-visitante"' + (ed ? '' : ' disabled') + '>' + opts(opE, String(d.visitante)) + '</select></div>' +
+    '<div><label>Após a ' + VISITAS_PARA_ATIVO + 'ª presença</label><select id="cf-jor-promovido"' + (ed ? '' : ' disabled') + '>' + opts(opE, String(d.promovido)) + '</select></div></div>' +
+    '<label>Etapa de quem é cadastrado como membro</label><select id="cf-jor-membro"' + (ed ? '' : ' disabled') + '>' + opts(opE, String(d.membro)) + '</select>' +
+    (ed ? '<div style="height:10px"></div><button class="btn gh" data-a="cfJorSalvar">Salvar etapas da jornada</button>' : '<div style="font-size:11px;color:#999;margin-top:8px">Somente master, pastor ou secretaria alteram as etapas.</div>') + '</div>';
+  return h;
+}
+function cfJorSalvar() {
+  jorLer();
+  var d = jorDraft, nomes = d.etapas.map(function (e) { return String(e.nome || '').trim(); });
+  if (nomes.some(function (n) { return !n; })) return toast('Preencha o nome de todas as etapas (ou exclua as vazias).');
+  if (nomes.some(function (n, i) { return nomes.indexOf(n) !== i; })) return toast('Há etapas com o mesmo nome.');
+  if (nomes.indexOf('Instituto') >= 0) return toast('“Instituto” já é uma etapa fixa.');
+  var ren = d.etapas.filter(function (e) { return e.orig && e.orig !== String(e.nome).trim(); }).map(function (e) { return { de: e.orig, para: String(e.nome).trim() }; });
+  cfgDraft = lerCfgForm(); carregando(true, 'Salvando etapas...');
+  v39RpcApp('v39_journey_stages_save', { p_church_id: cfg.usuario && cfg.usuario.igrejaId, p: { etapas: nomes, visitante: nomes[d.visitante], promovido: nomes[d.promovido], membro: nomes[d.membro], renomear: ren } })
+    .then(function (r) {
+      aplicarJornada(r);
+      (db.pessoas || []).forEach(function (p) { ren.forEach(function (x) { if (p.jornada === x.de) p.jornada = x.para; }); });
+      salvarDB(); jorDraft = null; toast('Etapas da jornada salvas ✓'); render();
+    })
+    .catch(function (e) {
+      var t = String((e && (e.message || e.details)) || '');
+      toast(/JOURNEY_STAGE_IN_USE|Ha pessoas/.test(t) ? t.replace(/^.*?Ha pessoas/, 'Há pessoas') : /PERMISSION/.test(t) ? 'Somente master, pastor ou secretaria alteram a jornada.' : 'Não foi possível salvar: ' + t, 7000);
+    }).then(function () { carregando(false); });
 }
 function processarLogo(file) {
   if (!file) return;
@@ -6441,6 +6508,22 @@ var ACOES = {
     filtroM: function (v) { filtroM = v; render(); }, fichaPessoa: fichaPessoa,
     perfilEditar: function (v) { var p = pessoaPor(v); if (!p) return; if (p.gcId && cfg.modo === 'gc' && p.gcId === gcA()) abrirPessoa(v); else if (p.gcId) abrirPessoa(v); else lvEditar(v); }, csvConsulta: csvConsulta,
     cfRemCulto: function (v) { cfgDraft = lerCfgForm(); cfgDraft.cultos.splice(+v, 1); render(); }, cfSalvar: cfSalvar,
+    cfJorAdd: function () { jorLer(); cfgDraft = lerCfgForm(); jorDraft.etapas.push({ nome: '', orig: '' }); render(); },
+    cfJorRem: function (v) {
+      jorLer(); cfgDraft = lerCfgForm(); var i = +v, d = jorDraft;
+      if (d.etapas.length <= 1) return toast('Mantenha ao menos uma etapa.');
+      d.etapas.splice(i, 1);
+      ['visitante', 'promovido', 'membro'].forEach(function (k) { if (d[k] === i) d[k] = 0; else if (d[k] > i) d[k]--; });
+      render();
+    },
+    cfJorMover: function (v) {
+      jorLer(); cfgDraft = lerCfgForm(); var q = String(v).split('|'), i = +q[0], j = i + (+q[1]), d = jorDraft;
+      if (j < 0 || j >= d.etapas.length) return;
+      var t = d.etapas[i]; d.etapas[i] = d.etapas[j]; d.etapas[j] = t;
+      ['visitante', 'promovido', 'membro'].forEach(function (k) { if (d[k] === i) d[k] = j; else if (d[k] === j) d[k] = i; });
+      render();
+    },
+    cfJorSalvar: cfJorSalvar,
     encEditar: encEditar, encSalvar: encSalvar, encChamada: function (v) { cfg.dataChamada = v; cfg.dataChamadaGC = gcA(); if (cfg.aba === 'chamada') render(); else irAba('chamada'); },
     permPadrao: marcarPadraoPerms,
     sairTodos: sairTodos, encerrarSessoes: encerrarSessoes, auditoria: function () { abrirAuditoria(''); }, audBuscar: function () { abrirAuditoria($('aud-q').value); },
@@ -6504,7 +6587,18 @@ document.addEventListener('change', function (ev) {
   if (id === 'g-lider') { var u = (db.equipe || []).filter(function (x) { return x.id === ev.target.value; })[0]; $('g-lidernome').value = u ? u.nome : ''; }
   if (id === 'f-freqig' || id === 'v-freqig') { var qi = $(id.charAt(0) + '-igrejawrap'); if (qi) qi.classList.toggle('hide', ev.target.value !== 'Sim'); }
   if (id === 'v-real') { var ew = $('lv-estavawrap'); if (ew) ew.classList.toggle('hide', ev.target.value !== 'Sim'); }
-  if (id === 'f-tipo' && !editP && $('f-status')) $('f-status').value = ev.target.value === 'Visitante' ? 'Em visita' : 'Ativo';
+  if (id === 'f-tipo' && $('f-status')) {
+    var tv = ev.target.value, fj = $('f-jornada');
+    if (tv === 'Instituto') { $('f-status').value = 'Instituto'; if (fj) fj.value = 'Instituto'; }
+    else {
+      if (!editP || $('f-status').value === 'Instituto') $('f-status').value = tv === 'Visitante' ? 'Em visita' : 'Ativo';
+      if (fj && fj.value === 'Instituto') fj.value = tv === 'Visitante' ? JV() : JM();
+    }
+  }
+  if (id === 'f-status' && ev.target.value === 'Instituto' && $('f-tipo')) { $('f-tipo').value = 'Instituto'; if ($('f-jornada')) $('f-jornada').value = 'Instituto'; }
+  if (id === 'en-origem' && ev.target.value === 'Compra' && window.G2_INST && typeof G2_INST.abrirCompra === 'function') {
+    var prodC = $('en-prod') ? $('en-prod').value : ''; fechar(); G2_INST.abrirCompra(modEst(), prodC);
+  }
   if (id === 'fp-cam' || id === 'fp-gal') { processarFotoPessoa(ev.target.files[0], fotoEscolhida); ev.target.value = ''; }
   if (id === 'foto-input') { processarFoto(ev.target.files[0]); ev.target.value = ''; }
   if (id === 'icone-input') { processarIcone(ev.target.files[0], 256, function (u) { cfgDraft = lerCfgForm(); iconeNovo = u; render(); }); ev.target.value = ''; }
@@ -7262,7 +7356,7 @@ window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'SYNC-V39-16';
+  var BUILD = 'SYNC-V39-17';
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 
