@@ -1,4 +1,5 @@
-/* 2Gather v39 · Financeiro · FIN-ALL-14 · Entidades (Igreja e Instituto)
+/* 2Gather v39 · Financeiro · FIN-ALL-14.1 · Entidades (Igreja e Instituto)
+   14.1: corrige a tecla Esc (não deixa camada invisível na tela) e o fechamento das janelas.
    Arquivo NOVO. Carregar DEPOIS do app_v39_financeiro.js (FIN-ALL-13). Não altera o app.js nem o financeiro.
    Requer no Supabase: INST_S7_financeiro_entidades_v2.sql e INST_S9 (já aplicados e validados).
    - Livro financeiro › Cadastros ganha o bloco "Entidades": dados legais da Igreja (CNPJ, IE, IM, presidente, responsável,
@@ -9,7 +10,7 @@
    Diagnóstico no Console: G2_FIN_ENT.versao */
 (function () {
   'use strict';
-  var VERSAO = 'FIN-ALL-14';
+  var VERSAO = 'FIN-ALL-14.1';
   if (window.G2_FIN_ENT) return;
   var M = window.G2_FIN_ENT = { versao: VERSAO };
   console.info('[2Gather] financeiro entidades ' + VERSAO);
@@ -104,8 +105,9 @@
   setInterval(pintar, 1000);
 
   /* janela de formulário */
-  function fechar() { var o = $('g2e-mod'); if (o) o.remove(); }
-  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && $('g2e-mod')) fechar(); });
+  function fechar() { var l = document.querySelectorAll('#g2e-mod'); for (var i = 0; i < l.length; i++) if (l[i].parentNode) l[i].parentNode.removeChild(l[i]); }
+  // captura o Esc antes do módulo financeiro (que também usa o id g2f-mod) para fechar tudo de uma vez
+  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && $('g2e-mod')) { ev.stopPropagation(); fechar(); } }, true);
   function campo(id, rot, v, extra) { return '<label for="' + id + '">' + rot + '</label><input id="' + id + '" value="' + esc(v || '') + '"' + (extra || '') + '>'; }
   function abrirForm(e) {
     var ig = e && e.tipo === 'church', a = (e && e.endereco) || {};
@@ -148,7 +150,7 @@
   function abrirConta() {
     var t = T(), contas = ((t && t.S && t.S.cat && t.S.cat.contas) || []).filter(function (a) { return a.status === 'active'; });
     var inst = (D.lista || []).filter(function (e) { return e.tipo === 'institute'; });
-    var o = document.createElement('div'); o.id = 'g2e-mod';
+    var o = document.createElement('div'); o.id = 'g2e-mod'; o.className = 'g2e-m';
     o.innerHTML = '<div id="g2f-mod" style="z-index:9997"><div class="box" role="dialog" aria-modal="true"><button type="button" class="g2f-x" data-e="fechar" aria-label="Fechar">×</button><div class="bd2">' +
       '<h3>Ligar conta ao Instituto</h3><div class="hint">Só contas <b>sem lançamentos</b> podem mudar de entidade. Contas que já têm movimento ficam na Igreja; abra uma conta nova para o Instituto.</div>' +
       '<label for="c-conta">Conta</label><select id="c-conta"><option value="">— escolha —</option>' + contas.map(function (a) { return '<option value="' + esc(a.id) + '">' + esc(a.nome) + '</option>'; }).join('') + '</select>' +
