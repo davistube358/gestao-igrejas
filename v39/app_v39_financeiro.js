@@ -1,5 +1,14 @@
-/* 2Gather v39 · Financeiro completo · FIN-ALL-17
-   FIN-ALL-17: LIVRO EM FORMATO DE EXTRATO (inspirado no extrato bancário) — requer FIN_S16_saldo_inicial.sql só para "Alterar saldo"; o resto não exige SQL novo.
+/* 2Gather v39 · Financeiro completo · FIN-ALL-18
+   FIN-ALL-18: MODELO ÚNICO DO PERÍODO (caixa: pago + a pagar), igual no painel, no Livro e nos Relatórios. Não exige SQL novo.
+   - Despesas do mês = tudo que FOI PAGO (saída de caixa, inclui pagamento de fatura de cartão) + tudo que AINDA VENCE no mês (parcelas, faturas, despesas aprovadas).
+     Receitas do mês = recebidas + a receber que vencem no mês. Resultado = Receitas − Despesas.
+   - Saldo final do mês = saldo inicial + o que já mexeu no caixa + a receber − a pagar do mês (previsto); mostra também o "realizado até agora".
+   - RESULTADO POR CATEGORIA no mesmo modelo (colunas Pago / A pagar / Total) e fecha com o card Despesas. O cartão de crédito aparece CONSOLIDADO em uma linha
+     (a categoria "Cartão de crédito" do plano de contas, se existir; senão "Cartão de crédito"): faturas pagas + faturas e parcelas a pagar no período.
+   - Mês a mês, gráfico do ano e "De onde vem / Para onde vai" usam o mesmo modelo.
+   FIN-ALL-17 (incluído): Livro em formato de extrato. FIN-ALL-16: estorno correto e "Alterar saldo".
+   Base FIN-ALL-17:
+FIN-ALL-17: LIVRO EM FORMATO DE EXTRATO (inspirado no extrato bancário) — requer FIN_S16_saldo_inicial.sql só para "Alterar saldo"; o resto não exige SQL novo.
    - Resumo do período: Saldo inicial · Receitas · Despesas · Saldo final. Lançamentos futuros: A receber · A pagar · Saldo previsto.
    - Gráfico de receitas e despesas por dia. Detalhe de lançamentos em ordem cronológica, com "Saldo anterior" e "Saldo do dia".
    - Filtro "Futuro": lista de lançamentos futuros (a receber e a pagar) com data, valor e saldo previsto, com os botões de Receber/Pagar.
@@ -63,7 +72,7 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
    - Pop-up: não fecha mais ao clicar fora. Só pelo botão X no canto, por Cancelar ou por Esc. Botões do rodapé alinhados. */
 (function () {
   'use strict';
-  var VERSAO = 'FIN-ALL-17';
+  var VERSAO = 'FIN-ALL-18';
   if (window.G2_FIN) return;
   window.G2_FIN = { versao: VERSAO };
   console.info('[2Gather] financeiro ' + VERSAO);
@@ -617,7 +626,7 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
     }).catch(function (e) { toast(traduz(e)); });
   }
   function fechar() {
-    S.aberto = false; S.cache = null; S.cartDet = null; fecharMod();
+    S.aberto = false; S.cache = null; S.cartDet = null; ANO = null; fecharMod();
     var o = $('g2fin'); if (o) o.remove();
     var main = $('main'); if (main) esconderMain(main, false);
     dashCarregar(true); window.scrollTo(0, 0);
@@ -684,7 +693,7 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
     id = id || null;
     if ((S.visao || null) === id) return Promise.resolve();
     return rpc('v39_fin_view_set', C({ p_entity: id })).then(function () {
-      S.visao = id; S.cat = null; S.cache = null; S.cartDet = null; S.ov = null; S.rep = null; S.entEm = 0; D.dados = null;
+      S.visao = id; S.cat = null; S.cache = null; S.cartDet = null; S.ov = null; S.rep = null; S.entEm = 0; D.dados = null; ANO = null;
       CAMPS = []; CAMPMAP = {}; APAGAR = []; PREV = []; DESP = []; ITENS = {}; PLANOS = {}; FATS = []; FATIMP = []; SENT = null; CORR = [];
       if (S.aberto) { pintarBase(); recarregar(); }
       else { var dd = $('g2f-dash'); if (dd) dd.remove(); dashCarregar(true); }
@@ -1094,7 +1103,7 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
     return '<div class="g2f-ext fut ' + (comSaldo ? 'c3' : 'c3') + '" role="group" aria-label="Lançamentos futuros">' +
       '<div class="c"><small>A receber</small><b class="g2f-pos">' + brl(fu.rec) + '</b><div class="d">' + fu.nrec + ' lançamento(s) · campanhas e votos</div></div>' +
       '<div class="c"><small>A pagar</small><b class="g2f-neg">' + brl(fu.pag) + '</b><div class="d">' + fu.npag + ' lançamento(s) · faturas, parcelas e despesas</div></div>' +
-      '<div class="c big"><small>Saldo previsto</small><b class="' + (fu.saldoPrev < 0 ? 'g2f-neg' : '') + '">' + brl(fu.saldoPrev) + '</b><div class="d">saldo hoje ' + brl(fu.saldo) + ' + a receber − a pagar</div></div></div>';
+      '<div class="c big"><small>Saldo previsto</small><b class="' + (fu.saldoPrev < 0 ? 'g2f-neg' : '') + '">' + brl(fu.saldoPrev) + '</b><div class="d">saldo hoje ' + brl(fu.saldo) + ' + tudo a receber − tudo a pagar</div></div></div>';
   }
   function tabelaFuturo(fu, compacto) {
     if (!fu.linhas.length) return '<div class="g2f-note">Nada a receber nem a pagar em aberto.</div>';
@@ -1160,23 +1169,17 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
     var di = pad(1) + '/' + pad(S.mes) + '/' + S.ano, df = pad(dias) + '/' + pad(S.mes) + '/' + S.ano;
     return '<div class="g2f-xh">Receitas e despesas por dia <span>de ' + di + ' a ' + df + '</span></div><div class="card">' + (tem ? grafico(cols, 'dia') : '<div class="empty">Sem lançamentos neste mês.</div>') + '</div>';
   }
-  function desenharLivro() {
-    var x = S.ov, L = x.livro || [], t = totaisCaixa(L), per = x.periodo || {}, fechado = per.status === 'closed', fu = futuroCalc(saldoDe(x));
-    var ini = saldoIniMes(x), net = netCaixa(L), fim = ini == null ? null : arr2(ini + net), outros = arr2(net - (t.entradas - t.saidas));
-    var cont = { tudo: L.length, in: 0, out: 0, tr: 0, conc: 0, cartao: 0, fut: itensFuturos().length };
+function desenharLivro() {
+    var x = S.ov, L = x.livro || [], per = x.periodo || {}, fechado = per.status === 'closed', fu = futuroCalc(saldoDe(x));
+    var k = S.ano + '-' + pad(S.mes), R = modeloPeriodo(k + '-01', ymFim(k), L, saldoIniMes(x));
+    var cont = { tudo: L.length, 'in': 0, out: 0, tr: 0, conc: 0, cartao: 0, fut: itensFuturos().length };
     L.forEach(function (m) {
-      if (ehEntrada(m)) cont.in++; else if (ehSaida(m)) cont.out++; else if (ehNoCartao(m)) cont.cartao++; else if (m.tipo === 'transfer_in' || m.tipo === 'transfer_out') cont.tr++;
+      if (ehEntrada(m)) cont['in']++; else if (ehSaida(m)) cont.out++; else if (ehNoCartao(m)) cont.cartao++; else if (m.tipo === 'transfer_in' || m.tipo === 'transfer_out') cont.tr++;
       if (m.status === 'posted' && m.efeitoCaixa !== 0) cont.conc++;
     });
     var h = avisoInicio();
-    h += '<div class="g2f-xh" style="margin-top:4px">Resumo de ' + MESES[S.mes - 1] + ' de ' + S.ano + '</div>' + painelPeriodo({ ini: ini, rec: t.entradas, desp: t.saidas, fim: fim,
-      fimRot: fim == null ? 'Resultado do mês' : 'Saldo final',
-      subDesp: num(t.faturas) > 0 ? 'inclui ' + brl(t.faturas) + ' de fatura de cartão paga' : 'pagas no caixa',
-      sub: (fim == null ? '' : 'resultado do mês ' + sgn(t.resultado)) + (Math.abs(outros) > 0.004 ? (fim == null ? '' : '<br>') + sgn(outros) + ' de saldo inicial e transferências' : '') || '' });
-    if (fim == null) { /* sem relatório (sem permissão): mostra o resultado no lugar do saldo final */
-      h = h.replace('<b class="">—</b>', '<b class="' + (t.resultado < 0 ? 'g2f-neg' : 'g2f-pos') + '">' + brl(t.resultado) + '</b>');
-    }
-    h += '<div class="g2f-xh">Lançamentos futuros</div>' + cardsFuturo(fu, true);
+    h += resumoModelo(R, 'Resumo de ' + MESES[S.mes - 1] + ' de ' + S.ano, 'Saldo final do mês') + notaModelo();
+    h += '<div class="g2f-xh">Lançamentos futuros <span>todos os meses, a partir de hoje</span></div>' + cardsFuturo(fu, true);
     h += graficoDia(L);
     var di = '01/' + pad(S.mes), df = pad(new Date(S.ano, S.mes, 0).getDate()) + '/' + pad(S.mes);
     var chipsDef = [['tudo', 'Tudo'], ['in', 'Entradas'], ['out', 'Saídas'], ['fut', 'Futuro']]; if (cont.cartao) chipsDef.push(['cartao', 'No cartão']); chipsDef.push(['tr', 'Transferências'], ['conc', 'A conciliar']);
@@ -2259,32 +2262,128 @@ function itensAbertos(f) {
   }
 
   /* ───────────── RELATÓRIOS ───────────── */
-  function blocoExplicaCaixa(x) {
-    var r = x.resultado || {}, f = x.fluxo || {};
-    var pagCx = arr2((f.pagamentos || []).reduce(function (t, y) { return t + Math.abs(num(y.valor)); }, 0)), fat = arr2(Math.abs(num(f.liquidacaoCartao))), desp = arr2(num(r.despesas)), dif = arr2(desp - pagCx - fat);
-    return '<div class="card"><h3>Despesas: resultado × caixa</h3><div class="g2f-tw"><table class="g2f-tbl"><tbody>' +
-      '<tr><td>Despesas no resultado (competência)</td><td class="r">' + brl(desp) + '</td></tr>' +
-      '<tr><td>Pagas no caixa (sem cartão)</td><td class="r">' + brl(pagCx) + '</td></tr>' +
-      '<tr><td>Faturas de cartão pagas no período</td><td class="r">' + brl(fat) + '</td></tr>' +
-      '<tr><td><b>Diferença</b></td><td class="r"><b class="' + (Math.abs(dif) < 0.005 ? 'g2f-pos' : 'g2f-neg') + '">' + brl(dif) + '</b></td></tr></tbody></table></div>' +
-      '<div class="g2f-mut" style="margin-top:6px;line-height:1.5">' + (Math.abs(dif) < 0.005 ? 'Resultado e caixa conferem neste período.' : 'A diferença vem das compras no cartão: elas entram no resultado no mês do vencimento da fatura, mas só saem do caixa quando a fatura é paga. Ela zera quando as faturas que vencem no período são pagas nele.') + '</div></div>';
+/* ───────────── FIN-ALL-18: modelo único do período ───────────── */
+  var ANO = null;   // { k, em, carregando, meses: [overview|null ×12] }
+  function podeAno() { return pode('financial.book.view') || pode('financial.reports.view'); }
+  function catCartao() {
+    var l = ((S.cat && S.cat.categorias) || []).filter(function (c) { return c.ativa !== false && c.natureza === 'expense' && norm(c.nome).indexOf('cartao') >= 0 && norm(c.nome).indexOf('juros') < 0; });
+    if (!l.length) return null;
+    l.sort(function (a, b) { return (norm(b.nome).indexOf('credito') >= 0 ? 1 : 0) - (norm(a.nome).indexOf('credito') >= 0 ? 1 : 0) || (b.contabil ? 1 : 0) - (a.contabil ? 1 : 0); });
+    return l[0];
+  }
+  function catDe(id, nomeFb) {
+    var c = id ? achar((S.cat && S.cat.categorias) || [], id) : null;
+    return { nome: c ? c.nome : (nomeFb || 'Sem categoria'), cod: c && c.contabil ? c.contabil : '' };
+  }
+  /* d1..d2 (AAAA-MM-DD), L = lançamentos do Livro do período, saldoIni = caixa inicial (ou null).
+     Despesas = pago (caixa, líquido de estornos) + a pagar que vence no período. Receitas = recebido + a receber que vence no período. */
+  function modeloPeriodo(d1, d2, L, saldoIni) {
+    var hj = hoje(), cc = catCartao(), kCart = cc ? cc.id : '__cartao', nCart = cc ? cc.nome : 'Cartão de crédito', cCart = cc && cc.contabil ? cc.contabil : '';
+    var R = { d1: d1, d2: d2, ini: saldoIni == null ? null : arr2(saldoIni), recPago: 0, recAb: 0, despPago: 0, despAb: 0, faturaPaga: 0, faturaAb: 0, nRecAb: 0, nDespAb: 0, net: 0, atraso: 0, atrasoRec: 0, cats: { 'in': {}, out: {} } };
+    function lin(lado, key, nome, cod) { var o = R.cats[lado]; if (!o[key]) o[key] = { key: key, nome: nome, contabil: cod, qtd: 0, pago: 0, aberto: 0, cartao: false }; return o[key]; }
+    (L || []).forEach(function (m) {
+      var d = String(m.data || '').slice(0, 10); if (d < d1 || d > d2) return;
+      R.net += cashDelta(m);
+      var p = parteCaixa(m), k = m.tipo === 'reversal' ? -1 : 1;
+      if (p.e) { var ci = catDe(m.categoriaId, m.categoria), o = lin('in', m.categoriaId || ('n:' + ci.nome), ci.nome, ci.cod); o.pago += p.e; o.qtd += k; R.recPago += p.e; }
+      if (p.s) {
+        var fat = ehFaturaPaga(m), c2 = fat ? { nome: nCart, cod: cCart } : catDe(m.categoriaId, m.categoria);
+        var o2 = lin('out', fat ? kCart : (m.categoriaId || ('n:' + c2.nome)), c2.nome, c2.cod); o2.pago += p.s; o2.qtd += k;
+        if (fat) { o2.cartao = true; R.faturaPaga += p.s; } R.despPago += p.s;
+      }
+    });
+    despesasPrevistas(null).forEach(function (x) {
+      var v = x.vencimento || hj, val = num(x.valor); if (!(val > 0)) return;
+      if (v < d1) { if (hj >= d1 && hj <= d2 && v < hj) R.atraso += val; return; }
+      if (v > d2) return;
+      var fat = x.tipo === 'fatura' || x.tipo === 'cartao', e = fat ? null : despesa(x.despesaId);
+      var c2 = fat ? { nome: nCart, cod: cCart } : catDe(e && e.categoriaId, e && e.categoria);
+      var o = lin('out', fat ? kCart : ((e && e.categoriaId) || ('n:' + c2.nome)), c2.nome, c2.cod); o.aberto += val; o.qtd++;
+      if (fat) { o.cartao = true; R.faturaAb += val; } R.despAb += val; R.nDespAb++;
+    });
+    previstos().forEach(function (p) {
+      var v = p.venc || hj, val = num(p.valor); if (!(val > 0)) return;
+      if (v < d1) { if (hj >= d1 && hj <= d2 && v < hj) R.atrasoRec += val; return; }
+      if (v > d2) return;
+      var o = lin('in', 'camp:' + p.g.id, 'Campanha · ' + p.g.nome, ''); o.aberto += val; o.qtd++; R.recAb += val; R.nRecAb++;
+    });
+    ['recPago', 'recAb', 'despPago', 'despAb', 'net', 'faturaPaga', 'faturaAb', 'atraso', 'atrasoRec'].forEach(function (k) { R[k] = arr2(R[k]); });
+    R.rec = arr2(R.recPago + R.recAb); R.desp = arr2(R.despPago + R.despAb); R.resultado = arr2(R.rec - R.desp);
+    R.fim = R.ini == null ? null : arr2(R.ini + R.net + R.recAb - R.despAb);
+    R.realizado = R.ini == null ? null : arr2(R.ini + R.net);
+    R.outros = arr2(R.net - (R.recPago - R.despPago));
+    return R;
+  }
+  function listaCats(R, lado) {
+    var o = R.cats[lado];
+    return Object.keys(o).map(function (k) { o[k].total = arr2(o[k].pago + o[k].aberto); return o[k]; })
+      .filter(function (c) { return Math.abs(c.total) > 0.004 || c.qtd > 0; }).sort(function (a, b) { return b.total - a.total; });
+  }
+  function resumoModelo(R, titulo, rotFim) {
+    var h = titulo ? '<div class="g2f-xh" style="margin-top:4px">' + titulo + '</div>' : '';
+    var fimSub = [];
+    if (R.fim != null) fimSub.push('resultado ' + sgn(R.resultado));
+    if (R.fim != null && Math.abs(R.fim - R.realizado) > 0.004) fimSub.push('realizado até agora ' + brl(R.realizado));
+    if (Math.abs(R.outros) > 0.004) fimSub.push(sgn(R.outros) + ' de saldo inicial e transferências');
+    h += painelPeriodo({ ini: R.ini, rec: R.rec, desp: R.desp, fim: R.fim == null ? R.resultado : R.fim, fimRot: R.fim == null ? 'Resultado' : rotFim,
+      subRec: 'recebidas ' + brl(R.recPago) + (R.recAb > 0 ? '<br>a receber ' + brl(R.recAb) : ''),
+      subDesp: 'pagas ' + brl(R.despPago) + (R.despAb > 0 ? '<br>a pagar ' + brl(R.despAb) : '') + (R.faturaPaga + R.faturaAb > 0.004 ? '<br>inclui cartão de crédito ' + brl(R.faturaPaga + R.faturaAb) : ''),
+      sub: fimSub.join('<br>') });
+    if (R.atraso > 0.004 || R.atrasoRec > 0.004) h += '<div class="g2f-note">Há ' + (R.atraso > 0.004 ? brl(R.atraso) + ' a pagar' : '') + (R.atraso > 0.004 && R.atrasoRec > 0.004 ? ' e ' : '') + (R.atrasoRec > 0.004 ? brl(R.atrasoRec) + ' a receber' : '') + ' em atraso de meses anteriores: aparecem em Lançamentos futuros, não neste período.</div>';
+    return h;
+  }
+  function notaModelo() {
+    return '<div class="g2f-note">Despesas = o que já foi pago (saída de caixa, inclusive fatura de cartão) + o que ainda vence no período (parcelas, faturas, despesas aprovadas). Receitas = recebido + a receber do período. ' +
+      'Compra no cartão vale pelo pagamento/vencimento da fatura, e o cartão aparece numa linha só nas categorias.</div>';
+  }
+  function htmlCatsModelo(R) {
+    function tab(lado) {
+      var l = listaCats(R, lado), tp = 0, ta = 0, tq = 0;
+      if (!l.length) return '<tr><td colspan="4">Sem lançamentos.</td></tr>';
+      var linhas = l.map(function (c) {
+        tp += c.pago; ta += c.aberto; tq += c.qtd;
+        return '<tr><td>' + esc(c.nome) + (c.cartao ? ' <span class="pill p-cinza">cartão consolidado</span>' : '') + '<div class="g2f-mut">' + (c.contabil ? 'cód. ' + esc(c.contabil) + ' · ' : '') + c.qtd + ' lançamento(s)</div></td><td class="r">' + brl(c.pago) + '</td><td class="r">' + (c.aberto ? brl(c.aberto) : '—') + '</td><td class="r"><b>' + brl(c.total) + '</b></td></tr>';
+      }).join('');
+      return linhas + '<tr><td><b>Total</b><div class="g2f-mut">' + tq + ' lançamento(s)</div></td><td class="r"><b>' + brl(tp) + '</b></td><td class="r"><b>' + brl(ta) + '</b></td><td class="r"><b>' + brl(tp + ta) + '</b></td></tr>';
+    }
+    var cab = function (a, b) { return '<thead><tr><th>Categoria</th><th class="r">' + a + '</th><th class="r">' + b + '</th><th class="r">Total</th></tr></thead>'; };
+    return '<div class="card"><h3>Resultado por categoria · Despesas</h3><div class="g2f-tw"><table class="g2f-tbl">' + cab('Pago', 'A pagar') + '<tbody>' + tab('out') + '</tbody></table></div></div>' +
+      '<div class="card"><h3>Resultado por categoria · Receitas</h3><div class="g2f-tw"><table class="g2f-tbl">' + cab('Recebido', 'A receber') + '<tbody>' + tab('in') + '</tbody></table></div></div>' + notaModelo();
+  }
+  /* ano: 12 visões do Livro (uma por mês) para o gráfico do painel */
+  function carregarAno(forcar) {
+    if (!podeAno()) return;
+    var k = S.ano + '|' + (S.visao || 'ig');
+    if (!forcar && ANO && ANO.k === k && (ANO.carregando || Date.now() - ANO.em < 300000)) return;
+    var a = ANO = { k: k, em: Date.now(), carregando: true, meses: [] }, ps = [];
+    for (var m = 1; m <= 12; m++) ps.push(rpc('v39_fin_overview', C({ p_year: S.ano, p_month: m })).catch(function () { return null; }));
+    Promise.all(ps).then(function (r) {
+      if (ANO !== a) return; a.meses = r; a.carregando = false; a.em = Date.now();
+      var x = $('g2f-dash'); if (x && !S.aberto) { x.remove(); pintarDash(); }
+    });
+  }
+  function modelosAno() {
+    if (!ANO || ANO.carregando || ANO.k !== S.ano + '|' + (S.visao || 'ig') || !ANO.meses.length) return null;
+    return ANO.meses.map(function (o, i) { return o ? modeloPeriodo(S.ano + '-' + pad(i + 1) + '-01', ymFim(S.ano + '-' + pad(i + 1)), o.livro, null) : null; });
   }
   function tRel() {
     var hj0 = new Date();
     return Promise.all([rpc('v39_fin_report', C({ p_year: S.ano, p_month: S.relMes ? S.mes : null })),
       rpc('v39_fin_overview', C({ p_year: hj0.getFullYear(), p_month: hj0.getMonth() + 1 })).catch(function () { return null; }),
       carregarAPagar().catch(function () { APAGAR = []; PREV = []; return []; }),
-      pode('financial.campaigns.view') ? rpcCamps().catch(function () { return CAMPS || []; }) : Promise.resolve([])]).then(function (rr) {
-      var x = rr[0], saldoHoje = saldoDe(rr[1]); CAMPS = rr[3] || [];
+      pode('financial.campaigns.view') ? rpcCamps().catch(function () { return CAMPS || []; }) : Promise.resolve([]),
+      Promise.all((S.relMes ? [S.mes] : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]).map(function (m) { return rpc('v39_fin_overview', C({ p_year: S.ano, p_month: m })).catch(function () { return null; }); }))]).then(function (rr) {
+      var x = rr[0], saldoHoje = saldoDe(rr[1]), ovs = rr[4] || []; CAMPS = rr[3] || [];
       var p = x.periodo || {}, r = x.resultado || {}, f = x.fluxo || {}, tit = (S.relMes ? MESES[S.mes - 1] + '/' : 'Ano ') + S.ano;
       var h = '<div class="g2f-tool g2f-noprint"><select data-c="relMes" style="flex:1 1 180px"><option value="1"' + (S.relMes ? ' selected' : '') + '>Mês selecionado</option><option value="0"' + (!S.relMes ? ' selected' : '') + '>Ano inteiro</option></select>' + btn('imprimir', 'Imprimir / PDF', 'file', 'g2f-soft') + '</div>';
       h += '<div class="card"><h3>' + esc(x.entidade || 'Igreja') + ' — Relatório financeiro ' + esc(tit) + '</h3><div class="g2f-mut">' + (x.documento ? 'CNPJ ' + esc(x.documento) + ' · ' : '') + 'Período ' + dataBR(p.inicio) + ' a ' + dataBR(p.fim) + ' · ' + (p.definitivo ? 'meses fechados (definitivo)' : 'PRÉVIA: há mês aberto no período') + ' · gerado em ' + esc(new Date(p.geradoEm || Date.now()).toLocaleString('pt-BR')) + '</div></div>';
-      h += painelPeriodo({ ini: f.caixaInicial != null ? arr2(num(f.caixaInicial)) : null, rec: r.receitas, desp: r.despesas, fim: f.caixaFinal != null ? arr2(num(f.caixaFinal)) : null, fimRot: 'Caixa final',
-        subRec: 'resultado (competência)', subDesp: 'resultado (competência)', sub: 'superávit / déficit ' + sgn(r.superavit) });
-      h += blocoFuturo(futuroCalc(saldoHoje)) + blocoExplicaCaixa(x);
-      var cats = x.categorias || [];
-      h += '<div class="card"><h3>Resultado por categoria <span class="g2f-mut" style="font-weight:500">(competência: compra no cartão entra no mês do vencimento da fatura)</span></h3><div class="g2f-tw"><table class="g2f-tbl"><thead><tr><th>Cód. contábil</th><th>Categoria</th><th class="r">Lançamentos</th><th class="r">Valor</th></tr></thead><tbody>' +
-        (cats.length ? cats.map(function (c) { return '<tr><td>' + esc(c.contabil || '—') + '</td><td>' + esc(c.nome) + '</td><td class="r">' + c.lancamentos + '</td><td class="r ' + (num(c.valor) < 0 ? 'g2f-neg' : 'g2f-pos') + '">' + brl(c.valor) + '</td></tr>'; }).join('') : '<tr><td colspan="4">Sem lançamentos.</td></tr>') + '</tbody></table></div></div>';
+      var kP = S.ano + '-' + pad(S.mes), d1 = S.relMes ? kP + '-01' : S.ano + '-01-01', d2 = S.relMes ? ymFim(kP) : S.ano + '-12-31', livroP = [];
+      ovs.forEach(function (o) { if (o && o.livro) livroP = livroP.concat(o.livro); });
+      var R = modeloPeriodo(d1, d2, livroP, f.caixaInicial != null && String(f.caixaInicial) !== '' ? num(f.caixaInicial) : null);
+      h += resumoModelo(R, null, S.relMes ? 'Saldo final do mês' : 'Saldo final do ano');
+      if (ovs.some(function (o) { return !o; })) h += '<div class="aviso">Não foi possível carregar todos os meses: os totais podem estar incompletos. Atualize a tela.</div>';
+      h += blocoFuturo(futuroCalc(saldoHoje));
+      h += htmlCatsModelo(R);
       h += '<div class="card"><h3>Fluxo de caixa (método direto)</h3><div class="g2f-tw"><table class="g2f-tbl"><tbody><tr><td>Caixa inicial (todas as contas)</td><td class="r">' + brl(f.caixaInicial) + '</td></tr>' +
         (f.recebimentos || []).map(function (y) { return '<tr><td>+ ' + esc(y.nome) + '</td><td class="r g2f-pos">' + brl(y.valor) + '</td></tr>'; }).join('') +
         (f.pagamentos || []).map(function (y) { return '<tr><td>− ' + esc(y.nome) + '</td><td class="r g2f-neg">' + brl(y.valor) + '</td></tr>'; }).join('') +
@@ -2298,9 +2397,11 @@ function itensAbertos(f) {
           h += '<div class="card"><h3>Razão · ' + esc(a.nome) + '</h3><div class="g2f-tw"><table class="g2f-tbl"><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th class="r">Valor</th><th>Comp.</th></tr></thead><tbody>' +
             a.movimentos.map(function (m) { return '<tr><td>' + dataBR(m.data) + '</td><td>' + esc(m.descricao) + (m.pessoa ? '<div class="g2f-mut">' + esc(m.pessoa) + '</div>' : '') + '</td><td>' + esc(m.categoria) + (m.contabil ? ' (' + esc(m.contabil) + ')' : '') + '</td><td class="r ' + (num(m.valor) < 0 ? 'g2f-neg' : 'g2f-pos') + '">' + brl(m.valor) + '</td><td>' + (m.comprovante ? '✔' : '—') + '</td></tr>'; }).join('') + '</tbody></table></div></div>';
         });
-      } else if ((x.mensal || []).length) {
+      } else {
+        var trava = {}; (x.mensal || []).forEach(function (m) { trava[m.mes] = m.fechado; });
+        var mm = ovs.map(function (o, i) { return o ? modeloPeriodo(S.ano + '-' + pad(i + 1) + '-01', ymFim(S.ano + '-' + pad(i + 1)), o.livro, null) : null; });
         h += '<div class="card"><h3>Mês a mês</h3><div class="g2f-tw"><table class="g2f-tbl"><thead><tr><th>Mês</th><th class="r">Receitas</th><th class="r">Despesas</th><th class="r">Resultado</th><th></th></tr></thead><tbody>' +
-          x.mensal.map(function (m) { return '<tr><td>' + MESES[m.mes - 1] + '</td><td class="r">' + brl(m.receitas) + '</td><td class="r">' + brl(m.despesas) + '</td><td class="r ' + (num(m.resultado) < 0 ? 'g2f-neg' : 'g2f-pos') + '">' + brl(m.resultado) + '</td><td>' + (m.fechado ? '🔒' : '') + '</td></tr>'; }).join('') + '</tbody></table></div></div>';
+          mm.map(function (m, i) { return m ? '<tr><td>' + MESES[i] + '</td><td class="r">' + brl(m.rec) + '</td><td class="r">' + brl(m.desp) + '</td><td class="r ' + (m.resultado < 0 ? 'g2f-neg' : 'g2f-pos') + '">' + brl(m.resultado) + '</td><td>' + (trava[i + 1] ? '\uD83D\uDD12' : '') + '</td></tr>' : '<tr><td>' + MESES[i] + '</td><td colspan="4">sem dados</td></tr>'; }).join('') + '</tbody></table></div></div>';
       }
       var cp = x.contasPagar || [], cr = x.compromissos || [];
       h += '<div class="card"><h3>Contas a pagar (' + cp.length + ')</h3>' + (cp.length ? '<div class="g2f-tw"><table class="g2f-tbl"><tbody>' + cp.map(function (e) { return '<tr><td>' + esc(e.descricao) + '<div class="g2f-mut">' + esc(e.fornecedor || '') + '</div></td><td>' + dataBR(e.vencimento) + '</td><td class="r">' + brl(e.saldo) + '</td><td>' + esc(ROT.desp[e.status] || e.status) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<div class="empty">Nada a pagar.</div>') + '</div>';
@@ -2521,11 +2622,11 @@ function itensAbertos(f) {
         pode('financial.sources.view') ? rpc('v39_fin_source_pending', C({})).catch(function () { return null; }) : Promise.resolve(null),
         (pode('financial.expenses.approve') || pode('financial.expenses.pay')) ? rpc('v39_fin_expenses', C({ p_filter: 'abertas' })).catch(function () { return null; }) : Promise.resolve(null),
         pode('financial.campaigns.view') ? rpcCamps().catch(function () { return null; }) : Promise.resolve(null),
-        pode('financial.reports.view') ? rpc('v39_fin_report', C({ p_year: S.ano, p_month: null })).catch(function () { return null; }) : Promise.resolve(null), carregarSent(),
+        pode('financial.reports.view') ? rpc('v39_fin_report', C({ p_year: S.ano, p_month: S.mes })).catch(function () { return null; }) : Promise.resolve(null), carregarSent(),
         (pode('financial.expenses.view') || pode('financial.book.view') || pode('financial.expenses.pay')) ? carregarAPagar().catch(function () { APAGAR = []; PREV = []; return []; }) : Promise.resolve([])];
       return Promise.all(ps.concat([S.cat ? null : carregarCat().catch(function () { return null; })])).then(function (r) { if (r[3]) CAMPS = r[3]; D.dados = { ov: r[0], pend: r[1], desp: r[2], camps: r[3], rep: r[4] }; });
     }).catch(function (e) { console.warn('[2Gather][fin] ' + traduz(e)); D.dados = { erro: traduz(e) }; })
-      .then(function () { D.carregando = false; D.em = Date.now(); var x = $('g2f-dash'); if (x) x.remove(); pintarDash(); });
+      .then(function () { D.carregando = false; D.em = Date.now(); var x = $('g2f-dash'); if (x) x.remove(); pintarDash(); carregarAno(false); });
   }
   function grafico(cols, classe) {
     var mx = 0; cols.forEach(function (c) { if (c.a > mx) mx = c.a; if (c.b > mx) mx = c.b; }); if (!(mx > 0)) mx = 1;
@@ -2558,14 +2659,13 @@ function itensAbertos(f) {
     var nPend = d.pend && d.pend.itens ? d.pend.itens.length : 0;
     var nAprov = (d.desp || []).filter(function (e) { return e.status === 'pending_approval' && !e.souSolicitante; }).length;
     var nPagar = (d.desp || []).filter(function (e) { return e.status === 'approved' || e.status === 'partially_paid'; }).length;
-    var nMsg = d.camps && SENT ? filaMsgs().length : 0, ano = serieAno();
-    var pAnt = ano && S.mes > 1 ? ano[S.mes - 2] : null;
+    var nMsg = d.camps && SENT ? filaMsgs().length : 0;
     if (d.ov) {
       h += '<div class="g2f-per g2f-dashper"><button type="button" data-d="mesAnt" aria-label="Mês anterior">' + ic('chevl') + '</button><b>' + MESES[S.mes - 1] + ' ' + S.ano + '</b><button type="button" data-d="mesProx" aria-label="Próximo mês">' + ic('chevr') + '</button></div>';
-      var iniD = saldoIniMes(ov), netD = netCaixa(L), mesAt = ehMesAtual();
-      h += painelPeriodo({ ini: mesAt ? iniD : null, rec: t.entradas, desp: t.saidas, fim: saldo, fimRot: mesAt ? 'Saldo final (hoje)' : 'Saldo atual (hoje)',
-        subRec: pAnt ? variacao(num(t.entradas), pAnt.r) : '', subDesp: num(t.faturas) > 0 ? 'inclui ' + brl(t.faturas) + ' de fatura de cartão paga' : 'pagas no caixa',
-        sub: 'resultado do mês ' + sgn(t.resultado) + ' · todas as contas' });
+      var kD = S.ano + '-' + pad(S.mes);
+      var iniRep = d.rep && d.rep.fluxo && d.rep.fluxo.caixaInicial != null && String(d.rep.fluxo.caixaInicial) !== '' ? num(d.rep.fluxo.caixaInicial) : null;
+      var R = modeloPeriodo(kD + '-01', ymFim(kD), L, iniRep != null ? iniRep : saldoIniMes(ov));
+      h += resumoModelo(R, null, 'Saldo final do mês');
     }
     h += '<div class="big-cta" data-d="abrir" data-v="livro" role="button" tabindex="0"><div class="bi">' + ic('book', 26) + '</div><div><b>Abrir Livro financeiro</b><span>Lançamentos, despesas, campanhas e relatórios</span></div></div>';
     var pend = [];
@@ -2576,27 +2676,25 @@ function itensAbertos(f) {
     if (pend.length) h += '<div class="card lp">' + pend.map(function (p) {
       return '<div class="row g2f-mv g2f-click" data-d="abrir" data-v="' + p.aba + '"><span class="g2f-ri amb">' + ic(p.i) + '</span><div class="info"><div class="nm"><b>' + p.n + '</b> ' + p.txt + '</div></div>' + ic('chevr') + '</div>'; }).join('') + '</div>';
     if (d.ov) h += blocoFuturo(futuroCalc(saldoDe(ov)), true);
-    if (ano) {
-      var cols = ano.map(function (m) { return { rot: MES3[m.mes - 1], a: m.r, b: m.d, on: m.mes === S.mes, tit: MESES[m.mes - 1] + ': entradas ' + brl(m.r) + ' · saídas ' + brl(m.d) }; });
-      var tr = ano.reduce(function (s, m) { return s + m.r; }, 0), td = ano.reduce(function (s, m) { return s + m.d; }, 0);
-      h += '<div class="card"><div class="g2f-dh"><h3>Entradas × saídas · ' + S.ano + '</h3><span class="g2f-mut">' + brlK(tr) + ' · ' + brlK(td) + '</span></div>' + grafico(cols) + '</div>';
-    }
+    var an = modelosAno();
+    if (an) {
+      var cols = an.map(function (m, i) { var rr = m || { rec: 0, desp: 0 }; return { rot: MES3[i], a: rr.rec, b: rr.desp, on: i + 1 === S.mes, tit: MESES[i] + ': receitas ' + brl(rr.rec) + ' · despesas ' + brl(rr.desp) }; });
+      var tr = an.reduce(function (s0, m) { return s0 + (m ? m.rec : 0); }, 0), td = an.reduce(function (s0, m) { return s0 + (m ? m.desp : 0); }, 0);
+      h += '<div class="card"><div class="g2f-dh"><h3>Receitas × despesas · ' + S.ano + '</h3><span class="g2f-mut">' + brlK(tr) + ' · ' + brlK(td) + '</span></div>' + grafico(cols) + '<div class="g2f-note" style="margin:6px 0 0">Pago + a pagar de cada mês, igual ao painel acima.</div></div>';
+    } else if (podeAno() && d.ov) h += '<div class="card"><div class="g2f-dh"><h3>Receitas × despesas · ' + S.ano + '</h3></div><div class="empty">Carregando o ano…</div></div>';
     if (d.ov) {
       var dias = new Date(S.ano, S.mes, 0).getDate(), porDia = []; for (var i = 1; i <= dias; i++) porDia.push({ a: 0, b: 0 });
       var catIn = {};
       L.forEach(function (m) {
-        var ef = efCaixa(m), v = num(m.valor) * ef, di = parseInt(String(m.data).slice(8, 10), 10);
-        if (!ef) return;
-        if (di >= 1 && di <= dias) { if (v > 0) porDia[di - 1].a += v; else porDia[di - 1].b += -v; }
-        var n = m.categoria || 'Sem categoria'; catIn[n] = (catIn[n] || 0) + v;
+        var p = parteCaixa(m), di = parseInt(String(m.data).slice(8, 10), 10);
+        if (di >= 1 && di <= dias) { porDia[di - 1].a += Math.max(0, p.e); porDia[di - 1].b += Math.max(0, p.s); }
       });
-      var listaIn = [], listaOut = [];
-      Object.keys(catIn).forEach(function (n) { if (catIn[n] > 0.004) listaIn.push({ n: n, v: arr2(catIn[n]) }); else if (catIn[n] < -0.004) listaOut.push({ n: n, v: arr2(-catIn[n]) }); });
-      listaIn.sort(function (a, b) { return b.v - a.v; }); listaOut.sort(function (a, b) { return b.v - a.v; });
+      var listaIn = listaCats(R, 'in').filter(function (c) { return c.total > 0.004; }).map(function (c) { return { n: c.nome, v: c.total }; }),
+        listaOut = listaCats(R, 'out').filter(function (c) { return c.total > 0.004; }).map(function (c) { return { n: c.nome, v: c.total }; });
       var colsD = porDia.map(function (x, k) { var dia = k + 1; return { rot: (dia === 1 || dia % 5 === 0) ? String(dia) : '', a: x.a, b: x.b, on: false, tit: 'Dia ' + dia + ': entradas ' + brl(x.a) + ' · saídas ' + brl(x.b) }; });
       h += '<div class="card"><div class="g2f-dh"><h3>Fluxo do mês, dia a dia</h3><span class="g2f-mut">' + MESES[S.mes - 1] + '</span></div>' + grafico(colsD, 'dia') + '</div>';
-      h += '<div class="g2f-two"><div class="card"><div class="g2f-dh"><h3>De onde vem</h3><span class="g2f-mut">entradas</span></div>' + barrasH(listaIn.slice(0, 6), '#16A36A') + '</div>' +
-        '<div class="card"><div class="g2f-dh"><h3>Para onde vai</h3><span class="g2f-mut">saídas</span></div>' + barrasH(listaOut.slice(0, 6), '#E5484D') + '</div></div>';
+      h += '<div class="g2f-two"><div class="card"><div class="g2f-dh"><h3>De onde vem</h3><span class="g2f-mut">receitas</span></div>' + barrasH(listaIn.slice(0, 6), '#16A36A') + '</div>' +
+        '<div class="card"><div class="g2f-dh"><h3>Para onde vai</h3><span class="g2f-mut">despesas · pago + a pagar</span></div>' + barrasH(listaOut.slice(0, 6), '#E5484D') + '</div></div>';
     }
     if (contas.length) {
       var pos = contas.reduce(function (s, a) { return s + Math.max(0, num(a.saldoAtual)); }, 0) || 1;
@@ -2668,7 +2766,7 @@ function itensAbertos(f) {
       var at = $('g2f-atalhos'); if (at) at.remove();
       var u = String(eu().id || eu().usuario || eu().email || '') + '|' + (igrejaId() || '');
       if (u !== ultimoUsuario) {
-        ultimoUsuario = u; S.ctx = null; S.cat = null; S.cache = null; D.dados = null; S.aberto = false; CAMPS = []; SENT = null; PLANOS = {}; FATIMP = []; FATS = []; S.entidades = null; S.visao = null; S.entEm = 0; ITENS = {}; PRODS = null; CAMPMAP = {};
+        ultimoUsuario = u; S.ctx = null; S.cat = null; S.cache = null; D.dados = null; S.aberto = false; CAMPS = []; SENT = null; PLANOS = {}; FATIMP = []; FATS = []; S.entidades = null; S.visao = null; S.entEm = 0; ANO = null; ITENS = {}; PRODS = null; CAMPMAP = {};
         var o = $('g2fin'); if (o) o.remove(); var d = $('g2f-dash'); if (d) d.remove(); fecharMod();
       }
       if (!cfg().usuario || !v39()) return;
