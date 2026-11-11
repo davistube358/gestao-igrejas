@@ -1,5 +1,14 @@
-/* 2Gather v39 · Financeiro completo · FIN-ALL-13
-   Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este arquivo.
+/* 2Gather v39 · Financeiro completo · FIN-ALL-15
+   FIN-ALL-15 (requer FIN_S15_visao_cnpj_itens.sql no Supabase; inclui tudo do FIN-ALL-13)
+   - SELETOR IGREJA | INSTITUTO (CNPJ): no painel e no Livro. A escolha vale para Livro, Despesas, Entrada, A pagar, Cartões, Conciliação, Campanhas/votos,
+     Relatórios e para o que for lançado. Faixa "Você está vendo e lançando em ..." mostra o CNPJ em todas as telas. "A conferir" (GC e cultos) é só da Igreja.
+   - DESPESA: mostra em qual CNPJ será lançada e, na visão do Instituto, tem os ITENS COMPRADOS (produto, quantidade e valor unitário). A entrada de estoque
+     do Instituto usa esses itens (só despesas do CNPJ do Instituto).
+   - CAMPANHAS E VOTOS por CNPJ (nova campanha fica no CNPJ escolhido; botão "Mover" para trocar).
+   - LANÇAMENTOS FUTUROS: "Saldo previsto" = saldo das contas hoje + a receber − a pagar (todos os meses, faturas de cartão e parcelas), com quadro mês a mês no Livro,
+     no painel e nos Relatórios. Relatórios explicam a diferença entre resultado (competência) e caixa.
+   - CORREÇÃO: o campo de busca do Livro mostrava "true" (variável com o mesmo nome da função de escape).
+Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este arquivo.
    Carregar DEPOIS do app.js e dos módulos v39. Não altera o app.js.
    Requer no Supabase: v39_financeiro_completo.sql, v39_campanhas_equipe_c2.sql e v39_cartoes_c3.sql.
 
@@ -47,7 +56,7 @@
    - Pop-up: não fecha mais ao clicar fora. Só pelo botão X no canto, por Cancelar ou por Esc. Botões do rodapé alinhados. */
 (function () {
   'use strict';
-  var VERSAO = 'FIN-ALL-13';
+  var VERSAO = 'FIN-ALL-15';
   if (window.G2_FIN) return;
   window.G2_FIN = { versao: VERSAO };
   console.info('[2Gather] financeiro ' + VERSAO);
@@ -163,13 +172,16 @@
     FIN_STATEMENT_PAID: 'A fatura de uma das parcelas já foi paga: estorne o pagamento da fatura antes de corrigir o valor.',
       FIN_NEXT_STATEMENT_CLOSED: 'A fatura seguinte já foi fechada ou paga: não dá para passar o saldo para ela. Pague o valor total.',
       FIN_NEXT_STATEMENT_PAID: 'A fatura que recebeu o saldo já foi paga: estorne antes o pagamento dela.',
-      FIN_INTEREST_CATEGORY: 'Cadastre a categoria de despesa "Juros e encargos do cartão" em Cadastros.'
+      FIN_INTEREST_CATEGORY: 'Cadastre a categoria de despesa "Juros e encargos do cartão" em Cadastros.',
+      FIN_ITEMS_LOCKED: 'Esta despesa já recebeu entradas no estoque: os itens comprados não podem mais mudar.',
+      FIN_ITEMS_INVALID: 'Confira os itens comprados: produto, quantidade e valor unitário.'
   };
   function traduz(e) {
     var t = String((e && (e.message || e.details || e.hint || e.code)) || e || '');
     var d = String((e && e.details) || '');
     for (var k in MSG) if (t.indexOf(k) >= 0 || d === k) return MSG[k];
-    if (/PGRST202|find the function|does not exist/i.test(t)) return /statement_payments/i.test(t) ? 'Falta rodar o SQL FIN_P6_lista_pagamentos_fatura.sql no Supabase.' : /payables|installments|correct|corrections/i.test(t) ? 'Falta rodar os SQL FIN_P2_parcelas.sql e FIN_P3_correcoes.sql no Supabase.' : 'Falta rodar o SQL novo no Supabase (v39_cartoes_c3.sql).';
+    if (/PGRST202|find the function|does not exist/i.test(t) && /view_set|expense_items|campaign_entities|campaign_adopt|campaign_move/i.test(t)) return 'Falta rodar o SQL FIN_S15_visao_cnpj_itens.sql no Supabase.';
+      if (/PGRST202|find the function|does not exist/i.test(t)) return /statement_payments/i.test(t) ? 'Falta rodar o SQL FIN_P6_lista_pagamentos_fatura.sql no Supabase.' : /payables|installments|correct|corrections/i.test(t) ? 'Falta rodar os SQL FIN_P2_parcelas.sql e FIN_P3_correcoes.sql no Supabase.' : 'Falta rodar o SQL novo no Supabase (v39_cartoes_c3.sql).';
     if (/JWT|token|401/i.test(t)) return 'Sua sessão expirou. Entre de novo.';
     if (/Failed to fetch|NetworkError/i.test(t)) return 'Sem conexão. Tente novamente.';
     var m = t.match(/^[A-Z_]+:\s*(.+)$/); if (m) return m[1];
@@ -195,7 +207,7 @@
 
   /* ───────────── estado ───────────── */
   var S = { ctx: null, cat: null, aberto: false, aba: 'livro', ano: new Date().getFullYear(), mes: new Date().getMonth() + 1, ov: null,
-    despFiltro: 'abertas', concConta: '', relMes: true, livroFiltro: 'tudo', livroBusca: '', cache: null };
+    despFiltro: 'abertas', concConta: '', relMes: true, livroFiltro: 'tudo', livroBusca: '', cache: null, visao: null, entidades: null, entEm: 0 };
   var CAMPS = [], SENT = null;
   function pode(p) { return !!(S.ctx && S.ctx.perms && S.ctx.perms.indexOf(p) >= 0); }
   function algum() { return !!(S.ctx && S.ctx.perms && S.ctx.perms.length); }
@@ -266,6 +278,17 @@
       '.g2f-hb .b{height:7px;border-radius:99px;background:var(--ln,#ECEEF1);margin-top:4px;overflow:hidden}.g2f-hb .b i{display:block;height:100%;border-radius:99px}',
       '.g2f-dh{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 0 4px}.g2f-dh h3{margin:0}.g2f-dh .g2f-mut{white-space:nowrap}',
       '.g2f-click{cursor:pointer}',
+        '.g2f-vis{display:flex;gap:8px;margin:0 0 12px;flex-wrap:wrap}',
+        '.g2f-vis button{flex:1 1 150px;display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:9px 14px;border:1.5px solid var(--ln,#ECEEF1);border-radius:14px;background:#fff;color:var(--tx,#14161A);font-family:inherit;cursor:pointer;text-align:left}',
+        '.g2f-vis button b{font-size:14px}.g2f-vis button small{font-size:11px;color:var(--tx3,#9AA1AC)}',
+        '.g2f-vis button.on{border-color:var(--pri,#2F5BEA);background:var(--pri-s,#EAF0FF)}.g2f-vis button.on small{color:var(--pri,#2F5BEA)}',
+        '.g2f-vis button:focus-visible{outline:2px solid var(--pri,#2F5BEA);outline-offset:2px}',
+        '.g2f-banner{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px;padding:9px 12px;border-radius:12px;background:var(--pri-s,#EAF0FF);color:var(--pri,#2F5BEA);font-size:12.5px;line-height:1.4}',
+        '.g2f-banner.ig{background:#F0F1F4;color:var(--tx2,#5E6470)}',
+        '#g2f-mod .g2f-it{display:grid;grid-template-columns:1fr 74px 92px 34px;gap:6px;margin-bottom:6px;align-items:center}',
+        '#g2f-mod .g2f-it select,#g2f-mod .g2f-it input{padding:9px 8px;font-size:14px;min-width:0}',
+        '#g2f-mod .g2f-it .g2f-ib{width:34px;height:34px}','#g2f-mod .g2f-it select,#g2f-mod .g2f-it input{box-sizing:border-box}',
+        '.g2f-fut td.r b{font-weight:800}',
       /* pop-up: sem fechar ao clicar fora; botão X fixo no canto; rodapé com botões alinhados */
       '#g2f-mod{position:fixed;inset:0;background:rgba(20,22,26,.45);z-index:9995;display:flex;align-items:flex-end;justify-content:center}',
       '#g2f-mod .box{position:relative;display:flex;flex-direction:column;background:#fff;color:#14161A;width:100%;max-width:560px;max-height:92vh;overflow:hidden;border-radius:24px 24px 0 0;font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}',
@@ -302,7 +325,7 @@
     Enviar: { i: 'send', t: 1, l: 'Enviar' }, Receber: { i: 'cash', t: 1, tone: 'ok' }, Pedir: { i: 'pencil' }, WhatsApp: { i: 'chat', tone: 'ok' },
     Itens: { i: 'list' }, Conferir: { i: 'check', t: 1, tone: 'ok', l: 'Conferir' }, Gerar: { i: 'repeat', t: 1, l: 'Gerar' }, Casar: { i: 'check', t: 1, l: 'Casar' }, Exportar: { i: 'dl' },
     Ignorar: { i: 'x' }, Voltar: { i: 'undo' }, Saldo: { i: 'plus', t: 1, l: 'Saldo inicial' }, Reabrir: { i: 'unlock', t: 1 }, Fechar: { i: 'lock', t: 1 },
-    Participante: { i: 'userplus', t: 1 }, Dispensar: { i: 'x' }, Detalhar: { i: 'list', t: 1, l: 'Detalhar fatura' }, Corrigir: { i: 'pencil', t: 1, l: 'Corrigir' },
+    Mover: { i: 'swap' }, Participante: { i: 'userplus', t: 1 }, Dispensar: { i: 'x' }, Detalhar: { i: 'list', t: 1, l: 'Detalhar fatura' }, Corrigir: { i: 'pencil', t: 1, l: 'Corrigir' },
     'Lançar': { i: 'card', t: 1, tone: 'ok', l: 'Lançar na fatura' }, Criar: { i: 'plus', t: 1, tone: 'ok', l: 'Criar despesa' }
   };
   function bt(a, v, t, cls) {
@@ -332,6 +355,7 @@
     else if (c.t === 'checks') h += '<div id="' + id + '">' + (c.o || []).map(function (x) {
         return '<label class="g2f-ck"><input type="checkbox" data-ck="' + esc(x[0]) + '"' + (x[2] === false ? '' : ' checked') + '><span>' + esc(x[1]) + '</span></label>'; }).join('') + '</div>';
       else if (c.t === 'parcelas') h += '<div id="' + id + '"></div>';
+      else if (c.t === 'itens') h += '<div id="' + id + '" class="g2f-itens"></div>';
     else {
       var tp = c.t === 'date' ? 'date' : (c.t === 'number' ? 'number' : 'text'), im = c.t === 'money' ? ' inputmode="decimal" placeholder="0,00"' : '';
       var vv = c.t === 'money' && v !== '' ? String(v).replace('.', ',') : v;
@@ -368,6 +392,16 @@
         else if (c.t === 'parcelas') {
           x = []; var rs = el.querySelectorAll('.g2f-pr');
           Array.prototype.forEach.call(rs, function (r, n) { var d = r.querySelector('input[data-p="d"]'), vl = r.querySelector('input[data-p="v"]'); x.push({ n: n + 1, venc: d.value, valor: lerValor(vl.value) }); });
+        } else if (c.t === 'itens') {
+          x = [];
+          [].forEach.call(el.querySelectorAll('.g2f-it'), function (r, n) {
+            var sel = r.querySelector('select[data-it="p"]'), q = lerValor(r.querySelector('input[data-it="q"]').value), vu = lerValor(r.querySelector('input[data-it="v"]').value);
+            var op = sel.options[sel.selectedIndex];
+            if (!sel.value && q == null && vu == null) return;
+            if (!sel.value) { if (validar) falta.push('item ' + (n + 1) + ': escolha o produto'); return; }
+            if (!(q > 0)) { if (validar) falta.push('item ' + (n + 1) + ': informe a quantidade'); return; }
+            x.push({ produtoId: sel.value, tipo: op.getAttribute('data-t') || null, descricao: op.getAttribute('data-n') || op.textContent, unidade: op.getAttribute('data-u') || 'un', qtd: q, valorUnit: vu == null ? 0 : vu });
+          });
         } else if (c.t === 'money') { x = lerValor(el.value); if (validar && el.value.trim() && x == null) falta.push(c.l + ' (valor inválido)'); }
         else x = String(el.value || '').trim();
         if (validar && c.req && (x === '' || x == null || x === false)) falta.push(c.l);
@@ -400,6 +434,13 @@
             }
           }
           if (c.t === 'preview' && el) { var ph = c.gen(vals) || ''; if (el.getAttribute('data-sig') !== ph) { el.setAttribute('data-sig', ph); el.innerHTML = ph; } }
+          if (c.t === 'itens' && el) {
+            var tt = el.querySelector('.g2f-itt'), li = vals[c.k] || [];
+            if (tt && Array.isArray(li)) {
+              var tot = arr2(li.reduce(function (z, i) { return z + num(i.qtd) * num(i.valorUnit); }, 0)), vd = num(vals.valor);
+              tt.textContent = li.length ? 'Total dos itens: ' + brl(tot) + (vd > 0 && Math.abs(vd - tot) > 0.009 ? ' · valor da despesa: ' + brl(vd) + ' (diferença de ' + brl(arr2(vd - tot)) + ': frete, desconto ou outros custos)' : '') : '';
+            }
+          }
           if (c.t === 'parcelas' && el) {
             var sig2 = JSON.stringify(c.deps.map(function (k) { return vals[k]; }));
             if (el.getAttribute('data-sig') !== sig2) {
@@ -413,6 +454,28 @@
         });
       }
     }
+    campos.forEach(function (c, i) {
+      if (c.t !== 'itens') return;
+      var box = $('g2f-f' + i);
+      function linhaIt(it) {
+        it = it || {};
+        var ops = '<option value="">Produto…</option>' + (c.o || []).map(function (p) {
+          return '<option value="' + esc(p.id) + '" data-t="' + esc(p.tipo) + '" data-u="' + esc(p.unidade) + '" data-n="' + esc(p.nome) + '"' + (String(it.produtoId || '') === String(p.id) ? ' selected' : '') + '>' + esc(p.rot) + '</option>'; }).join('');
+        return '<div class="g2f-it"><select data-it="p" aria-label="Produto">' + ops + '</select><input type="text" inputmode="decimal" data-it="q" placeholder="Qtd" aria-label="Quantidade" value="' + esc(it.qtd != null && it.qtd !== '' ? String(it.qtd).replace('.', ',') : '') + '">' +
+          '<input type="text" inputmode="decimal" data-it="v" placeholder="R$ unit." aria-label="Valor unitário" value="' + esc(it.valorUnit != null && it.valorUnit !== '' ? String(it.valorUnit).replace('.', ',') : '') + '">' +
+          '<button type="button" class="g2f-ib dg" data-it="rm" aria-label="Remover item">' + ic('x', 14) + '</button></div>';
+      }
+      box.innerHTML = ((c.o || []).length ? '' : '<div class="hint" style="margin:0 0 6px">Nenhum produto cadastrado no Instituto (ou sem acesso). Cadastre os produtos no Mercado/Farmácia Solidária para listar aqui o que foi comprado.</div>') +
+        '<div class="g2f-itl">' + ((c.v && c.v.length) ? c.v.map(linhaIt).join('') : linhaIt()) + '</div>' +
+        '<button type="button" class="g2f-btn g2f-soft g2f-sm" data-it="add"' + ((c.o || []).length ? '' : ' disabled') + '>+ Item</button><div class="hint g2f-itt"></div>';
+      box.addEventListener('click', function (ev) {
+        var b = ev.target.closest('[data-it]'); if (!b) return;
+        var k = b.getAttribute('data-it'), lst = box.querySelector('.g2f-itl');
+        if (k === 'add') { lst.insertAdjacentHTML('beforeend', linhaIt()); }
+        else if (k === 'rm') { var r = b.closest('.g2f-it'); if (lst.children.length > 1) r.remove(); else { r.querySelector('select').value = ''; r.querySelectorAll('input').forEach(function (q) { q.value = ''; }); } }
+        atualizar();
+      });
+    });
     campos.forEach(function (c, i) {
       if (c.t !== 'pessoa') return;
       var inp = $('g2f-f' + i), lst = $('g2f-f' + i + '-l'), tmr;
@@ -545,7 +608,8 @@
     var ag = new Date(), ehHoje = S.ano === ag.getFullYear() && S.mes === ag.getMonth() + 1;
     o.innerHTML =
       '<div class="g2f-head g2f-noprint"><button type="button" class="g2f-back" data-a="fechar" aria-label="Voltar ao painel Financeiro">' + ic('chevl', 20) + '</button>' +
-      '<div><div class="ini-ola">Livro financeiro</div><div class="ini-sub">' + esc(cur.nome) + (comPer ? ' · ' + MESES[S.mes - 1] + ' de ' + S.ano : '') + '</div></div></div>' +
+      '<div><div class="ini-ola">Livro financeiro</div><div class="ini-sub">' + esc(cur.nome) + (temInstituto() ? ' · ' + esc(visaoRot()) : '') + (comPer ? ' · ' + MESES[S.mes - 1] + ' de ' + S.ano : '') + '</div></div></div>' +
+      htmlSeletor('livro') +
       '<div class="chips g2f-tabs g2f-noprint" role="tablist">' + abasVisiveis().map(function (a) {
         return '<button type="button" role="tab" data-a="aba" data-v="' + a.id + '" class="' + (a.id === S.aba ? 'on' : '') + '"' + (a.id === S.aba ? ' aria-selected="true"' : '') + '>' + ic(a.i) + esc(a.nome) + '</button>'; }).join('') + '</div>' +
       (comPer ? '<div class="g2f-per g2f-noprint"><button type="button" data-a="mesAnt" aria-label="Mês anterior">' + ic('chevl') + '</button><b>' + MESES[S.mes - 1] + ' ' + S.ano + '</b>' +
@@ -555,12 +619,88 @@
   function mover(d) { var m = S.mes + d; if (m < 1) { m = 12; S.ano--; } else if (m > 12) { m = 1; S.ano++; } S.mes = m; S.cache = null; pintarBase(); recarregar(); }
   // guarda o que está na tela: se o app redesenhar a área principal, voltamos NA HORA sem buscar de novo no servidor
   function corpo(h) {
+    if (temInstituto() && String(h).indexOf('Carregando…') < 0) h = bannerVisao() + h;
     var b = $('g2f-bd'); if (b) b.innerHTML = h;
     if (S.aberto && String(h).indexOf('Carregando…') < 0) S.cache = { aba: S.aba, ano: S.ano, mes: S.mes, html: h, t: Date.now() };
   }
   function carregarCtx() {
     if (!igrejaId()) return Promise.reject(new Error('Igreja não identificada. Atualize a página.'));
-    return rpc('v39_fin_context', C({})).then(function (x) { S.ctx = x || { perms: [] }; });
+    return rpc('v39_fin_context', C({})).then(function (x) { S.ctx = x || { perms: [] }; return carregarEntidades(); });
+  }
+  /* ───────────── FIN-ALL-15: CNPJ em uso (Igreja ou Instituto) ───────────── */
+  function carregarEntidades(forcar) {
+    if (!forcar && S.entidades && Date.now() - S.entEm < 20000) return Promise.resolve();
+    return rpc('v39_fin_entities_list', C({})).then(function (r) {
+      S.entidades = (r && r.entidades) || []; S.visao = (r && r.atual) || null; S.entEm = Date.now();
+      var ok = !S.visao || S.entidades.some(function (e) { return e.id === S.visao; });
+      if (!ok) { S.visao = null; return rpc('v39_fin_view_set', C({ p_entity: null })).catch(function () { return null; }); }
+    }).catch(function (e) { S.entidades = S.entidades || []; console.warn('[2Gather][fin] entidades: ' + traduz(e)); });
+  }
+  function temInstituto() { return (S.entidades || []).some(function (e) { return e.tipo === 'institute' && e.ativa !== false; }); }
+  function visaoInst() { return !!S.visao; }
+  function entAtual() { var id = S.visao || null, l = S.entidades || []; for (var i = 0; i < l.length; i++) if ((l[i].id || null) === id) return l[i]; return null; }
+  function visaoRot() { return visaoInst() ? 'Instituto' : 'Igreja'; }
+  function cnpjFmt(t) {
+    var d = String(t || '').replace(/\D/g, '').slice(0, 14);
+    return d.length === 14 ? d.slice(0, 2) + '.' + d.slice(2, 5) + '.' + d.slice(5, 8) + '/' + d.slice(8, 12) + '-' + d.slice(12) : d;
+  }
+  function visaoCnpj() { var e = entAtual(); return e && e.cnpjEfetivo ? cnpjFmt(e.cnpjEfetivo) : ''; }
+  function bannerVisao() {
+    var e = entAtual(), cn = visaoCnpj();
+    return '<div class="g2f-banner' + (visaoInst() ? '' : ' ig') + ' g2f-noprint">' + ic('bank', 16) + '<span>Você está vendo e lançando em <b>' + esc(visaoRot()) + '</b>' + (e && e.nome ? ' · ' + esc(e.nome) : '') + ' · ' + (cn ? 'CNPJ ' + esc(cn) + (e && e.usaCnpjDaIgreja ? ' (o da Igreja)' : '') : '<b>CNPJ não informado</b>') + '. Para mudar, use o seletor no topo.</span></div>';
+  }
+  function htmlSeletor(modo) {
+    if (!temInstituto()) return '';
+    var l = (S.entidades || []).filter(function (e) { return e.tipo === 'church' || e.ativa !== false; });
+    return '<div class="g2f-vis g2f-noprint" role="group" aria-label="Escolher o CNPJ">' + l.map(function (e) {
+      var on = (e.id || null) === (S.visao || null), cn = e.cnpjEfetivo ? cnpjFmt(e.cnpjEfetivo) : '';
+      return '<button type="button" ' + (modo === 'dash' ? 'data-d="visao"' : 'data-a="visao"') + ' data-v="' + esc(e.id || '') + '" class="' + (on ? 'on' : '') + '" aria-pressed="' + (on ? 'true' : 'false') + '">' +
+        '<b>' + esc(e.tipo === 'church' ? 'Igreja' : 'Instituto') + '</b><small>' + (cn ? 'CNPJ ' + esc(cn) : 'CNPJ não informado') + '</small></button>';
+    }).join('') + '</div>';
+  }
+  function trocarVisao(id) {
+    id = id || null;
+    if ((S.visao || null) === id) return Promise.resolve();
+    return rpc('v39_fin_view_set', C({ p_entity: id })).then(function () {
+      S.visao = id; S.cat = null; S.cache = null; S.cartDet = null; S.ov = null; S.entEm = 0; D.dados = null;
+      CAMPS = []; CAMPMAP = {}; APAGAR = []; PREV = []; DESP = []; ITENS = {}; PLANOS = {}; FATS = []; FATIMP = []; SENT = null; CORR = [];
+      if (S.aberto) { pintarBase(); recarregar(); }
+      else { var dd = $('g2f-dash'); if (dd) dd.remove(); dashCarregar(true); }
+    }).catch(function (e) { console.warn('[2Gather][fin]', e); toast(traduz(e)); });
+  }
+  var ITENS = {}, PRODS = null, CAMPMAP = {};
+  function normItens(l) { return (l || []).map(function (i) { return { p: String(i.produtoId || ''), q: Math.round(num(i.qtd) * 1000) / 1000, v: Math.round(num(i.valorUnit) * 10000) / 10000 }; }); }
+  function fmtQtd(q) { return String(Math.round(num(q) * 1000) / 1000).replace('.', ','); }
+  function itensTxt(id) {
+    var l = ITENS[id]; if (!l || !l.length) return '';
+    return l.map(function (i) { return fmtQtd(i.qtd) + ' ' + esc(i.unidade || 'un') + ' ' + esc(i.descricao); }).join(' · ');
+  }
+  function carregarItens(lista) {
+    var ids = (lista || []).map(function (e) { return e.id; }).filter(Boolean);
+    if (!ids.length || !visaoInst()) return Promise.resolve();
+    return rpc('v39_fin_expense_items_get', C({ p_ids: ids })).then(function (l) {
+      ids.forEach(function (i) { ITENS[i] = []; }); (l || []).forEach(function (x) { ITENS[x.expenseId] = x.itens || []; });
+    }).catch(function (e) { console.warn('[2Gather][fin] itens: ' + traduz(e)); });
+  }
+  /* produtos do Instituto (Mercado e Farmácia) para a lista de itens da despesa */
+  function carregarProdutosEst() {
+    if (PRODS && Date.now() - PRODS.em < 60000) return Promise.resolve(PRODS.l);
+    function um(tipo, rot) {
+      return rpc('v39_est_dados', C({ p_tipo: tipo })).then(function (r) {
+        return ((r && r.produtos) || []).filter(function (p) { return p.ativa !== false; }).map(function (p) {
+          return { id: p.id, tipo: tipo, unidade: p.unidade || 'un', nome: p.nome + (p.apresentacao ? ' · ' + p.apresentacao : ''), rot: p.nome + (p.apresentacao ? ' · ' + p.apresentacao : '') + ' (' + rot + ', ' + (p.unidade || 'un') + ')' };
+        });
+      }).catch(function () { return []; });
+    }
+    return Promise.all([um('mercado', 'Mercado'), um('farmacia', 'Farmácia')]).then(function (r) { var l = r[0].concat(r[1]); PRODS = { em: Date.now(), l: l }; return l; });
+  }
+  function rpcCamps() {
+    return Promise.all([rpc('v39_fin_campaigns', C({})), rpc('v39_fin_campaign_entities', C({})).catch(function () { return null; })]).then(function (r) {
+      var lista = r[0] || [], mapa = r[1] && r[1].mapa;
+      if (!mapa) { CAMPMAP = {}; return lista; }   // sem o SQL novo: mantém tudo junto, como antes
+      CAMPMAP = mapa;
+      return lista.filter(function (g) { return (mapa[g.id] || null) === (S.visao || null); });
+    });
   }
   function carregarCat() { return rpc('v39_fin_catalogs', C({})).then(function (x) { S.cat = x || {}; }); }
   function recarregar() {
@@ -878,16 +1018,48 @@
       (prev.length > vis.length ? '<div class="g2f-note">Mostrando ' + vis.length + ' de ' + prev.length + '. A lista completa está em Campanhas.</div>' : '') +
       '<div class="g2f-note">Valores acordados em campanhas e votos. Só entram no Livro e no saldo quando forem recebidos.</div>';
   }
+  /* ───────────── FIN-ALL-15: lançamentos futuros e saldo previsto ───────────── */
+  function saldoDe(ov) { var c = (ov && ov.contas) || []; return arr2(c.reduce(function (t, a) { return t + num(a.saldoAtual); }, 0)); }
+  // saldo previsto = saldo das contas hoje + tudo a receber − tudo a pagar (vencido e a vencer, todos os meses)
+  function futuroCalc(saldo) {
+    var rec = previstos(), pag = despesasPrevistas(null), hj = hoje(), M = {};
+    function bucket(v) { return !v ? 'z-sem' : v < hj ? '0-atraso' : '1-' + ym(v); }
+    function add(k, campo, v) { if (!M[k]) M[k] = { k: k, rec: 0, pag: 0, nr: 0, np: 0 }; M[k][campo] = arr2(M[k][campo] + v); M[k][campo === 'rec' ? 'nr' : 'np']++; }
+    rec.forEach(function (p) { add(bucket(p.venc), 'rec', p.valor); });
+    pag.forEach(function (x) { add(bucket(x.vencimento), 'pag', x.valor); });
+    var ks = Object.keys(M).sort(), acum = saldo, linhas = ks.map(function (k) {
+      var m = M[k]; acum = arr2(acum + m.rec - m.pag);
+      m.rot = k === '0-atraso' ? 'Em atraso' : k === 'z-sem' ? 'Sem vencimento' : ymRot(k.slice(2)); m.acum = acum; return m;
+    });
+    var tr = somaPrev(rec), tp = somaPag(pag);
+    return { saldo: saldo, rec: tr, pag: tp, nrec: rec.length, npag: pag.length, saldoPrev: arr2(saldo + tr - tp), linhas: linhas };
+  }
+  function cardsFuturo(fu, comSaldo) {
+    return '<div class="stats">' +
+      stat('A receber', brl(fu.rec), 'in', 'down', 'g2f-pos', fu.nrec + ' item(ns) · campanhas e votos') +
+      stat('A pagar', brl(fu.pag), 'out', 'up', 'g2f-neg', fu.npag + ' item(ns) · faturas, parcelas e despesas') +
+      (comSaldo ? stat('Saldo previsto', brl(fu.saldoPrev), 'amb', 'clock', fu.saldoPrev < 0 ? 'g2f-neg' : 'g2f-pos', 'saldo hoje ' + brl(fu.saldo) + ' + a receber − a pagar') : '') + '</div>';
+  }
+  function tabelaFuturo(fu, compacto) {
+    if (!fu.linhas.length) return '<div class="g2f-note">Nada a receber nem a pagar em aberto.</div>';
+    return '<div class="sec">Mês a mês</div><div class="card"><div class="g2f-tw"><table class="g2f-tbl g2f-fut"><thead><tr><th>Quando</th><th class="r">A receber</th><th class="r">A pagar</th><th class="r">Saldo previsto</th></tr></thead><tbody>' +
+      fu.linhas.slice(0, compacto ? 7 : 24).map(function (m) {
+        return '<tr><td>' + esc(m.rot) + '</td><td class="r g2f-pos">' + (m.rec ? brl(m.rec) : '—') + '</td><td class="r g2f-neg">' + (m.pag ? brl(m.pag) : '—') + '</td><td class="r ' + (m.acum < 0 ? 'g2f-neg' : '') + '"><b>' + brl(m.acum) + '</b></td></tr>'; }).join('') +
+      '</tbody></table></div></div><div class="g2f-note">O saldo previsto começa no saldo atual das contas e vai somando o que vence em cada mês. Compras no cartão entram pelo vencimento da fatura em que caem: a segunda parcela só pesa no mês dela.</div>';
+  }
+  function blocoFuturo(fu, compacto) {
+    return '<div class="sec">Lançamentos futuros</div>' + cardsFuturo(fu, true) + tabelaFuturo(fu, compacto);
+  }
   function tLivro() {
     var pc = pode('financial.campaigns.view');
-    return Promise.all([rpc('v39_fin_overview', C({ p_year: S.ano, p_month: S.mes })), pc ? rpc('v39_fin_campaigns', C({})).catch(function () { return []; }) : Promise.resolve([]),
+    return Promise.all([rpc('v39_fin_overview', C({ p_year: S.ano, p_month: S.mes })), pc ? rpcCamps().catch(function () { return []; }) : Promise.resolve([]),
       carregarAPagar().catch(function () { APAGAR = []; PREV = []; return []; })]).then(function (r) {
       S.ov = r[0] || {}; CAMPS = r[1] || []; desenharLivro();
     });
   }
   function desenharLivro() {
-    var x = S.ov, L = x.livro || [], t = totaisCaixa(L), per = x.periodo || {}, fechado = per.status === 'closed', esc = noEscopoLivro(),
-      rp = previstos().filter(function (p) { return esc(p.venc); }), dp = despesasPrevistas(esc), sRec = somaPrev(rp), sDesp = somaPag(dp), saldoPrev = arr2(sRec - sDesp);
+    var x = S.ov, L = x.livro || [], t = totaisCaixa(L), per = x.periodo || {}, fechado = per.status === 'closed', escopo = noEscopoLivro(),
+      fu = futuroCalc(saldoDe(x)), saldoPrev = fu.saldoPrev, dp = despesasPrevistas(escopo);
     var cont = { tudo: L.length, in: 0, out: 0, tr: 0, conc: 0, cartao: 0 };
     L.forEach(function (m) {
       if (ehEntrada(m)) cont.in++; else if (ehSaida(m)) cont.out++; else if (ehNoCartao(m)) cont.cartao++; else if (m.tipo === 'transfer_in' || m.tipo === 'transfer_out') cont.tr++;
@@ -897,19 +1069,19 @@
     h += '<div class="stats">' + stat('Entradas', brl(t.entradas), 'in', 'down', 'g2f-pos') +
       stat('Saídas', brl(t.saidas), 'out', 'up', 'g2f-neg', num(t.faturas) > 0 ? 'inclui ' + brl(t.faturas) + ' de fatura de cartão' : 'pagas no caixa') +
       stat('Resultado', brl(t.resultado), 'pri', 'trend', num(t.resultado) < 0 ? 'g2f-neg' : 'g2f-pos', 'entradas − saídas (caixa)') +
-      stat('Saldo previsto', brl(saldoPrev), 'amb', 'clock', saldoPrev < 0 ? 'g2f-neg' : 'g2f-pos', 'a receber ' + brl(sRec) + ' − a pagar ' + brl(sDesp)) + '</div>';
+      stat('Saldo previsto', brl(saldoPrev), 'amb', 'clock', saldoPrev < 0 ? 'g2f-neg' : 'g2f-pos', 'hoje ' + brl(fu.saldo) + ' + a receber − a pagar') + '</div><div class="sec">Lançamentos futuros</div>' + cardsFuturo(fu, false);
     var chipsDef = [['tudo', 'Tudo'], ['in', 'Entradas'], ['out', 'Saídas']]; if (cont.cartao) chipsDef.push(['cartao', 'No cartão']); chipsDef.push(['tr', 'Transferências'], ['conc', 'A conciliar']);
-    h += '<div class="g2f-tool g2f-noprint"><div class="busca"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input data-c="busca" placeholder="Buscar descrição, pessoa ou conta" value="' + esc(S.livroBusca) + '" autocomplete="off"></div>' +
+    h += '<div class="g2f-tool g2f-noprint"><div class="busca"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input data-c="livroBusca" id="g2f-livro-busca" aria-label="Buscar lançamentos" placeholder="Buscar descrição, pessoa ou conta" value="' + esc(typeof S.livroBusca === 'string' ? S.livroBusca : '') + '" autocomplete="off"></div>' +
       (pode('financial.reports.export') ? bt('csvLivro', '', 'Exportar CSV', 'sec') : '') +
       (fechado ? (S.ctx.podeReabrir ? bt('reabrir', '', 'Reabrir mês', 'sec') : '<span class="pill p-cinza">mês fechado</span>') : (S.ctx.podeFechar ? bt('fecharMes', '', 'Fechar mês', 'sec') : '')) + '</div>';
     h += '<div class="chips g2f-noprint">' + chipsDef.map(function (f) {
       return '<button type="button" data-a="livroFiltro" data-v="' + f[0] + '" class="' + (S.livroFiltro === f[0] ? 'on' : '') + '">' + f[1] + ' <span>' + cont[f[0]] + '</span></button>'; }).join('') + '</div>';
-    h += '<div id="g2f-lista"></div>' + blocoRecPrev(12, esc) + blocoDespPrev(12, dp);
+    h += '<div id="g2f-lista"></div>' + tabelaFuturo(fu, false) + blocoRecPrev(12, escopo) + blocoDespPrev(12, dp);
     corpo(h); pintarLista();
   }
   function pintarLista() {
     var el = $('g2f-lista'); if (!el) return;
-    var x = S.ov || {}, L = x.livro || [], fechado = x.periodo && x.periodo.status === 'closed', q = norm(S.livroBusca), f = S.livroFiltro;
+    var x = S.ov || {}, L = x.livro || [], fechado = x.periodo && x.periodo.status === 'closed', q = norm(typeof S.livroBusca === 'string' ? S.livroBusca : ''), f = S.livroFiltro;
     var l = L.filter(function (m) {
       if (f === 'in' && !ehEntrada(m)) return false;
       if (f === 'out' && !ehSaida(m)) return false;
@@ -958,7 +1130,11 @@
   /* ───────────── A CONFERIR ───────────── */
   var PEND = [];
   function tConferir() {
-    return Promise.all([rpc('v39_fin_source_pending', C({})), rpc('v39_fin_sources', C({ p_from: null }))]).then(function (r) {
+    if (visaoInst()) {
+      corpo('<div class="card"><div class="empty">Encontros de GC e cultos pertencem à <b>Igreja</b>. Troque o seletor para <b>Igreja</b> para conferir e lançar os valores deles.</div></div>');
+      return Promise.resolve();
+    }
+return Promise.all([rpc('v39_fin_source_pending', C({})), rpc('v39_fin_sources', C({ p_from: null }))]).then(function (r) {
       var p = r[0] || {}, lotes = r[1] || []; PEND = p.itens || [];
       var h = avisoInicio() + '<div class="sec">A conferir (' + PEND.length + ')</div>';
       h += '<div class="card lp">' + (PEND.length ? PEND.map(function (x, i) {
@@ -1005,7 +1181,7 @@
     return Promise.resolve();
   }
   function novaEntrada() {
-    var pc = pode('financial.commitments.receive') && pode('financial.campaigns.view') ? rpc('v39_fin_campaigns', C({})).catch(function () { return CAMPS || []; }) : Promise.resolve(CAMPS || []);
+    var pc = pode('financial.commitments.receive') && pode('financial.campaigns.view') ? rpcCamps().catch(function () { return CAMPS || []; }) : Promise.resolve(CAMPS || []);
     pc.then(function (l) { CAMPS = l || []; abrirFormEntrada(); });
   }
   function abrirFormEntrada() {
@@ -1216,8 +1392,8 @@
     var tom = st === 'paid' ? 'verde' : (st === 'pending_approval' || st === 'correction_requested') ? 'amarelo' : (st === 'rejected' || st === 'cancelled') ? 'vermelho' : 'cinza';
     var chip = naFatura ? pill('na fatura do cartão', 'verde') : (pl ? pill('cartão ' + (cartao(pl.cartaoId) ? '•' + cartao(pl.cartaoId).final : '') + (pl.parcelas > 1 ? ' · ' + pl.parcelas + 'x' : ''), 'dour') : (cron.length > 1 ? pill(cron.length + ' parcelas', 'dour') : ''));
     return '<div class="row g2f-mv"><span class="g2f-ri ' + (st === 'paid' ? 'in' : 'out') + '">' + ic(pl ? 'card' : 'receipt') + '</span><div class="info"><div class="nm">' + esc(e.descricao) + '</div>' +
-      '<div class="sb">' + esc([e.categoria, e.fornecedor, e.vencimento ? 'vence ' + dataBR(e.vencimento) : '', e.solicitante ? 'por ' + e.solicitante : ''].filter(Boolean).join(' · ')) + '</div>' +
-      (e.motivo ? '<div class="sb">Motivo: ' + esc(e.motivo) + '</div>' : '') + (e.boleto && e.boleto.linha ? '<div class="sb">Boleto: ' + esc(e.boleto.linha) + '</div>' : '') + detParc + '</div>' +
+      '<div class="sb">' + esc([temInstituto() ? visaoRot() + (visaoCnpj() ? ' · ' + visaoCnpj() : '') : '', e.categoria, e.fornecedor, e.vencimento ? 'vence ' + dataBR(e.vencimento) : '', e.solicitante ? 'por ' + e.solicitante : ''].filter(Boolean).join(' · ')) + '</div>' +
+      (itensTxt(e.id) ? '<div class="sb">Itens: ' + itensTxt(e.id) + '</div>' : '') + (e.motivo ? '<div class="sb">Motivo: ' + esc(e.motivo) + '</div>' : '') + (e.boleto && e.boleto.linha ? '<div class="sb">Boleto: ' + esc(e.boleto.linha) + '</div>' : '') + detParc + '</div>' +
       '<div class="g2f-amt"><span>' + brl(e.aprovado || e.valor) + '</span>' + (num(e.pago) ? '<span class="g2f-mut">pago ' + brl(e.pago) + '</span>' : '') + pill((ROT.desp[st] || st).toLowerCase(), tom) + chip + '</div>' +
       (a.length ? '<div class="g2f-acts g2f-noprint">' + a.join('') + '</div>' : '') + '</div>';
   }
@@ -1225,8 +1401,8 @@
     var temRec = pode('financial.recurrences.manage'), ps = [rpc('v39_fin_expenses', C({ p_filter: S.despFiltro })), carregarPlanos()];
     if (temRec) ps.push(rpc('v39_fin_recurrences', C({})));
     ps.push((tes() || pode('financial.expenses.approve')) ? rpc('v39_fin_income_corrections_list', C({ p_status: 'pending' })).catch(function () { return []; }) : Promise.resolve([]));
-    return Promise.all(ps).then(function (r) {
-      DESP = r[0] || []; RECS = temRec ? (r[2] || []) : []; CORR = r[r.length - 1] || [];
+    return Promise.all(ps).then(function (r) { return carregarItens(r[0] || []).then(function () { return r; }); }).then(function (r) {
+        DESP = r[0] || []; RECS = temRec ? (r[2] || []) : []; CORR = r[r.length - 1] || [];
       var h = '<div class="g2f-tool g2f-noprint">' + (pode('financial.expenses.create') ? btn('novaDesp', 'Nova despesa', 'plus') : '') +
         (pode('financial.expenses.create') || pode('financial.bills.manage') ? btn('novoFornec', 'Fornecedor', 'plus', 'g2f-soft') : '') + '</div>';
       h += '<div class="chips g2f-noprint">' + [['abertas', 'Em andamento'], ['encerradas', 'Encerradas (120 dias)'], ['todas', 'Todas']].map(function (f) {
@@ -1246,7 +1422,10 @@
   }
   function despesa(id) { return DESP.filter(function (x) { return x.id === id; })[0] || null; }
   function formDesp(e, opts) {
-    e = e || {}; opts = opts || {};
+    return Promise.resolve(visaoInst() ? carregarProdutosEst() : []).then(function (prods) { return formDespBase(e, opts, prods); });
+  }
+  function formDespBase(e, opts, prods) {
+    e = e || {}; opts = opts || {}; prods = prods || [];
     var pre = opts.pre || {}, pl = e.id ? PLANOS[e.id] : null, K = opCartoes(), travada = !!(pl && pl.lancada);
     var temC = K.length > 0 && CARTSQL !== false && !travada, noCartao = function (v) { return temC && v.meio === 'cartao'; };
     var cronExist = (e.cronograma || []).filter(function (x) { return x.status !== 'cancelled'; });
@@ -1260,6 +1439,9 @@
       { k: 'descricao', l: 'Descrição', v: e.descricao || pre.descricao, req: true },
       { k: 'categoriaId', l: 'Categoria', t: 'select', o: opCats('expense'), v: e.categoriaId, req: true },
       { k: 'valor', l: 'Valor', t: 'money', v: e.valor || pre.valor, req: true },
+      { t: 'info', l: '<b>Será lançada em: ' + esc(visaoRot()) + '</b>' + (visaoCnpj() ? ' · CNPJ ' + esc(visaoCnpj()) : '') + '. Para lançar no outro CNPJ, feche e troque o seletor no topo do Financeiro.', vis: function () { return temInstituto(); } },
+      { k: 'itens', t: 'itens', l: 'Itens comprados (para o estoque do Instituto)', o: prods, v: (e.id && ITENS[e.id]) ? ITENS[e.id].map(function (i) { return { produtoId: i.produtoId, qtd: i.qtd, valorUnit: i.valorUnit }; }) : [],
+        h: 'Opcional. Informe o produto, a quantidade e o valor unitário comprados: na entrada do estoque, o Instituto já traz esses dados.', vis: function () { return visaoInst(); } },
       { k: 'meio', l: 'Como foi ou será pago', t: 'select', o: [['', 'A definir (conta ou caixa)'], ['cartao', 'Cartão de crédito']], v: (pl || pre.cartaoId) ? 'cartao' : '', vazio: false, vis: function () { return temC; } },
       { k: 'cartaoId', l: 'Cartão de crédito', t: 'select', o: K, v: (pl && pl.cartaoId) || pre.cartaoId || '', req: true, vis: noCartao },
       { k: 'dataCompra', l: 'Data da compra', t: 'date', v: (pl && String(pl.data).slice(0, 10)) || pre.dataCompra || hoje(), req: true, vis: noCartao },
@@ -1293,6 +1475,11 @@
         return rpc('v39_fin_expense_save', C({ p_id: e.id || null, p: { descricao: v.descricao, categoriaId: v.categoriaId, valor: v.valor, fornecedorId: v.fornecedorId || null, emissao: v.emissao || null, vencimento: v.vencimento || null, competencia: v.competencia || null, linhaDigitavel: v.linhaDigitavel || null, comprovanteId: ev, obs: v.obs || null, chave: uuid(), cronograma: cron } }));
       }).then(function (r) {
         id = r && r.id;
+        if (!(visaoInst() && id)) return r;
+        var antes = JSON.stringify(normItens(e.id ? ITENS[e.id] : [])), depois = JSON.stringify(normItens(v.itens));
+        if (antes === depois) return r;
+        return rpc('v39_fin_expense_items_set', C({ p_expense_id: id, p_items: v.itens || [] })).then(function () { ITENS[id] = (v.itens || []).map(function (i) { return { produtoId: i.produtoId, tipo: i.tipo, descricao: i.descricao, unidade: i.unidade, qtd: i.qtd, valorUnit: i.valorUnit }; }); return r; });
+      }).then(function (r) {
         if (!id || travada || !(temC || pl)) return '';
         var n = Math.max(1, Math.min(24, parseInt(v.parcelasCartao, 10) || 1));
         var p = v.meio === 'cartao' ? rpc('v39_fin_expense_card_set', C({ p_expense_id: id, p_card_id: v.cartaoId, p_date: v.dataCompra, p_installments: n }))
@@ -1759,14 +1946,14 @@ function itensAbertos(f) {
     var cs = g.compromissos || [], abre = ['draft', 'planned', 'active'].indexOf(g.status) >= 0;
     var h = '<div class="card"><div class="row g2f-mv" style="border:none;padding:0 0 8px"><span class="g2f-ri pri">' + ic('flag') + '</span><div class="info"><div class="nm">' + esc(g.nome) + ' ' + pill(ROT.campTipo[g.tipo] || g.tipo, 'dour') + ' ' + pill((ROT.camp[g.status] || g.status).toLowerCase(), g.status === 'active' ? 'verde' : 'cinza') + '</div>' +
       '<div class="sb">' + esc([g.objetivo, g.responsavel ? 'Responsável: ' + g.responsavel : '', dataBR(g.inicio) + (g.fim ? ' a ' + dataBR(g.fim) : '')].filter(Boolean).join(' · ')) + '</div></div>' +
-      '<div class="g2f-acts g2f-noprint">' + (pode('financial.campaigns.manage') && abre ? bt('editCamp', gi, 'Editar', 'sec') : '') + (pode('financial.commitments.create') && abre ? bt('novoCompCamp', gi, 'Participante') : '') + '</div></div>' +
+      '<div class="g2f-acts g2f-noprint">' + (pode('financial.campaigns.manage') && abre ? bt('editCamp', gi, 'Editar', 'sec') : '') + (pode('financial.campaigns.manage') && temInstituto() ? bt('moverCamp', gi, 'Mover para outro CNPJ', 'sec') : '') + (pode('financial.commitments.create') && abre ? bt('novoCompCamp', gi, 'Participante') : '') + '</div></div>' +
       blocoMeta(g) +
       '<div class="g2f-note" style="margin:2px 2px 6px">Os valores desta área são internos: o participante recebe só o resumo do próprio compromisso.</div>';
     h += cs.length ? '<div>' + cs.map(function (c, ci) { return linhaPart(g, gi, c, ci); }).join('') + '</div>' : '<div class="empty">Nenhum participante ainda. Use "Participante" para incluir quem vai contribuir.</div>';
     return h + '</div>';
   }
   function tCamp() {
-    return Promise.all([rpc('v39_fin_campaigns', C({})), carregarSent()]).then(function (r) {
+    return Promise.all([rpcCamps(), carregarSent()]).then(function (r) {
       CAMPS = r[0] || [];
       corpo(htmlCamp());
       resolverFonesCamp().then(function (achou) {
@@ -1797,7 +1984,7 @@ function itensAbertos(f) {
       { k: 'status', l: 'Situação', t: 'select', o: [['active', 'Ativa'], ['planned', 'Planejada'], ['completed', 'Concluída'], ['cancelled', 'Cancelada']], v: g.status || 'active', vazio: false },
       { k: 'motivo', l: 'Motivo (se cancelar)', t: 'textarea' }, { k: 'obs', l: 'Observação', t: 'textarea', v: g.obs }
     ], 'Salvar', function (v) {
-      return rpc('v39_fin_campaign_save', C({ p_id: g.id || null, p: { nome: v.nome, tipo: v.tipo, objetivo: v.objetivo, responsavelId: v.responsavelId || g.responsavelId || null, inicio: v.inicio || null, fim: v.fim || null, meta: v.meta, status: v.status, motivo: v.motivo || null, obs: v.obs || null } })).then(function () { return 'Campanha salva.'; });
+      return rpc('v39_fin_campaign_save', C({ p_id: g.id || null, p: { nome: v.nome, tipo: v.tipo, objetivo: v.objetivo, responsavelId: v.responsavelId || g.responsavelId || null, inicio: v.inicio || null, fim: v.fim || null, meta: v.meta, status: v.status, motivo: v.motivo || null, obs: v.obs || null } })).then(function () { return visaoInst() ? rpc('v39_fin_campaign_adopt', C({})).catch(function () { return null; }) : null; }).then(function () { return 'Campanha salva' + (temInstituto() ? ' em ' + visaoRot() : '') + '.'; });
     });
   }
   function addMeses(iso, n) {
@@ -1948,14 +2135,30 @@ function itensAbertos(f) {
   }
 
   /* ───────────── RELATÓRIOS ───────────── */
+  function blocoExplicaCaixa(x) {
+    var r = x.resultado || {}, f = x.fluxo || {};
+    var pagCx = arr2((f.pagamentos || []).reduce(function (t, y) { return t + Math.abs(num(y.valor)); }, 0)), fat = arr2(Math.abs(num(f.liquidacaoCartao))), desp = arr2(num(r.despesas)), dif = arr2(desp - pagCx - fat);
+    return '<div class="card"><h3>Despesas: resultado × caixa</h3><div class="g2f-tw"><table class="g2f-tbl"><tbody>' +
+      '<tr><td>Despesas no resultado (competência)</td><td class="r">' + brl(desp) + '</td></tr>' +
+      '<tr><td>Pagas no caixa (sem cartão)</td><td class="r">' + brl(pagCx) + '</td></tr>' +
+      '<tr><td>Faturas de cartão pagas no período</td><td class="r">' + brl(fat) + '</td></tr>' +
+      '<tr><td><b>Diferença</b></td><td class="r"><b class="' + (Math.abs(dif) < 0.005 ? 'g2f-pos' : 'g2f-neg') + '">' + brl(dif) + '</b></td></tr></tbody></table></div>' +
+      '<div class="g2f-mut" style="margin-top:6px;line-height:1.5">' + (Math.abs(dif) < 0.005 ? 'Resultado e caixa conferem neste período.' : 'A diferença vem das compras no cartão: elas entram no resultado no mês do vencimento da fatura, mas só saem do caixa quando a fatura é paga. Ela zera quando as faturas que vencem no período são pagas nele.') + '</div></div>';
+  }
   function tRel() {
-    return rpc('v39_fin_report', C({ p_year: S.ano, p_month: S.relMes ? S.mes : null })).then(function (x) {
+    var hj0 = new Date();
+    return Promise.all([rpc('v39_fin_report', C({ p_year: S.ano, p_month: S.relMes ? S.mes : null })),
+      rpc('v39_fin_overview', C({ p_year: hj0.getFullYear(), p_month: hj0.getMonth() + 1 })).catch(function () { return null; }),
+      carregarAPagar().catch(function () { APAGAR = []; PREV = []; return []; }),
+      pode('financial.campaigns.view') ? rpcCamps().catch(function () { return CAMPS || []; }) : Promise.resolve([])]).then(function (rr) {
+      var x = rr[0], saldoHoje = saldoDe(rr[1]); CAMPS = rr[3] || [];
       var p = x.periodo || {}, r = x.resultado || {}, f = x.fluxo || {}, tit = (S.relMes ? MESES[S.mes - 1] + '/' : 'Ano ') + S.ano;
       var h = '<div class="g2f-tool g2f-noprint"><select data-c="relMes" style="flex:1 1 180px"><option value="1"' + (S.relMes ? ' selected' : '') + '>Mês selecionado</option><option value="0"' + (!S.relMes ? ' selected' : '') + '>Ano inteiro</option></select>' + btn('imprimir', 'Imprimir / PDF', 'file', 'g2f-soft') + '</div>';
       h += '<div class="card"><h3>' + esc(x.entidade || 'Igreja') + ' — Relatório financeiro ' + esc(tit) + '</h3><div class="g2f-mut">' + (x.documento ? 'CNPJ ' + esc(x.documento) + ' · ' : '') + 'Período ' + dataBR(p.inicio) + ' a ' + dataBR(p.fim) + ' · ' + (p.definitivo ? 'meses fechados (definitivo)' : 'PRÉVIA: há mês aberto no período') + ' · gerado em ' + esc(new Date(p.geradoEm || Date.now()).toLocaleString('pt-BR')) + '</div></div>';
       h += '<div class="stats">' + stat('Receitas', brl(r.receitas), 'in', 'down', 'g2f-pos') + stat('Despesas', brl(r.despesas), 'out', 'up', 'g2f-neg') + stat('Superávit / déficit', brl(r.superavit), 'pri', 'trend', num(r.superavit) < 0 ? 'g2f-neg' : 'g2f-pos') + '</div>';
+      h += blocoFuturo(futuroCalc(saldoHoje)) + blocoExplicaCaixa(x);
       var cats = x.categorias || [];
-      h += '<div class="card"><h3>Resultado por categoria</h3><div class="g2f-tw"><table class="g2f-tbl"><thead><tr><th>Cód. contábil</th><th>Categoria</th><th class="r">Lançamentos</th><th class="r">Valor</th></tr></thead><tbody>' +
+      h += '<div class="card"><h3>Resultado por categoria <span class="g2f-mut" style="font-weight:500">(competência: compra no cartão entra no mês do vencimento da fatura)</span></h3><div class="g2f-tw"><table class="g2f-tbl"><thead><tr><th>Cód. contábil</th><th>Categoria</th><th class="r">Lançamentos</th><th class="r">Valor</th></tr></thead><tbody>' +
         (cats.length ? cats.map(function (c) { return '<tr><td>' + esc(c.contabil || '—') + '</td><td>' + esc(c.nome) + '</td><td class="r">' + c.lancamentos + '</td><td class="r ' + (num(c.valor) < 0 ? 'g2f-neg' : 'g2f-pos') + '">' + brl(c.valor) + '</td></tr>'; }).join('') : '<tr><td colspan="4">Sem lançamentos.</td></tr>') + '</tbody></table></div></div>';
       h += '<div class="card"><h3>Fluxo de caixa (método direto)</h3><div class="g2f-tw"><table class="g2f-tbl"><tbody><tr><td>Caixa inicial (todas as contas)</td><td class="r">' + brl(f.caixaInicial) + '</td></tr>' +
         (f.recebimentos || []).map(function (y) { return '<tr><td>+ ' + esc(y.nome) + '</td><td class="r g2f-pos">' + brl(y.valor) + '</td></tr>'; }).join('') +
@@ -2101,7 +2304,16 @@ function itensAbertos(f) {
       case 'fecharConc':
         return form('Saldo do extrato em ' + MESES[S.mes - 1] + '/' + S.ano, [{ k: 'saldo', l: 'Saldo final do extrato bancário', t: 'money', req: true }], 'Registrar',
           function (x) { return rpc('v39_fin_recon_close', C({ p_account: S.concConta, p_year: S.ano, p_month: S.mes, p_closing: x.saldo })).then(function () { return 'Saldo do extrato registrado.'; }); });
-      case 'novaCamp': return formCamp(null);
+      case 'visao': return trocarVisao(v);
+        case 'moverCamp': {
+          var gm = CAMPS[+v]; if (!gm) return;
+          var opsE = (S.entidades || []).filter(function (e) { return e.tipo === 'church' || e.ativa !== false; }).map(function (e) { return [e.id || '', (e.tipo === 'church' ? 'Igreja' : 'Instituto') + (e.cnpjEfetivo ? ' · CNPJ ' + cnpjFmt(e.cnpjEfetivo) : '')]; });
+          return form('Mover campanha · ' + gm.nome, [
+            { t: 'info', l: 'Escolha o CNPJ a que esta campanha pertence. Os recebimentos já lançados continuam nas contas em que entraram.' },
+            { k: 'ent', l: 'Pertence a', t: 'select', o: opsE, v: S.visao || '', vazio: false, req: false }
+          ], 'Mover', function (x) { return rpc('v39_fin_campaign_move', C({ p_campaign: gm.id, p_entity: x.ent || null })).then(function () { return 'Campanha movida. Ela aparece quando o CNPJ dela estiver escolhido no seletor.'; }); });
+        }
+        case 'novaCamp': return formCamp(null);
       case 'editCamp': return formCamp(CAMPS[+v]);
       case 'novoComp': return novoComp(null);
       case 'novoCompCamp': return novoComp(+v);
@@ -2150,7 +2362,7 @@ function itensAbertos(f) {
   }
   function digita(ev) {
     var el = ev.target;
-    if (el && el.getAttribute && el.getAttribute('data-c') === 'busca') { S.livroBusca = el.value; pintarLista(); }
+    if (el && el.getAttribute && el.getAttribute('data-c') === 'livroBusca') { S.livroBusca = String(el.value || ''); pintarLista(); }
   }
 
   /* ───────────── PAINEL na tela Financeiro: dashboard do Livro ───────────── */
@@ -2171,8 +2383,9 @@ function itensAbertos(f) {
       var ps = [pode('financial.book.view') || pode('financial.reports.view') ? rpc('v39_fin_overview', C({ p_year: S.ano, p_month: S.mes })).catch(function () { return null; }) : Promise.resolve(null),
         pode('financial.sources.view') ? rpc('v39_fin_source_pending', C({})).catch(function () { return null; }) : Promise.resolve(null),
         (pode('financial.expenses.approve') || pode('financial.expenses.pay')) ? rpc('v39_fin_expenses', C({ p_filter: 'abertas' })).catch(function () { return null; }) : Promise.resolve(null),
-        pode('financial.campaigns.view') ? rpc('v39_fin_campaigns', C({})).catch(function () { return null; }) : Promise.resolve(null),
-        pode('financial.reports.view') ? rpc('v39_fin_report', C({ p_year: S.ano, p_month: null })).catch(function () { return null; }) : Promise.resolve(null), carregarSent()];
+        pode('financial.campaigns.view') ? rpcCamps().catch(function () { return null; }) : Promise.resolve(null),
+        pode('financial.reports.view') ? rpc('v39_fin_report', C({ p_year: S.ano, p_month: null })).catch(function () { return null; }) : Promise.resolve(null), carregarSent(),
+        (pode('financial.expenses.view') || pode('financial.book.view') || pode('financial.expenses.pay')) ? carregarAPagar().catch(function () { APAGAR = []; PREV = []; return []; }) : Promise.resolve([])];
       return Promise.all(ps).then(function (r) { if (r[3]) CAMPS = r[3]; D.dados = { ov: r[0], pend: r[1], desp: r[2], camps: r[3], rep: r[4] }; });
     }).catch(function (e) { console.warn('[2Gather][fin] ' + traduz(e)); D.dados = { erro: traduz(e) }; })
       .then(function () { D.carregando = false; D.em = Date.now(); var x = $('g2f-dash'); if (x) x.remove(); pintarDash(); });
@@ -2203,6 +2416,7 @@ function itensAbertos(f) {
   function htmlDash() {
     var d = D.dados || {}, ov = d.ov || {}, contas = ov.contas || [], L = ov.livro || [], t = totaisCaixa(L), h = '';
     if (d.erro) return '<div class="card">' + esc(d.erro) + '</div>';
+    h += htmlSeletor('dash') + (temInstituto() ? bannerVisao() : '');
     var saldo = contas.reduce(function (s, a) { return s + num(a.saldoAtual); }, 0), prev = d.camps ? previstos() : [];
     var nPend = d.pend && d.pend.itens ? d.pend.itens.length : 0;
     var nAprov = (d.desp || []).filter(function (e) { return e.status === 'pending_approval' && !e.souSolicitante; }).length;
@@ -2216,12 +2430,13 @@ function itensAbertos(f) {
     }
     h += '<div class="big-cta" data-d="abrir" data-v="livro" role="button" tabindex="0"><div class="bi">' + ic('book', 26) + '</div><div><b>Abrir Livro financeiro</b><span>Lançamentos, despesas, campanhas e relatórios</span></div></div>';
     var pend = [];
-    if (nPend && pode('financial.sources.view')) pend.push({ n: nPend, txt: 'GC/cultos com valores <b>a conferir</b>', aba: 'conferir', i: 'inbox' });
+    if (nPend && !visaoInst() && pode('financial.sources.view')) pend.push({ n: nPend, txt: 'GC/cultos com valores <b>a conferir</b>', aba: 'conferir', i: 'inbox' });
     if (nAprov && pode('financial.expenses.approve')) pend.push({ n: nAprov, txt: 'despesa(s) <b>aguardando sua aprovação</b>', aba: 'despesas', i: 'receipt' });
     if (nPagar && tes() && pode('financial.expenses.pay')) pend.push({ n: nPagar, txt: 'despesa(s) aprovada(s) <b>a pagar ou lançar na fatura</b>', aba: 'despesas', i: 'cash' });
     if (nMsg) pend.push({ n: nMsg, txt: 'mensagem(ns) de campanha <b>para enviar hoje</b>', aba: 'camp', i: 'chat' });
     if (pend.length) h += '<div class="card lp">' + pend.map(function (p) {
       return '<div class="row g2f-mv g2f-click" data-d="abrir" data-v="' + p.aba + '"><span class="g2f-ri amb">' + ic(p.i) + '</span><div class="info"><div class="nm"><b>' + p.n + '</b> ' + p.txt + '</div></div>' + ic('chevr') + '</div>'; }).join('') + '</div>';
+    if (d.ov) h += blocoFuturo(futuroCalc(saldoDe(ov)), true);
     if (ano) {
       var cols = ano.map(function (m) { return { rot: MES3[m.mes - 1], a: m.r, b: m.d, on: m.mes === S.mes, tit: MESES[m.mes - 1] + ': entradas ' + brl(m.r) + ' · saídas ' + brl(m.d) }; });
       var tr = ano.reduce(function (s, m) { return s + m.r; }, 0), td = ano.reduce(function (s, m) { return s + m.d; }, 0);
@@ -2288,7 +2503,8 @@ function itensAbertos(f) {
     dash.addEventListener('click', function (ev) {
       var b = ev.target.closest('[data-d]'); if (!b) return;
       var k = b.getAttribute('data-d');
-      if (k === 'abrir') return abrir(b.getAttribute('data-v'));
+      if (k === 'visao') return trocarVisao(b.getAttribute('data-v'));
+        if (k === 'abrir') return abrir(b.getAttribute('data-v'));
       if (k === 'mesAnt' || k === 'mesProx') { var m = S.mes + (k === 'mesAnt' ? -1 : 1); if (m < 1) { m = 12; S.ano--; } else if (m > 12) { m = 1; S.ano++; } S.mes = m; dashCarregar(true); }
     });
     dash.addEventListener('keydown', function (ev) { if ((ev.key === 'Enter' || ev.key === ' ') && ev.target.getAttribute && ev.target.getAttribute('data-d') === 'abrir') { ev.preventDefault(); abrir(ev.target.getAttribute('data-v')); } });
@@ -2313,7 +2529,7 @@ function itensAbertos(f) {
       var at = $('g2f-atalhos'); if (at) at.remove();
       var u = String(eu().id || eu().usuario || eu().email || '') + '|' + (igrejaId() || '');
       if (u !== ultimoUsuario) {
-        ultimoUsuario = u; S.ctx = null; S.cat = null; S.cache = null; D.dados = null; S.aberto = false; CAMPS = []; SENT = null; PLANOS = {}; FATIMP = []; FATS = [];
+        ultimoUsuario = u; S.ctx = null; S.cat = null; S.cache = null; D.dados = null; S.aberto = false; CAMPS = []; SENT = null; PLANOS = {}; FATIMP = []; FATS = []; S.entidades = null; S.visao = null; S.entEm = 0; ITENS = {}; PRODS = null; CAMPMAP = {};
         var o = $('g2fin'); if (o) o.remove(); var d = $('g2f-dash'); if (d) d.remove(); fecharMod();
       }
       if (!cfg().usuario || !v39()) return;
@@ -2337,7 +2553,7 @@ function itensAbertos(f) {
   window.G2_FIN.fechar = fechar;
   window.G2_FIN._lerExtrato = lerExtrato;
   window.G2_FIN._lerValor = lerValor;
-  window.G2_FIN._t = { S: S, tLivro: tLivro, tCamp: tCamp, tDespesas: tDespesas, tConferir: tConferir, tCad: tCad, tTransf: tTransf, tConc: tConc, tRel: tRel, htmlDash: htmlDash, D: D,
+  window.G2_FIN._t = { trocarVisao: trocarVisao, futuroCalc: futuroCalc, blocoFuturo: blocoFuturo, htmlSeletor: htmlSeletor, bannerVisao: bannerVisao, carregarEntidades: carregarEntidades, S: S, tLivro: tLivro, tCamp: tCamp, tDespesas: tDespesas, tConferir: tConferir, tCad: tCad, tTransf: tTransf, tConc: tConc, tRel: tRel, htmlDash: htmlDash, D: D,
     setCamps: function (c) { CAMPS = c; }, setSent: function (s) { SENT = s; }, filaMsgs: filaMsgs, previstos: previstos, novaEntrada: novaEntrada, novoComp: novoComp, editParc: editParc, zap: zap, receber: receber,
     msgTexto: msgTexto, genParcelas: genParcelas, addMeses: addMeses, bt: bt, carregarCtx: carregarCtx, carregarCat: carregarCat, pintarBase: pintarBase, restaurar: restaurar, manter: manter, corpo: corpo,
     formDesp: formDesp, pagarDesp: pagarDesp, tPagar: tPagar, previaFatura: previaFatura, linhaDesp: linhaDesp, formCorrDesp: formCorrDesp, editMov: editMov, interceptForm: null, formPagarFatura: formPagarFatura, estornarFatura: estornarFatura, itensAbertos: itensAbertos, proximaFatura: proximaFatura, resolverFone: resolverFone, foneDe: foneDe, htmlCamp: htmlCamp, zap: zap, ofertarRecibo: ofertarRecibo, resolverFonesCamp: resolverFonesCamp, totaisCaixa: totaisCaixa, despesasPrevistas: despesasPrevistas, carregarAPagar: carregarAPagar, desenharLivro: desenharLivro, htmlDetCartao: htmlDetCartao, linhaCartao: linhaCartao, parcelasPrevistas: parcelasPrevistas, formImportarFatura: formImportarFatura, parseFatura: parseFatura, conferirFatura: conferirFatura, mesFechamento: mesFechamento, vencFatura: vencFatura,

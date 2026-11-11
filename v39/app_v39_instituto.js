@@ -1,4 +1,7 @@
-/* 2Gather v39 · Instituto · INST-5
+/* 2Gather v39 · Instituto · INST-6
+   INST-6: a entrada por COMPRA só lista despesas do CNPJ do Instituto e já traz os itens comprados na despesa (produto, quantidade comprada, já recebido, valor);
+   você informa quanto chegou, lote e validade. Lote obrigatório na Farmácia e nos produtos que exigem lote (mensagem clara). Requer FIN_S15 (e INST_S12).
+   Base INST-5:
    INST-5: ENTRADA POR COMPRA LIGADA A UMA DESPESA DO FINANCEIRO. A NF, a aprovação, o pagamento e a contabilidade ficam no Financeiro;
    aqui só se informa o que entrou no estoque (produto, quantidade, lote, validade) e a despesa a que se refere. Requer INST_S12.
    Base INST-3:
@@ -15,7 +18,7 @@
    Diagnóstico no Console: G2_INST.versao · G2_INST.acoes() */
 (function () {
   'use strict';
-  var VERSAO = 'INST-5';
+  var VERSAO = 'INST-6';
   if (window.G2_INST) return;
   var M = window.G2_INST = { versao: VERSAO, ultimo: {} };
   console.info('[2Gather] instituto ' + VERSAO);
@@ -71,7 +74,9 @@
     SELF_APPROVAL: 'Quem pediu ou contou não pode aprovar o próprio pedido.',
     PURCHASE_EXPENSE_REQUIRED: 'Escolha a despesa do Financeiro.',
     PURCHASE_EXPENSE_NOT_FOUND: 'Despesa não encontrada. Atualize a lista.',
-    PURCHASE_EXPENSE_INVALID: 'Esta despesa está recusada, cancelada ou estornada e não pode receber entradas.'
+    PURCHASE_EXPENSE_INVALID: 'Esta despesa está recusada, cancelada ou estornada e não pode receber entradas.',
+    PURCHASE_EXPENSE_ENTITY: 'Esta despesa não é do CNPJ do Instituto. No Financeiro, lance a despesa com o seletor em Instituto.',
+    PURCHASE_PRODUCT_NOT_IN_EXPENSE: 'Este produto não está nos itens da despesa.'
   };
   function traduz(e) {
     var t = String((e && (e.message || e.code)) || e || ''), det = (e && e.details) || '';
@@ -79,6 +84,7 @@
       if (k === 'STOCK_INSUFFICIENT') { try { var j = JSON.parse(det); if (j && j.message) return 'Saldo insuficiente: ' + j.message.replace(/^Saldo insuficiente de /, '') + '.'; } catch (x) { /* sem detalhe */ } }
       return MSG[k];
     }
+    if (/identifica[cç][aã]o de lote|exige.{0,20}lote/i.test(t)) return 'Este produto exige o número do lote. Informe o lote dos itens marcados com *.';
     if (/PGRST202|find the function|does not exist/i.test(t)) return 'O servidor ainda não tem esta função. Avise o administrador.';
     if (/row-level|policy|403|unauthorized/i.test(t)) return 'Sem permissão para guardar a foto da receita. Avise o administrador (bucket 2gather-private).';
     if (/Failed to fetch|NetworkError|Load failed/i.test(t)) return 'Sem conexão. Tente novamente.';
@@ -403,7 +409,7 @@
     document.body.appendChild(b); b.click(); b.remove();   // usa o formulário de cadastro com LGPD que o app já tem
   }
 
-  /* ───────────── INST-5: entrada por compra ligada a uma despesa do Financeiro ───────────── */
+  /* ───────────── INST-6: entrada por compra ligada a uma despesa do Financeiro (só do CNPJ do Instituto) ───────────── */
   var CP = null;
   function brl(n) { return Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
   function num(t) {
@@ -411,10 +417,16 @@
     if (s.indexOf(',') >= 0) s = s.replace(/\./g, '').replace(',', '.');
     var n = Number(s); return isFinite(n) ? n : NaN;
   }
+  function fq(n) { return String(Math.round(Number(n || 0) * 1000) / 1000).replace('.', ','); }
+  function cnpjFmt(t) { var d = String(t || '').replace(/\D/g, ''); return d.length === 14 ? d.slice(0, 2) + '.' + d.slice(2, 5) + '.' + d.slice(5, 8) + '/' + d.slice(8, 12) + '-' + d.slice(12) : d; }
   var ST_DESP = { draft: ['', 'rascunho'], pending_approval: ['a', 'aguardando aprovação'], correction_requested: ['a', 'correção pedida'], approved: ['d', 'aprovada'], partially_paid: ['d', 'parcialmente paga'], paid: ['v', 'paga'] };
+  function exigeLote(it) {
+    var p = (CP.produtos || []).filter(function (x) { return String(x.id) === String(it.produtoId); })[0] || {};
+    return CP.tipo === 'farmacia' || !!(p.exigeLote || p.controlaLote || p.controla_lote || p.requerLote) || !!it.exigeLote;
+  }
   M.abrirCompra = function (tipo, prodId) {
     tipo = tipo === 'farmacia' ? 'farmacia' : 'mercado';
-    CP = { tipo: tipo, itens: [{ produtoId: prodId || '', qtd: '', lote: '', validade: '' }], despesaId: '', obs: '', busca: '', produtos: [], despesas: [] };
+    CP = { tipo: tipo, itens: [{ produtoId: prodId || '', qtd: '', lote: '', validade: '' }], fixo: false, despesaId: '', obs: '', busca: '', produtos: [], despesas: [] };
     abrir('<h3>Entrada por compra · ' + NOME[tipo] + '</h3><div class="vazio">Carregando produtos e despesas…</div>');
     var pDados = M.ultimo[tipo] ? Promise.resolve(M.ultimo[tipo]) : ACOES.estDados({ tipo: tipo });
     Promise.all([pDados, chamarRpc('v39_est_expenses_open', { p_tipo: tipo })]).then(function (r) {
@@ -427,6 +439,19 @@
     });
   };
   function opt(l, sel, vazio) { return (vazio ? '<option value="">' + vazio + '</option>' : '') + l.map(function (x) { return '<option value="' + esc(x[0]) + '"' + (String(x[0]) === String(sel) ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join(''); }
+  function despDe(id) { return CP.despesas.filter(function (d) { return d.id === id; })[0] || null; }
+  function linhasDaDespesa(d) {
+    var its = (d && d.itens) || [];
+    if (!its.length) return [{ produtoId: '', qtd: '', lote: '', validade: '' }];
+    return its.map(function (i) {
+      var rest = Math.max(0, Math.round((Number(i.qtd) - Number(i.recebido || 0)) * 1000) / 1000);
+      return { produtoId: i.produtoId, desc: i.descricao, unidade: i.unidade || 'un', comprada: Number(i.qtd), recebido: Number(i.recebido || 0), restante: rest, valorUnit: Number(i.valorUnit || 0), qtd: rest > 0 ? fq(rest) : '', lote: '', validade: '', fixo: true };
+    });
+  }
+  function escolherDespesa(id) {
+    lerCompra(); CP.despesaId = id; var d = despDe(id);
+    CP.fixo = !!(d && (d.itens || []).length); CP.itens = linhasDaDespesa(d); pintarCompra();
+  }
   function lerCompra() {
     if (!CP || !$('cp-obs')) return;
     CP.obs = $('cp-obs').value.trim();
@@ -436,61 +461,95 @@
     var q = String(CP.busca || '').toLowerCase();
     return CP.despesas.filter(function (d) { return !q || String([d.fornecedor, d.descricao, d.numero].join(' ')).toLowerCase().indexOf(q) >= 0 || d.id === CP.despesaId; }).slice(0, 25);
   }
+  function resumoItens(d) { return (d.itens || []).map(function (i) { return fq(i.qtd) + ' ' + (i.unidade || 'un') + ' ' + i.descricao; }).join(' · '); }
   function htmlDespesas() {
     var l = despFiltradas();
-    if (!CP.despesas.length) return '<div class="vazio">Nenhuma despesa encontrada.<br>Lance primeiro a despesa no <b>Financeiro</b> (fornecedor, NF anexada e categoria) e volte aqui.</div>';
+    if (!CP.despesas.length) return '<div class="vazio">Nenhuma despesa do <b>CNPJ do Instituto</b> encontrada.<br>No Financeiro, troque o seletor para <b>Instituto</b>, lance a despesa (com os itens comprados) e volte aqui.</div>';
     if (!l.length) return '<div class="vazio">Nenhuma despesa com esta busca.</div>';
     return l.map(function (d) {
-      var s = ST_DESP[d.status] || ['', d.status], on = d.id === CP.despesaId;
+      var s = ST_DESP[d.status] || ['', d.status], on = d.id === CP.despesaId, tit = resumoItens(d);
       return '<div class="ln" style="cursor:pointer;border-radius:10px;padding:9px 8px;' + (on ? 'background:#EAF0FF;border:1.5px solid #2F5BEA' : '') + '" data-i="cpEsc" data-v="' + esc(d.id) + '" role="button" tabindex="0">' +
         '<div class="i"><b>' + esc(d.fornecedor || 'Sem fornecedor') + ' · ' + brl(d.valor) + '</b><small>' + esc([d.numero, d.descricao].filter(Boolean).join(' · ')) + '</small>' +
-        '<small>emissão ' + (d.emissao ? dataBR(d.emissao) : '—') + ' · ' + esc(d.entidade || '') + (d.entradas ? ' · ' + d.entradas + ' entrada(s) já ligada(s)' : '') + '</small></div>' +
+        (tit ? '<small>Itens: ' + esc(tit) + '</small>' : '<small>Sem itens informados: escolha os produtos na entrada.</small>') +
+        '<small>emissão ' + (d.emissao ? dataBR(d.emissao) : '—') + ' · Instituto' + (d.cnpj ? ' · CNPJ ' + esc(cnpjFmt(d.cnpj)) : '') + (d.entradas ? ' · ' + d.entradas + ' entrada(s) já ligada(s)' : '') + '</small></div>' +
         '<span class="pl ' + s[0] + '">' + (on ? '✓ ' : '') + esc(s[1]) + '</span></div>';
     }).join('');
   }
-  function pintarCompra() {
+  function totalEntrada() {
+    return Math.round(CP.itens.reduce(function (t, it) { var q = num(it.qtd); return t + (q > 0 && it.valorUnit > 0 ? q * it.valorUnit : 0); }, 0) * 100) / 100;
+  }
+  function htmlLinhas() {
     var far = CP.tipo === 'farmacia', prods = CP.produtos.map(function (p) { return [p.id, p.nome + (p.apresentacao ? ' · ' + p.apresentacao : '') + ' (' + (p.unidade || 'un') + ')']; });
+    return CP.itens.map(function (it, i) {
+      var reqL = exigeLote(it), campos =
+        '<div class="gr2"><div><label for="cp-qtd-' + i + '">Quantidade que chegou' + (it.fixo ? '' : ' *') + '</label><input id="cp-qtd-' + i + '" inputmode="decimal" value="' + esc(it.qtd) + '"></div>' +
+        '<div><label for="cp-lote-' + i + '">Lote' + (reqL ? ' *' : ' (opcional)') + '</label><input id="cp-lote-' + i + '" value="' + esc(it.lote) + '"></div></div>' +
+        '<label for="cp-validade-' + i + '">Validade' + (far ? ' *' : ' (opcional)') + '</label><input id="cp-validade-' + i + '" type="date" value="' + esc(it.validade) + '">';
+      if (it.fixo) {
+        return '<div style="border-bottom:1px solid #F0F1F4;padding:8px 0 10px"><b>' + esc(it.desc) + '</b>' +
+          '<div class="sb">comprado ' + fq(it.comprada) + ' ' + esc(it.unidade) + ' · já recebido ' + fq(it.recebido) + ' · <b>falta ' + fq(it.restante) + '</b>' + (it.valorUnit > 0 ? ' · ' + brl(it.valorUnit) + ' cada' : '') + '</div>' + campos + '</div>';
+      }
+      return '<div style="border-bottom:1px solid #F0F1F4;padding:6px 0 10px"><label for="cp-produtoId-' + i + '">Produto *</label><div style="display:flex;gap:8px"><select id="cp-produtoId-' + i + '" style="flex:1">' + opt(prods, it.produtoId, 'Escolha…') + '</select>' +
+        (CP.itens.length > 1 ? '<button type="button" class="bt r sm" data-i="cpRem" data-v="' + i + '" aria-label="Remover item ' + (i + 1) + '">×</button>' : '') + '</div>' + campos + '</div>';
+    }).join('');
+  }
+  function pintarCompra() {
+    var d = despDe(CP.despesaId);
     var h = '<h3>Entrada por compra · ' + NOME[CP.tipo] + '</h3>' +
-      '<div class="sb">A NF, a aprovação e o pagamento ficam no <b>Financeiro</b>. Aqui você só informa o que <b>entrou no estoque</b>, ligando à despesa já lançada.</div>' +
+      '<div class="sb">A NF, a aprovação e o pagamento ficam no <b>Financeiro</b>. Aqui você confere o que chegou e registra no estoque. Só aparecem despesas lançadas no <b>CNPJ do Instituto</b>.</div>' +
       '<div class="card"><b>1. Despesa do Financeiro *</b>' +
       '<label for="cp-busca">Buscar por fornecedor, descrição ou número</label><input id="cp-busca" data-k="cpbusca" autocomplete="off" value="' + esc(CP.busca) + '">' +
-      '<div id="cp-lista" style="max-height:34vh;overflow:auto;margin-top:6px">' + htmlDespesas() + '</div></div>' +
-      '<div class="card"><b>2. O que entrou no estoque</b>' + CP.itens.map(function (it, i) {
-        return '<div style="border-bottom:1px solid #F0F1F4;padding:6px 0 10px"><label for="cp-produtoId-' + i + '">Produto *</label><div style="display:flex;gap:8px"><select id="cp-produtoId-' + i + '" style="flex:1">' + opt(prods, it.produtoId, 'Escolha…') + '</select>' +
-          (CP.itens.length > 1 ? '<button type="button" class="bt r sm" data-i="cpRem" data-v="' + i + '" aria-label="Remover item ' + (i + 1) + '">×</button>' : '') + '</div>' +
-          '<div class="gr2"><div><label for="cp-qtd-' + i + '">Quantidade *</label><input id="cp-qtd-' + i + '" inputmode="decimal" value="' + esc(it.qtd) + '"></div>' +
-          '<div><label for="cp-lote-' + i + '">Lote' + (far ? '' : ' (opcional)') + '</label><input id="cp-lote-' + i + '" value="' + esc(it.lote) + '"></div></div>' +
-          '<label for="cp-validade-' + i + '">Validade' + (far ? ' *' : ' (opcional)') + '</label><input id="cp-validade-' + i + '" type="date" value="' + esc(it.validade) + '"></div>';
-      }).join('') + '<div class="ft" style="justify-content:flex-start"><button type="button" class="bt s sm" data-i="cpAdd">+ Item</button></div>' +
-      '<label for="cp-obs">Observação</label><input id="cp-obs" maxlength="150" value="' + esc(CP.obs) + '"></div>' +
-      '<div class="err" id="g2i-err" aria-live="polite"></div>' +
+      '<div id="cp-lista" style="max-height:30vh;overflow:auto;margin-top:6px">' + htmlDespesas() + '</div></div>';
+    if (!CP.despesaId) h += '<div class="card"><div class="vazio">Escolha a despesa acima para ver os itens comprados.</div></div>';
+    else {
+      h += '<div class="card"><b>2. O que chegou no estoque</b>' +
+        (CP.fixo ? '<div class="sb">Itens da despesa de ' + esc((d && d.fornecedor) || 'fornecedor') + '. Deixe a quantidade <b>em branco</b> no que ainda não chegou.</div>' : '<div class="sb">Esta despesa não tem itens informados: escolha os produtos.</div>') +
+        '<div id="cp-linhas">' + htmlLinhas() + '</div>' +
+        (CP.fixo ? '' : '<div class="ft" style="justify-content:flex-start"><button type="button" class="bt s sm" data-i="cpAdd">+ Item</button></div>') +
+        '<div class="sb" id="cp-tot" style="text-align:right;margin-top:6px">' + (CP.fixo ? 'Valor desta entrada: <b>' + brl(totalEntrada()) + '</b> de ' + brl(d && d.valor) : '') + '</div>' +
+        '<label for="cp-obs">Observação</label><input id="cp-obs" maxlength="150" value="' + esc(CP.obs) + '"></div>';
+    }
+    h += '<div class="err" id="g2i-err" aria-live="polite"></div>' +
       '<div class="ft"><button type="button" class="bt s" data-i="fechar">Cancelar</button><button type="button" data-i="cpSalvar">Registrar entrada</button></div>';
     corpo(h);
   }
   function validarCompra() {
-    var far = CP.tipo === 'farmacia';
+    var far = CP.tipo === 'farmacia', algum = false;
     if (!CP.despesaId) return 'Escolha a despesa do Financeiro.';
     for (var i = 0; i < CP.itens.length; i++) {
-      var it = CP.itens[i];
+      var it = CP.itens[i], q = num(it.qtd);
+      if (it.fixo && !(q > 0)) continue;
       if (!it.produtoId) return 'Escolha o produto do item ' + (i + 1) + '.';
-      if (!(num(it.qtd) > 0)) return 'Informe a quantidade do item ' + (i + 1) + '.';
+      if (!(q > 0)) return 'Informe a quantidade do item ' + (i + 1) + '.';
       if (far && !it.validade) return 'Informe a validade do item ' + (i + 1) + ' (medicamento).';
+      if (exigeLote(it) && !it.lote) { it.exigeLote = true; return 'Informe o lote do item ' + (i + 1) + ': este produto exige identificação de lote.'; }
+      algum = true;
     }
+    if (!algum) return 'Informe a quantidade que chegou de ao menos um item.';
     return '';
   }
   function salvarCompra(btn) {
     lerCompra();
     var err = $('g2i-err'), msg = validarCompra();
-    if (msg) { err.textContent = msg; return; }
-    var d = CP.despesas.filter(function (x) { return x.id === CP.despesaId; })[0] || {};
-    if (!confirm('Registrar a entrada no estoque ligada à despesa de ' + (d.fornecedor || 'fornecedor') + ' (' + brl(d.valor) + ')?')) return;
+    if (msg) { err.textContent = msg; pintarCompraMantendoErro(msg); return; }
+    var d = despDe(CP.despesaId) || {}, linhas = CP.itens.filter(function (it) { return num(it.qtd) > 0; });
+    var acima = linhas.filter(function (it) { return it.fixo && num(it.qtd) > it.restante + 0.0005; });
+    var q = 'Registrar a entrada no estoque ligada à despesa de ' + (d.fornecedor || 'fornecedor') + ' (' + brl(d.valor) + ')?';
+    if (acima.length) q = 'Atenção: ' + acima.map(function (it) { return it.desc + ' (chegou ' + it.qtd + ', faltava ' + fq(it.restante) + ')'; }).join('; ') + ' — quantidade maior que a comprada.\n\n' + q;
+    if (!confirm(q)) return;
     btn.disabled = true; btn.textContent = 'Registrando…';
     chamarRpc('v39_est_purchase_link', { p: { tipo: CP.tipo, despesaId: CP.despesaId, obs: CP.obs,
-      itens: CP.itens.map(function (it) { return { produtoId: it.produtoId, qtd: num(it.qtd), lote: it.lote, validade: it.validade }; }) } }).then(function (r) {
+      itens: linhas.map(function (it) { return { produtoId: it.produtoId, qtd: num(it.qtd), lote: it.lote, validade: it.validade }; }) } }).then(function (r) {
       fechar(); recarregarEstoque();
       aviso('Entrada registrada ✓ ' + r.itens + ' item(ns) ligados à despesa de ' + (r.fornecedor || 'fornecedor') + (r.numero ? ' (' + r.numero + ')' : '') + '.', 8000);
-    }).catch(function (e) { err.textContent = e.message; btn.disabled = false; btn.textContent = 'Registrar entrada'; });
+    }).catch(function (e) {
+      if (/exige o n[úu]mero do lote/i.test(e.message)) CP.itens.forEach(function (it) { if (!it.lote) it.exigeLote = true; });
+      err.textContent = e.message; btn.disabled = false; btn.textContent = 'Registrar entrada';
+      if (/exige o n[úu]mero do lote/i.test(e.message)) pintarCompraMantendoErro(e.message);
+    });
   }
+  // redesenha para marcar o lote como obrigatório e mantém a mensagem na tela
+  function pintarCompraMantendoErro(msg) { var l = $('cp-linhas'); if (l) l.innerHTML = htmlLinhas(); var er = $('g2i-err'); if (er) er.textContent = msg; }
 
   /* ───────────── eventos da janela ───────────── */
   function cliqueMod(ev) {
@@ -504,13 +563,14 @@
     if (k === 'pesNova') return novaPessoa();
     if (k === 'cpAdd') { lerCompra(); CP.itens.push({ produtoId: '', qtd: '', lote: '', validade: '' }); return pintarCompra(); }
     if (k === 'cpRem') { lerCompra(); CP.itens.splice(+v, 1); return pintarCompra(); }
-    if (k === 'cpEsc') { lerCompra(); CP.despesaId = v; return pintarCompra(); }
+    if (k === 'cpEsc') return escolherDespesa(v);
     if (k === 'cpSalvar') return salvarCompra(b);
   }
   function digitaMod(ev) {
     var k = ev.target.getAttribute && ev.target.getAttribute('data-k');
     if (k === 'busca' && INV) { lerContagem(); INV.busca = ev.target.value; var el = $('g2i-lin'); if (el) el.innerHTML = htmlLinhasInv(); }
-    if (k === 'cpbusca' && CP) { CP.busca = ev.target.value; var cl = $('cp-lista'); if (cl) cl.innerHTML = htmlDespesas(); }
+if (k === 'cpbusca' && CP) { CP.busca = ev.target.value; var cl = $('cp-lista'); if (cl) cl.innerHTML = htmlDespesas(); }
+    if (CP && /^cp-qtd-/.test(ev.target.id || '') && CP.fixo && $('cp-tot')) { lerCompra(); var d0 = despDe(CP.despesaId); $('cp-tot').innerHTML = 'Valor desta entrada: <b>' + brl(totalEntrada()) + '</b> de ' + brl(d0 && d0.valor); }
     if (k === 'buscaP' && PES) { PES.busca = ev.target.value; var pl = $('g2i-pl'); if (pl) pl.innerHTML = htmlListaPes(); }
   }
   M._t = { pintarBarra: pintarBarra, abrirInventario: abrirInventario, abrirAprovacoes: abrirAprovacoes, abrirPessoas: abrirPessoas, enviarReceita: enviarReceita };
