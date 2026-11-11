@@ -1,4 +1,10 @@
-/* 2Gather v39 · Financeiro completo · FIN-ALL-15
+/* 2Gather v39 · Financeiro completo · FIN-ALL-16
+   FIN-ALL-16 (requer FIN_S16_saldo_inicial.sql só para "Alterar saldo inicial"; o resto funciona sem ele; inclui tudo do FIN-ALL-15)
+   - ENTRADAS/SAÍDAS DO MÊS: o estorno deixa de aparecer como entrada nova (e a saída estornada deixa de contar em dobro). Ex.: pagamento de fatura de R$ 250
+     estornado e pago de novo mostrava "Saídas R$ 500 (fatura)" e "Entradas +R$ 250"; agora mostra só o pagamento que vale (R$ 250). O resultado não muda.
+   - CADASTROS › Contas bancárias e caixas: botão "Alterar saldo" (conta que já tem saldo inicial): estorna o lançamento antigo com motivo e lança o novo.
+     "Editar" continua alterando nome, banco, agência, conta, PIX e situação.
+   Base FIN-ALL-15:
    FIN-ALL-15 (requer FIN_S15_visao_cnpj_itens.sql no Supabase; inclui tudo do FIN-ALL-13)
    - SELETOR IGREJA | INSTITUTO (CNPJ): no painel e no Livro. A escolha vale para Livro, Despesas, Entrada, A pagar, Cartões, Conciliação, Campanhas/votos,
      Relatórios e para o que for lançado. Faixa "Você está vendo e lançando em ..." mostra o CNPJ em todas as telas. "A conferir" (GC e cultos) é só da Igreja.
@@ -56,7 +62,7 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
    - Pop-up: não fecha mais ao clicar fora. Só pelo botão X no canto, por Cancelar ou por Esc. Botões do rodapé alinhados. */
 (function () {
   'use strict';
-  var VERSAO = 'FIN-ALL-15';
+  var VERSAO = 'FIN-ALL-16';
   if (window.G2_FIN) return;
   window.G2_FIN = { versao: VERSAO };
   console.info('[2Gather] financeiro ' + VERSAO);
@@ -159,7 +165,7 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
     FIN_NOT_FOUND: 'Registro não encontrado. Atualize a tela.', FIN_NOT_EDITABLE: 'Este registro não pode mais ser alterado.',
     FIN_NOT_REVERSIBLE: 'Este lançamento não pode ser estornado.', FIN_REVERSE_AT_ORIGIN: 'Estorne pela tela de origem (despesa, campanha, lote ou transferência).',
     FIN_NOT_APPROVED: 'A despesa ainda não foi aprovada.', FIN_NOT_PENDING: 'A despesa não está aguardando aprovação.',
-    FIN_SELF_APPROVAL: 'Quem solicitou não pode decidir o próprio pedido.', FIN_OPENING_EXISTS: 'Esta conta já tem saldo inicial.',
+    FIN_SELF_APPROVAL: 'Quem solicitou não pode decidir o próprio pedido.', FIN_OPENING_EXISTS: 'Esta conta já tem saldo inicial.', FIN_OPENING_MISSING: 'Esta conta ainda não tem saldo inicial: use o botão "Saldo inicial".',
     FIN_CARD_INVALID: 'Confira os dados do cartão.', FIN_SOURCE_INVALID: 'Origem inválida.', FIN_SOURCE_DONE: 'Este encontro/culto já foi lançado no Livro.',
     FIN_MATCH_INVALID: 'O lançamento tem conta ou valor diferente da linha do extrato.', FIN_IMPORT_INVALID: 'Arquivo inválido ou grande demais.',
     FIN_SCHEDULE_SUM: 'A soma das parcelas precisa ser igual ao valor total.', FIN_SCHEDULE_LOCKED: 'Já há recebimento: as datas não podem mais mudar.',
@@ -181,6 +187,7 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
     var d = String((e && e.details) || '');
     for (var k in MSG) if (t.indexOf(k) >= 0 || d === k) return MSG[k];
     if (/PGRST202|find the function|does not exist/i.test(t) && /view_set|expense_items|campaign_entities|campaign_adopt|campaign_move/i.test(t)) return 'Falta rodar o SQL FIN_S15_visao_cnpj_itens.sql no Supabase.';
+      if (/PGRST202|find the function|does not exist/i.test(t) && /opening_balance_change/i.test(t)) return 'Falta rodar o SQL FIN_S16_saldo_inicial.sql no Supabase.';
       if (/PGRST202|find the function|does not exist/i.test(t)) return /statement_payments/i.test(t) ? 'Falta rodar o SQL FIN_P6_lista_pagamentos_fatura.sql no Supabase.' : /payables|installments|correct|corrections/i.test(t) ? 'Falta rodar os SQL FIN_P2_parcelas.sql e FIN_P3_correcoes.sql no Supabase.' : 'Falta rodar o SQL novo no Supabase (v39_cartoes_c3.sql).';
     if (/JWT|token|401/i.test(t)) return 'Sua sessão expirou. Entre de novo.';
     if (/Failed to fetch|NetworkError/i.test(t)) return 'Sem conexão. Tente novamente.';
@@ -325,7 +332,7 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
     Enviar: { i: 'send', t: 1, l: 'Enviar' }, Receber: { i: 'cash', t: 1, tone: 'ok' }, Pedir: { i: 'pencil' }, WhatsApp: { i: 'chat', tone: 'ok' },
     Itens: { i: 'list' }, Conferir: { i: 'check', t: 1, tone: 'ok', l: 'Conferir' }, Gerar: { i: 'repeat', t: 1, l: 'Gerar' }, Casar: { i: 'check', t: 1, l: 'Casar' }, Exportar: { i: 'dl' },
     Ignorar: { i: 'x' }, Voltar: { i: 'undo' }, Saldo: { i: 'plus', t: 1, l: 'Saldo inicial' }, Reabrir: { i: 'unlock', t: 1 }, Fechar: { i: 'lock', t: 1 },
-    Mover: { i: 'swap' }, Participante: { i: 'userplus', t: 1 }, Dispensar: { i: 'x' }, Detalhar: { i: 'list', t: 1, l: 'Detalhar fatura' }, Corrigir: { i: 'pencil', t: 1, l: 'Corrigir' },
+    Mover: { i: 'swap' }, Alterar: { i: 'pencil', t: 1, l: 'Alterar saldo' }, Participante: { i: 'userplus', t: 1 }, Dispensar: { i: 'x' }, Detalhar: { i: 'list', t: 1, l: 'Detalhar fatura' }, Corrigir: { i: 'pencil', t: 1, l: 'Corrigir' },
     'Lançar': { i: 'card', t: 1, tone: 'ok', l: 'Lançar na fatura' }, Criar: { i: 'plus', t: 1, tone: 'ok', l: 'Criar despesa' }
   };
   function bt(a, v, t, cls) {
@@ -908,13 +915,30 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
     var c = num(m.efeitoCaixa); return c > 0 ? 1 : c < 0 ? -1 : 0;
   }
   function ehFaturaPaga(m) { return norm(m.descricao).indexOf('liquidacao de fatura') >= 0; }
+  /* estorno: de que lado ele desfaz? 'expense' = devolveu uma saída; 'income' = desfez uma entrada; '' = não mexe nos totais (saldo inicial, transferência) */
+  function natEstorno(m) {
+    var d = norm(m.descricao);
+    if (ehFaturaPaga(m)) return 'expense';
+    if (d.indexOf('saldo inicial') >= 0 || d.indexOf('transfer') >= 0) return '';
+    var cat = achar((S.cat && S.cat.categorias) || [], m.categoriaId);
+    if (cat) return cat.natureza === 'expense' || cat.natureza === 'income' ? cat.natureza : '';
+    return efCaixa(m) > 0 ? 'expense' : 'income';
+  }
   function totaisCaixa(L) {
     var e = 0, sd = 0, fat = 0;
     (L || []).forEach(function (m) {
       var c = efCaixa(m), v = num(m.valor);
-      if (c > 0) e += v; else if (c < 0) { sd += v; if (ehFaturaPaga(m)) fat += v; }
+      if (!c) return;
+      if (m.tipo === 'reversal') {
+        // o dinheiro que volta abate a saída estornada (e o que sai abate a entrada estornada); não vira entrada nova
+        var nat = natEstorno(m);
+        if (nat === 'expense') { sd -= v; if (ehFaturaPaga(m)) fat -= v; }
+        else if (nat === 'income') e -= v;
+        return;
+      }
+      if (c > 0) e += v; else { sd += v; if (ehFaturaPaga(m)) fat += v; }
     });
-    return { entradas: arr2(e), saidas: arr2(sd), resultado: arr2(e - sd), faturas: arr2(fat) };
+    return { entradas: arr2(e), saidas: arr2(sd), resultado: arr2(e - sd), faturas: arr2(Math.max(0, fat)) };
   }
   function ehEntrada(m) { return m.tipo === 'income' || (m.tipo === 'adjustment' && efCaixa(m) > 0); }
   function ehSaida(m) { return (m.tipo === 'expense' || m.tipo === 'adjustment') && efCaixa(m) < 0; }
@@ -2090,7 +2114,7 @@ function itensAbertos(f) {
         return '<div class="row g2f-mv"><span class="g2f-ri pri">' + ic(a.tipo === 'cash' ? 'cash' : 'bank') + '</span><div class="info"><div class="nm">' + esc(a.nome) + (a.status !== 'active' ? ' ' + pill('inativa', 'cinza') : '') + '</div>' +
           '<div class="sb">' + esc([ROT.conta[a.tipo] || a.tipo, a.banco, a.agencia ? 'ag. ' + a.agencia : '', a.numero ? 'c/c ' + a.numero : ''].filter(Boolean).join(' · ')) + '</div></div>' +
           '<div class="g2f-amt">' + (a.saldoInicial ? '<span class="g2f-mut">saldo inicial ' + esc(brl(a.saldoInicial.valor)) + ' em ' + esc(dataBR(a.saldoInicial.data)) + '</span>' : pill('sem saldo inicial', 'amarelo')) + '</div>' +
-          '<div class="g2f-acts">' + bt('editConta', a.id, 'Editar', 'sec') + (!a.saldoInicial && tes() ? bt('saldoIni', a.id, 'Saldo inicial') : '') + '</div></div>';
+          '<div class="g2f-acts">' + bt('editConta', a.id, 'Editar', 'sec') + (!a.saldoInicial && tes() ? bt('saldoIni', a.id, 'Saldo inicial') : '') + (a.saldoInicial && tes() ? bt('saldoAlt', a.id, 'Alterar saldo inicial', 'sec') : '') + '</div></div>';
       }).join('') || '<div class="empty">Nenhuma conta.</div>') + '</div>';
     }
     if (pode('financial.categories.manage')) {
@@ -2339,6 +2363,17 @@ function itensAbertos(f) {
           function (x) { return rpc('v39_fin_set_start', C({ p_date: x.data })).then(function () { return 'Início definido.'; }); });
       case 'novaConta': return formConta(null);
       case 'editConta': return formConta(achar(S.cat.contas, v));
+      case 'saldoAlt': {
+        var aa = achar(S.cat.contas, v); if (!aa || !aa.saldoInicial) return;
+        return form('Alterar saldo inicial · ' + aa.nome, [
+          { t: 'info', l: 'Saldo inicial atual: <b>' + esc(brl(aa.saldoInicial.valor)) + '</b> em ' + esc(dataBR(aa.saldoInicial.data)) + '. Nada é apagado: o lançamento antigo é <b>estornado</b> (fica no histórico, com o motivo) e um novo é lançado. O estorno aparece no Livro na data de hoje.' },
+          { k: 'valor', l: 'Novo saldo inicial', t: 'money', v: aa.saldoInicial.valor, req: true, h: 'Use 0 para conta zerada.' },
+          { k: 'm', l: 'Motivo da alteração', t: 'textarea', req: true, h: 'Mínimo 5 letras. Fica registrado no histórico.' }
+        ], 'Alterar saldo', function (x) {
+          if (Math.abs(num(x.valor) - num(aa.saldoInicial.valor)) < 0.005) return Promise.reject(new Error('O novo saldo é igual ao atual.'));
+          return rpc('v39_fin_opening_balance_change', C({ p: { contaId: v, valor: x.valor, motivo: x.m } })).then(function (r) { return r && r.mudou === false ? 'O saldo já era esse.' : 'Saldo inicial alterado para ' + brl(x.valor) + '.'; });
+        });
+      }
       case 'saldoIni': {
         var ac = achar(S.cat.contas, v);
         return form('Saldo inicial · ' + (ac ? ac.nome : ''), [
@@ -2386,7 +2421,7 @@ function itensAbertos(f) {
         pode('financial.campaigns.view') ? rpcCamps().catch(function () { return null; }) : Promise.resolve(null),
         pode('financial.reports.view') ? rpc('v39_fin_report', C({ p_year: S.ano, p_month: null })).catch(function () { return null; }) : Promise.resolve(null), carregarSent(),
         (pode('financial.expenses.view') || pode('financial.book.view') || pode('financial.expenses.pay')) ? carregarAPagar().catch(function () { APAGAR = []; PREV = []; return []; }) : Promise.resolve([])];
-      return Promise.all(ps).then(function (r) { if (r[3]) CAMPS = r[3]; D.dados = { ov: r[0], pend: r[1], desp: r[2], camps: r[3], rep: r[4] }; });
+      return Promise.all(ps.concat([S.cat ? null : carregarCat().catch(function () { return null; })])).then(function (r) { if (r[3]) CAMPS = r[3]; D.dados = { ov: r[0], pend: r[1], desp: r[2], camps: r[3], rep: r[4] }; });
     }).catch(function (e) { console.warn('[2Gather][fin] ' + traduz(e)); D.dados = { erro: traduz(e) }; })
       .then(function () { D.carregando = false; D.em = Date.now(); var x = $('g2f-dash'); if (x) x.remove(); pintarDash(); });
   }
