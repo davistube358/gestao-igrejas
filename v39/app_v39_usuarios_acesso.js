@@ -1,4 +1,8 @@
-/* 2Gather v39 · Pedidos de acesso (aprovar novos usuários) · USUARIOS-1
+/* 2Gather v39 · Pedidos de acesso (aprovar novos usuários) · USUARIOS-5
+   USUARIOS-5: ao liberar quem NÃO participa de GC pelo cargo (Profissional de saúde, Voluntário do Instituto, Voluntário Lar de Vida, Secretaria, Tesouraria), a tela
+     já vem com "Sem GC" e o GC fica bloqueado, com aviso. Antes o GC escolhido no cadastro vinha selecionado e a pessoa entrava num GC sem querer (caso do "Teste Médico").
+     Se a função mudar na tela de liberação, o GC acompanha: trocou para Líder/Discípulo, o GC pedido no cadastro volta.
+   USUARIOS-1 (base)
    Carregar DEPOIS do app.js (e do app_v39_cadastro_acesso.js).
    1) Master/pastor (quem tem a permissão de aprovar no banco) vê os cadastros aguardando
       liberação nas abas Avisos e Pessoas, com aviso no topo e contador.
@@ -9,7 +13,7 @@
    Não altera o app.js. */
 (function () {
   'use strict';
-  var VERSAO = 'USUARIOS-4';
+  var VERSAO = 'USUARIOS-5';
   var ABAS_AVISO = ['avisos', 'alertas', 'mural', 'pessoas', 'membros', 'usuarios', 'equipe', 'inicio', 'painel'];
   var pendentes = [], nomes = {}, perfis = [], podeAprovar = null, carregando = false, ultimaCarga = 0;
 
@@ -73,6 +77,9 @@
               institute_volunteer: 'Voluntário Instituto', health_professional: 'Profissional de saúde' };
     return p ? (p.name || m[p.code] || p.code) : '';
   }
+  /* cargos que não são de GC: a aprovação não atribui GC (a pessoa pode ser colocada num GC depois, à mão, se for membro). */
+  var SEM_GC = ['health_professional', 'institute_volunteer', 'life_home_volunteer', 'secretary', 'treasury'];
+  function semGcPorCargo(codigo) { return SEM_GC.indexOf(String(codigo || '')) >= 0; }
   function perfilPorId(id) { for (var i = 0; i < perfis.length; i++) if (perfis[i].id === id) return perfis[i]; return null; }
   function gcNome(id) { var g = G(), d = g && g.db(); var l = (d && d.gcs) || []; for (var i = 0; i < l.length; i++) if (l[i].id === id) return l[i].nome; return ''; }
 
@@ -164,18 +171,26 @@
     var optsPerfil = perfis.slice().sort(function (a, b) { return nomePerfil(a).localeCompare(nomePerfil(b), 'pt-BR'); })
       .map(function (p) { return '<option value="' + esc(p.id) + '"' + (p.id === r.requested_profile_id ? ' selected' : '') + '>' + esc(nomePerfil(p)) + '</option>'; }).join('');
     if (!optsPerfil && r.requested_profile_id) optsPerfil = '<option value="' + esc(r.requested_profile_id) + '">Função pedida (lista de perfis indisponível)</option>';
-    var optsGc = '<option value="">Sem GC</option>' + gcs.map(function (g) { return '<option value="' + esc(g.id) + '"' + (g.id === r.requested_gc_id ? ' selected' : '') + '>' + esc(g.nome) + '</option>'; }).join('');
+    var perfIni = perfilPorId(r.requested_profile_id), bloqIni = !!(perfIni && semGcPorCargo(perfIni.code));
+    var optsGc = '<option value="">Sem GC</option>' + gcs.map(function (g) { return '<option value="' + esc(g.id) + '"' + (!bloqIni && g.id === r.requested_gc_id ? ' selected' : '') + '>' + esc(g.nome) + '</option>'; }).join('');
     var o = janela('<h2 style="margin:0 0 4px">Liberar acesso</h2>' +
       '<div style="font-size:13px;color:#666;margin-bottom:10px">' + esc(nomes[r.person_id] || r.requested_username) + ' · usuário <b>' + esc(r.requested_username) + '</b></div>' +
       '<label>CPF *</label><input id="g2a-cpf" inputmode="numeric" maxlength="14" placeholder="000.000.000-00" autocomplete="off">' +
       '<div style="background:var(--bg,#F0F1F4);border-radius:10px;padding:9px 11px;margin:10px 0 2px;font-size:13px">Função pedida no cadastro: <b>' +
         esc(nomePerfil(perfilPorId(r.requested_profile_id)) || 'não informada') + '</b><br><span style="color:#888;font-size:12px">Já vem selecionada abaixo. Mantenha ou escolha outro perfil.</span></div>' +
       '<label>Perfil de acesso *</label><select id="g2a-perfil">' + optsPerfil + '</select>' +
-      '<label>GC</label><select id="g2a-gc">' + optsGc + '</select>' +
-      '<div style="font-size:11.5px;color:#999;margin:6px 0 2px">Se o perfil for Líder e o GC estiver sem líder, a pessoa já entra como líder do GC.</div>' +
+      '<label>GC</label><select id="g2a-gc"' + (bloqIni ? ' disabled' : '') + '>' + optsGc + '</select>' +
+      '<div id="g2a-gcdica" style="font-size:11.5px;color:#999;margin:6px 0 2px"></div>' +
       '<div id="g2a-erro" style="display:none;color:#a12424;background:#fdecec;border-radius:8px;padding:8px;margin-top:8px;font-size:13px"></div>' +
       '<div style="height:12px"></div><button class="btn pr" id="g2a-ok" style="width:100%">Liberar acesso</button>' +
       '<div class="gap"></div><button class="btn gh" id="g2a-voltar" style="width:100%">Voltar</button>');
+    var gcSel = o.querySelector('#g2a-gc'), gcDica = o.querySelector('#g2a-gcdica'), perfSel = o.querySelector('#g2a-perfil');
+    function ajustarGc() {
+      var p = perfilPorId(perfSel.value), bloq = !!(p && semGcPorCargo(p.code));
+      if (bloq) { gcSel.value = ''; gcSel.disabled = true; gcDica.innerHTML = '<b style="color:#8A5A00">' + esc(nomePerfil(p)) + ' não entra em GC.</b> O GC pedido no cadastro foi ignorado.' + (r.requested_gc_id ? ' (GC pedido: ' + esc(gcNome(r.requested_gc_id) || '—') + ')' : ''); }
+      else { if (gcSel.disabled) gcSel.value = r.requested_gc_id || ''; gcSel.disabled = false; gcDica.textContent = 'Se o perfil for Líder e o GC estiver sem líder, a pessoa já entra como líder do GC.'; }
+    }
+    perfSel.addEventListener('change', ajustarGc); ajustarGc();
     var cpf = o.querySelector('#g2a-cpf');
     cpf.addEventListener('input', function () {
       var d = soDig(cpf.value).slice(0, 11);
@@ -189,7 +204,7 @@
       var perfil = o.querySelector('#g2a-perfil').value; if (!perfil) return falha('Escolha o perfil de acesso.');
       var btn = this; btn.disabled = true; btn.textContent = 'Liberando...';
       rpc('approve_access_request', { p_request_id: r.id, p_confirmed_person_id: r.person_id, p_cpf: soDig(cpf.value),
-          p_profile_id: perfil, p_gc_id: o.querySelector('#g2a-gc').value || null, p_church_person_status: 'member', p_reason: 'Liberado pelo app' })
+          p_profile_id: perfil, p_gc_id: (semGcPorCargo((perfilPorId(perfil) || {}).code) ? null : (o.querySelector('#g2a-gc').value || null)), p_church_person_status: 'member', p_reason: 'Liberado pelo app' })
         .then(function () {
           fecharJanela(); toast('Acesso liberado ✓ ' + (nomes[r.person_id] || r.requested_username) + ' já pode entrar com o usuário ' + r.requested_username + '.', 6000);
           carregar(true); var g = G(); if (g && g.sincronizar) g.sincronizar(false);

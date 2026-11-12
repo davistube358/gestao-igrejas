@@ -1,4 +1,7 @@
-/* 2Gather v39 · Cadastro de acesso (autocadastro antes do login) · ACESSO-1
+/* 2Gather v39 · Cadastro de acesso (autocadastro antes do login) · ACESSO-2
+   ACESSO-2: quem escolhe uma função que NÃO é de GC (Secretaria, Tesouraria, Voluntário Lar de Vida, Voluntário Instituto, Profissional de saúde) não escolhe mais GC:
+     o campo "De qual GC você participa?" fica desligado ("Esta função não participa de GC") e o GC não é enviado. Evita que o profissional entre num GC na aprovação.
+   ACESSO-1 (base)
    Carregar DEPOIS do app.js.
    Antes do login o app.js ainda chamava o Apps Script (gcsPublico e cadastro).
    Este módulo liga a tela "Solicitar acesso" à Edge Function `auth` do Supabase,
@@ -62,6 +65,15 @@
     return 'discipulo';
   }
 
+  var SEM_GC_FUNCAO = ['secretaria', 'tesouraria', 'voluntarioLV', 'voluntarioInst', 'profissional'];
+  function ajustarGcPorFuncao() {
+    var sel = $('c-gc'), pap = $('c-papel'); if (!sel || !pap) return;
+    var sem = SEM_GC_FUNCAO.indexOf(perfil(pap.value)) >= 0, dica = $('c-gc-dica');
+    if (!dica) { dica = document.createElement('div'); dica.id = 'c-gc-dica'; dica.style.cssText = 'font-size:11.5px;color:#8A5A00;margin:4px 2px 0;line-height:1.4'; sel.parentNode.insertBefore(dica, sel.nextSibling); }
+    if (sem) { sel.dataset.antes = sel.value || sel.dataset.antes || ''; sel.value = ''; sel.disabled = true; dica.textContent = 'Esta função não participa de GC: não precisa escolher.'; }
+    else { sel.disabled = false; if (sel.dataset.antes && !sel.value) sel.value = sel.dataset.antes; dica.textContent = ''; }
+  }
+  document.addEventListener('change', function (ev) { if (ev.target && ev.target.id === 'c-papel') ajustarGcPorFuncao(); });
   function abrirCadastro() {
     ['s-login', 's-cadastro', 's-app'].forEach(function (x) { var el = $(x); if (el) el.classList.toggle('hide', x !== 's-cadastro'); });
     window.scrollTo(0, 0);
@@ -75,6 +87,7 @@
       sel.innerHTML = '<option value="">Ainda não participo / não sei</option>' +
         gs.map(function (g) { return '<option value="' + esc(g.id) + '">' + esc(g.nome || g.name) + '</option>'; }).join('');
       if (!gs.length) console.warn('[2Gather][cadastro] a lista pública de GCs voltou vazia');
+      ajustarGcPorFuncao();
     }).catch(function () { sel.innerHTML = '<option value="">Ainda não participo / não sei</option>'; });
   }
 
@@ -89,7 +102,7 @@
     if ($('c-aceite') && !$('c-aceite').checked) return erroEm('c-erro', 'Para se cadastrar, leia e aceite a Política de Privacidade.');
     var d = { nome: v('c-nome'), usuario: u, email: v('c-email'), fone: v('c-fone'), senha: senha,
               perfil: perfil(v('c-papel')), aceite: true, obs: v('c-obs') };
-    if (v('c-gc')) d.gcId = v('c-gc');
+    if (v('c-gc') && SEM_GC_FUNCAO.indexOf(d.perfil) < 0) d.gcId = v('c-gc');
     erroEm('c-erro', ''); var b = $('b-cadastrar'); if (b) b.disabled = true;
     carregando(true, 'Enviando cadastro...');
     edge('cadastro', d).then(function () {

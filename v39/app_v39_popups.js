@@ -1,4 +1,10 @@
-/* 2Gather v39 · Pop-ups seguros · POPUP-3
+/* 2Gather v39 · Pop-ups seguros · POPUP-4
+   POPUP-4 (correção): a tela de CARREGAMENTO (#carregando: a roda girando durante o login, a saída e os salvamentos) ainda recebia o botão X, porque o POPUP-3
+     só reconhecia nomes em inglês (loading, login...) e fundo quase opaco; o #carregando tem nome em português e fundo translúcido (70%). Agora são ignoradas:
+     (1) nomes em português (carregando, carregamento, aguarde, saindo, entrando, sair...); (2) QUALQUER tela cheia que só tenha roda girando/texto, sem botões,
+     campos nem links, mesmo translúcida; (3) o #carregando em si. Pop-up de verdade (com botões/campos) continua com o X. O G2_POPUPS.diag() mostra o que foi tratado
+     como pop-up e o que foi ignorado.
+   POPUP-3 (base)
    Carregar por ÚLTIMO, depois de todos os módulos v39 (antes do app_v39_qa.js, se existir). Não altera o app.js. Não exige SQL.
    Vale para TODOS os pop-ups do app (os do app.js e os dos módulos v39):
    1) Clicar na área escura FORA do pop-up não fecha mais (evita perder o que foi digitado).
@@ -15,7 +21,7 @@
 (function () {
   'use strict';
   if (window.G2_POPUPS) return;
-  var P = window.G2_POPUPS = { versao: 'POPUP-3', ativo: true };
+  var P = window.G2_POPUPS = { versao: 'POPUP-4', ativo: true };
   console.info('[2Gather] pop-ups ' + P.versao);
   var ATIVOS = [], TOPO = null, rodando = false, agendado = false, ocupado = false, ultimo = 0;
   var EVS = ['click', 'dblclick', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'touchstart', 'touchend'];
@@ -54,7 +60,7 @@
   function contem(a, b) { return !!(a && b && (a === b || (a.contains && a.contains(b)))); }
 
   /* ───────── 1) quais elementos são pop-ups ───────── */
-    var RX_AUTH = /(^|[\s_-])(login|logout|signin|signup|sign-in|sign-up|auth|splash|boot|loading|spinner|welcome|entrar|saindo)([\s_-]|$)/;
+    var RX_AUTH = /(^|[\s_-])(login|logout|signin|signup|sign-in|sign-up|auth|splash|boot|loading|spinner|welcome|entrar|entrando|saindo|sair|carregando|carregamento|aguarde|aguardando|processando)([\s_-]|$)/;
     function temBotaoFechar(raiz) {
       for (var i = 0; i < RX_FECHAR.length; i++) {
         var a = null; try { a = achar(raiz, function (x) { return !tem(x, 'data-g2x') && matchSeletor(x, RX_FECHAR[i]); }, 8, 300); } catch (x) { a = null; }
@@ -63,9 +69,19 @@
       return false;
     }
     // telas de login/saída, carregamento e telas cheias opacas sem botão de cancelar/fechar são "páginas", não pop-ups
+    // só roda girando/texto: sem botão, campo, link nem área clicável = tela de espera, não pop-up (vale também para fundo translúcido)
+    function soEspera(e) {
+      var interativo = achar(e, function (x) {
+        var t = String(x.tagName || '').toUpperCase();
+        return t === 'BUTTON' || t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA' || t === 'A' || tem(x, 'data-a') || tem(x, 'onclick') || (x.getAttribute && x.getAttribute('role') === 'button');
+      }, 8, 300);
+      return !interativo;
+    }
     function ehTelaAuth(e) {
       var nome = (String(e.id || '') + ' ' + (typeof e.className === 'string' ? e.className : '')).toLowerCase();
       if (RX_AUTH.test(nome)) return true;
+      if (e.id === 'carregando' || (e.querySelector && e.querySelector('#carregando-txt, .spin, .spinner'))) { if (soEspera(e)) return true; }
+      if (soEspera(e)) { var r0 = e.getBoundingClientRect(), W0 = window.innerWidth || 0, H0 = window.innerHeight || 0; if (r0.width >= W0 * 0.9 && r0.height >= H0 * 0.9) return true; }
       var cs = estilo(e), r = e.getBoundingClientRect(), W = window.innerWidth || 0, H = window.innerHeight || 0;
       var cheia = r.width >= W * 0.98 && r.height >= H * 0.98;
       if (!(alfa(cs) >= 0.95 && cheia)) return false;

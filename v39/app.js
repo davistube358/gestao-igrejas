@@ -83,7 +83,8 @@ function carregando(on, txt) { $('carregando').classList.toggle('on', !!on); $('
 var DIAS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 var PAPEL_NOME = { master: 'Master', pastor: 'Pastor(a)', supervisor: 'Supervisor', lider: 'Líder', discipulo: 'Discípulo', secretaria: 'Secretaria', tesouraria: 'Tesouraria', voluntario: 'Voluntário', voluntarioLV: 'Voluntário Lar de Vida', voluntarioInst: 'Voluntário Instituto', profissional: 'Profissional de saúde' };
 var ETAPAS = ['1. Visitou', '2. Frequentando', '3. Membro da igreja', '4. Batizado', '5. Em discipulado', '6. Em formação de líder', 'Instituto'];
-/* SYNC-V39-20: Instituto — documentos (receita, orientações, prontuário) com a identidade do INSTITUTO (logo, CNPJ, endereço), registro profissional (CRM/CRP), 2ª via com registro de cada impressão e tela "Pacientes e prontuários". Requer app_v39_inst_prontuario.js (PRONT-2) e INST_S18.
+/* SYNC-V39-21: Instituto — telefone/WhatsApp do paciente na ficha do médico (INST_S19), código do paciente na agenda da secretaria e aviso de privacidade atualizado. Sem o S19 a ficha continua igual (sem telefone).
+   SYNC-V39-20: Instituto — documentos (receita, orientações, prontuário) com a identidade do INSTITUTO (logo, CNPJ, endereço), registro profissional (CRM/CRP), 2ª via com registro de cada impressão e tela "Pacientes e prontuários". Requer app_v39_inst_prontuario.js (PRONT-2) e INST_S18.
    SYNC-V39-19: Instituto — ficha do atendimento com prontuário (anamnese, conduta, receita), histórico compartilhado entre profissionais de saúde, impressão/PDF; "Novo atendido" some para o profissional. Requer app_v39_inst_prontuario.js (PRONT-1) e INST_S15 v2.
    SYNC-V39-18: Instituto — agendas e atendimentos no Supabase (profissional = pessoa com acesso; prontuário cifrado). Requer app_v39_instituto.js INST-7 e INST_S14.
    SYNC-V39-17: etapas da jornada vêm da configuração da igreja (v39_journey_stages); 'Instituto' é fixa. */
@@ -1719,7 +1720,7 @@ function blocoConta() {
     '<div class="card" style="font-size:12.5px;color:var(--tx2,#5E6470);line-height:1.55;display:flex;gap:10px;align-items:center">' +
       '<span style="flex:0 0 30px;height:30px;border-radius:50%;background:var(--pri);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:11px">' + esc(ini(u.nome || '?')) + '</span>' +
       '<span>Sincronizar, trocar a senha e sair do app ficam no botão com as suas iniciais, no canto superior direito.</span></div>' +
-    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-20</div>';
+    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-21</div>';
 }
 function rConta() { return blocoConta(); }
 function trocarSenha() {
@@ -5699,8 +5700,8 @@ function rInstituto() { if (!temInstSaude()) { var tb0 = instTabsLista()[0]; if 
     (temEstMercado() ? '<button class="mod" data-a="aba" data-v="instmercado"><span class="mi" style="background:#fff!important;color:#C9930A"><svg viewBox="0 0 24 24"><path d="M6 6h15l-1.5 9h-12z"/><path d="M6 6L5 3H2"/><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/></svg></span><span class="mn">Mercado</span></button>' : '') +
     (temEstFarmacia() ? '<button class="mod" data-a="aba" data-v="instfarmacia"><span class="mi" style="background:#fff!important;color:#16A36A"><svg viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="12" rx="2"/><path d="M8 9V6a4 4 0 0 1 8 0v3M12 12v6M9 15h6"/></svg></span><span class="mn">Farmácia</span></button>' : '') +
     (temInstCursos() ? '<button class="mod" data-a="aba" data-v="instcursos"><span class="mi" style="background:#fff!important;color:#0F8A8A"><svg viewBox="0 0 24 24">' + IC_CURSO + '</svg></span><span class="mn">Cursos</span></button>' : '') + '</div>';
-  h += '<div class="card" style="font-size:11.5px;color:var(--tx2);line-height:1.55;background:#FFF8E6"><b>Privacidade:</b> os nomes dos pacientes aparecem <b>somente para o profissional responsável</b> pela agenda. ' +
-    'Secretaria, voluntários, pastor e master veem apenas “horário ocupado” e o protocolo. O <b>prontuário</b> (consultas, anamnese, receitas) é compartilhado só entre os profissionais de saúde que atendem o paciente; cada anotação pode ser marcada como <b>reservada</b>.</div>';
+  h += '<div class="card" style="font-size:11.5px;color:var(--tx2);line-height:1.55;background:#FFF8E6"><b>Privacidade:</b> o <b>nome</b> do paciente aparece para o profissional responsável pela agenda e para a <b>secretaria</b>. O <b>motivo</b> do atendimento, a ficha e o prontuário são só do profissional. ' +
+    'Voluntários, pastor e master veem apenas “horário ocupado” e o protocolo. O <b>prontuário</b> (consultas, anamnese, receitas) é compartilhado só entre os profissionais de saúde que atendem o paciente; cada anotação pode ser marcada como <b>reservada</b>.</div>';
   return h;
 }
 /** Linha de atendimento. dono = true mostra o paciente (quando o servidor liberou o nome). */
@@ -5710,7 +5711,7 @@ function linhaAtend(a, destaque) {
   return '<div class="row' + (pc && ag.dono ? ' cl' : '') + '"' + (pc && ag.dono ? ' data-a="instAtender" data-v="' + esc(a.id) + '"' : '') + '>' +
     (nome ? avatarInst(pc, nome) : '<div class="av" style="background:var(--bg);color:var(--tx3)">' + esc(a.hora) + '</div>') +
     '<div class="info"><div class="nm">' + (nome ? esc(nome) : 'Horário ocupado') + '</div><div class="sb">' + esc(a.hora) + ' · ' + esc(a.codigo) + (destaque ? ' · ' + esc(ag.nome || '') : '') +
-    (a.pessoaCodigo && !nome ? '' : '') + (a.criadoPorNome ? ' · por ' + esc(pri(a.criadoPorNome)) : '') + '</div></div>' + pillAt(a.status) + '</div>';
+    (a.pessoaCodigo && nome ? ' · ' + esc(a.pessoaCodigo) : '') + (a.criadoPorNome ? ' · por ' + esc(pri(a.criadoPorNome)) : '') + '</div></div>' + pillAt(a.status) + '</div>';
 }
 
 /* ═════ detalhe de uma agenda (dias e horários) ═════ */
@@ -5760,7 +5761,7 @@ function linhaAtendSlot(a, ag, hr) {
   return '<div class="slotb"><div class="row" style="border:none;padding-bottom:4px">' +
     (nome ? avatarInst(pc, nome) : '<div class="av" style="background:#FFF5DC;color:#8A5A00;font-size:12px">' + esc(hr) + '</div>') +
     '<div class="info"><div class="nm">' + (nome ? esc(nome) : 'Horário ocupado') + ' <span style="color:var(--tx3);font-weight:600;font-size:12px">' + esc(a.hora) + '</span></div>' +
-    '<div class="sb">' + esc(a.codigo) + (a.criadoPorNome ? ' · agendado por ' + esc(pri(a.criadoPorNome)) : '') + (a.motivo ? '<br><i>' + esc(String(a.motivo).slice(0, 90)) + '</i>' : '') + '</div></div>' + pillAt(a.status) + '</div>' +
+    '<div class="sb">' + esc(a.codigo) + (a.pessoaCodigo && nome ? ' · ' + esc(a.pessoaCodigo) : '') + (a.criadoPorNome ? ' · agendado por ' + esc(pri(a.criadoPorNome)) : '') + (a.motivo ? '<br><i>' + esc(String(a.motivo).slice(0, 90)) + '</i>' : '') + '</div></div>' + pillAt(a.status) + '</div>' +
     (bts ? '<div class="slotbt">' + bts + '</div>' : '') + '</div>';
 }
 
@@ -5968,7 +5969,7 @@ function instAtender(id) {
   abrirModal('<div class="perfil" style="padding-top:0">' + avatarInst(pc, pc.nome, 72) + '<h2 style="font-size:19px">' + esc(pc.nome) + '</h2>' +
     '<p>' + esc([pc.codigo, pc.idade !== null && pc.idade !== undefined ? pc.idade + ' anos' : '', pc.sexo, pc.bairro].filter(Boolean).join(' · ')) + '</p>' +
     '<div class="pills">' + pillAt(a.status) + '<span class="pill p-cinza">consulta ' + esc(quando) + '</span>' + (pc.igreja ? '<span class="pill p-dour">membro/visitante da igreja</span>' : '') + '</div></div>' +
-    (pc.fone ? '<div class="qas" style="grid-template-columns:1fr 1fr"><a class="qa" target="_blank" rel="noopener" href="https://wa.me/' + (fone(pc.fone).length <= 11 ? '55' : '') + fone(pc.fone) + '"><span>WhatsApp</span></a><a class="qa" href="tel:' + fone(pc.fone) + '"><span>Ligar</span></a></div>' : '') +
+    '<div id="pr-contato">' + instContatoHtml(pc.fone) + '</div>' +
     '<div class="aviso" style="margin:10px 0 4px;font-size:12px;line-height:1.45">\uD83D\uDD12 Prontuário <b>cifrado</b>. ' + (modo === 'past' ? 'As anotações pastorais ficam <b>somente com você</b>.' : 'Visível só para <b>profissionais de saúde</b> que atendem este paciente; secretaria, voluntários, pastor e master não têm acesso. Marque como <b>reservada</b> o que só você deve ver.') + '</div>' +
     (a.motivo ? '<div style="background:var(--bg);border-radius:12px;padding:9px 12px;font-size:12.5px;margin:8px 0"><b>Motivo informado no agendamento:</b><br>' + esc(a.motivo) + '</div>' : '') +
     '<div id="pr-corpo"><div class="empty" style="padding:14px">Abrindo o prontuário…</div></div>');
@@ -5980,10 +5981,25 @@ function instAtender(id) {
       '<button class="btn gh" data-a="fechar">Fechar</button>';
   };
   if (v39 && !window.G2_PRONT) return semPres('<b>Módulo do prontuário não carregado.</b> Publique o arquivo <b>app_v39_inst_prontuario.js</b> (PRONT-2) e atualize a página. Por enquanto você registra só a presença do paciente.');
+  instContatoCarregar(a.pessoaId);
   chamar('instProntuarioDe', { pessoaId: a.pessoaId }).then(function (r) {
     if (r.semProntuario) return semPres('<b>Prontuário ainda não liberado neste servidor.</b> As anotações só serão gravadas depois que a cifra for ativada (INST_S15). Por enquanto você registra a presença do paciente.');
     instPrDesenhar(a, ag, pc, r);
   }).catch(function (e) { if ($('pr-corpo')) $('pr-corpo').innerHTML = '<div class="aviso r">' + esc(e.message) + '</div><div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>'; });
+}
+/* botões WhatsApp / Ligar com o telefone do cadastro (buscado no servidor, só para o profissional que atende o paciente) */
+function instContatoHtml(f) {
+  var d = fone(f); if (!d) return '';
+  return '<div class="qas" style="grid-template-columns:1fr 1fr"><a class="qa" target="_blank" rel="noopener" href="https://wa.me/' + (d.length <= 11 ? '55' : '') + d + '"><span>WhatsApp</span></a><a class="qa" href="tel:' + d + '"><span>Ligar</span></a></div>';
+}
+function instContatoCarregar(pid) {
+  if (cfg.token !== 'supabase-v39' || !pid) return;
+  v39RpcApp('v39_inst_patient_contact', { p_church_id: cfg.usuario && cfg.usuario.igrejaId, p_person: pid }).then(function (r) {
+    var el = $('pr-contato'); if (!el || instPr.pessoaId !== pid) return;
+    var f = r && r.fone; if (!f) return;
+    if (instPr.pc) instPr.pc.fone = f;
+    el.innerHTML = instContatoHtml(f);
+  }).catch(function (e) { console.warn('[2Gather][instituto] telefone do paciente (rode INST_S19):', e && (e.message || e)); });
 }
 function instModoItem(e) { if (e && e.modo) return e.modo; if (!instPr.clinico) return 'past'; return /psic/i.test((e && e.especialidade) || '') ? 'psi' : 'med'; }
 function instPrCardHist(e, i) {
@@ -6183,8 +6199,9 @@ function instPacVer(pid) {
   var x = (instPac.itens || []).filter(function (i) { return i.pessoaId === pid; })[0]; if (!x) return;
   var pc = { nome: x.nome, codigo: x.codigo, idade: idadeDe({ nasc: x.nasc }), sexo: v39Sexo(x.sexo), bairro: '', foto: '' };
   instPr = { id: '', modo: 'med', itens: [], atual: {}, clinico: true, pc: pc, pessoaId: pid };
-  abrirModal('<div class="perfil" style="padding-top:0">' + avatarInst(null, pc.nome, 72) + '<h2 style="font-size:19px">' + esc(pc.nome) + '</h2><p>' + esc([pc.codigo, pc.idade !== null && pc.idade !== undefined ? pc.idade + ' anos' : '', pc.sexo].filter(Boolean).join(' · ')) + '</p></div>' +
+  abrirModal('<div class="perfil" style="padding-top:0">' + avatarInst(null, pc.nome, 72) + '<h2 style="font-size:19px">' + esc(pc.nome) + '</h2><p>' + esc([pc.codigo, pc.idade !== null && pc.idade !== undefined ? pc.idade + ' anos' : '', pc.sexo].filter(Boolean).join(' · ')) + '</p></div><div id="pr-contato"></div>' +
     '<div class="aviso" style="margin:10px 0 4px;font-size:12px;line-height:1.45">\uD83D\uDD12 Prontuário <b>cifrado</b>: visível só para profissionais de saúde que atendem este paciente.</div><div id="pr-corpo"><div class="empty" style="padding:14px">Abrindo o prontuário…</div></div>');
+  instContatoCarregar(pid);
   chamar('instProntuarioDe', { pessoaId: pid }).then(function (r) {
     if (!$('pr-corpo')) return;
     if (r.semProntuario) { $('pr-corpo').innerHTML = '<div class="aviso" style="font-size:12.5px">Prontuário ainda não liberado neste servidor (INST_S15).</div><div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>'; return; }
@@ -7720,7 +7737,7 @@ window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'SYNC-V39-20';
+  var BUILD = 'SYNC-V39-21';
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 

@@ -1,4 +1,13 @@
-/* 2Gather v39 · Financeiro completo · FIN-ALL-18
+/* 2Gather v39 · Financeiro completo · FIN-ALL-19
+   FIN-ALL-19: CONTA CONTÁBIL em despesa, entrada, voto e saída (requer FIN_S17_conta_contabil.sql só para votos/campanhas; o resto funciona sem ele).
+   - O campo "Categoria" passou a se chamar "Conta contábil" e mostra o CÓDIGO CONTÁBIL na frente ("4.2.1 · Energia"); contas sem código aparecem no fim da lista,
+     marcadas, e a tela avisa que o código está faltando. É obrigatória (o servidor já recusava lançamento sem conta).
+   - Cadastro de conta nova (Plano de contas): o código contábil passa a ser OBRIGATÓRIO (também ao editar uma conta padrão do sistema).
+   - Cadastros: aviso com o número de contas SEM código contábil.
+   - VOTOS e CAMPANHAS: cada campanha/voto tem uma "Conta contábil dos recebimentos" (padrão); no recebimento a conta já vem preenchida e pode ser trocada.
+   - SAÍDAS: o pagamento continua herdando a conta contábil da despesa (a tela da despesa mostra a conta).
+   FIN-ALL-18 (incluído): modelo único do período, cartão consolidado.
+   Base FIN-ALL-18:
    FIN-ALL-18: MODELO ÚNICO DO PERÍODO (caixa: pago + a pagar), igual no painel, no Livro e nos Relatórios. Não exige SQL novo.
    - Despesas do mês = tudo que FOI PAGO (saída de caixa, inclui pagamento de fatura de cartão) + tudo que AINDA VENCE no mês (parcelas, faturas, despesas aprovadas).
      Receitas do mês = recebidas + a receber que vencem no mês. Resultado = Receitas − Despesas.
@@ -72,7 +81,7 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
    - Pop-up: não fecha mais ao clicar fora. Só pelo botão X no canto, por Cancelar ou por Esc. Botões do rodapé alinhados. */
 (function () {
   'use strict';
-  var VERSAO = 'FIN-ALL-18';
+  var VERSAO = 'FIN-ALL-19';
   if (window.G2_FIN) return;
   window.G2_FIN = { versao: VERSAO };
   console.info('[2Gather] financeiro ' + VERSAO);
@@ -196,7 +205,7 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
     var t = String((e && (e.message || e.details || e.hint || e.code)) || e || '');
     var d = String((e && e.details) || '');
     for (var k in MSG) if (t.indexOf(k) >= 0 || d === k) return MSG[k];
-    if (/PGRST202|find the function|does not exist/i.test(t) && /view_set|expense_items|campaign_entities|campaign_adopt|campaign_move/i.test(t)) return 'Falta rodar o SQL FIN_S15_visao_cnpj_itens.sql no Supabase.';
+    if (/PGRST202|find the function|does not exist/i.test(t) && /view_set|expense_items|campaign_entities|campaign_adopt|campaign_move|campaign_account/i.test(t)) return 'Falta rodar o SQL FIN_S15_visao_cnpj_itens.sql (ou FIN_S17_conta_contabil.sql) no Supabase.';
       if (/PGRST202|find the function|does not exist/i.test(t) && /opening_balance_change/i.test(t)) return 'Falta rodar o SQL FIN_S16_saldo_inicial.sql no Supabase.';
       if (/PGRST202|find the function|does not exist/i.test(t)) return /statement_payments/i.test(t) ? 'Falta rodar o SQL FIN_P6_lista_pagamentos_fatura.sql no Supabase.' : /payables|installments|correct|corrections/i.test(t) ? 'Falta rodar os SQL FIN_P2_parcelas.sql e FIN_P3_correcoes.sql no Supabase.' : 'Falta rodar o SQL novo no Supabase (v39_cartoes_c3.sql).';
     if (/JWT|token|401/i.test(t)) return 'Sua sessão expirou. Entre de novo.';
@@ -569,7 +578,20 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
 
   /* ───────────── listas para selects ───────────── */
   function opContas(soAtivas) { return ((S.cat && S.cat.contas) || []).filter(function (a) { return !soAtivas || a.status === 'active'; }).map(function (a) { return [a.id, a.nome + ' · ' + (ROT.conta[a.tipo] || a.tipo)]; }); }
-  function opCats(nat) { return ((S.cat && S.cat.categorias) || []).filter(function (c) { return c.ativa && c.natureza === nat; }).map(function (c) { return [c.id, c.nome + (c.contabil ? ' (' + c.contabil + ')' : '')]; }); }
+  /* conta contábil = categoria do plano de contas, com o código do contador na frente */
+  function catPor(id) { return achar((S.cat && S.cat.categorias) || [], id); }
+  function semCodigoContabil(id) { var c = catPor(id); return !!(c && !String(c.contabil || '').trim()); }
+  function nSemCodigo() { return ((S.cat && S.cat.categorias) || []).filter(function (c) { return c.ativa && !String(c.contabil || '').trim(); }).length; }
+  function opCats(nat) {
+    return ((S.cat && S.cat.categorias) || []).filter(function (c) { return c.ativa && c.natureza === nat; })
+      .sort(function (a, b) { var ta = String(a.contabil || '').trim() ? 0 : 1, tb = String(b.contabil || '').trim() ? 0 : 1; return ta - tb || String(a.contabil || '').localeCompare(String(b.contabil || ''), 'pt-BR', { numeric: true }) || String(a.nome).localeCompare(String(b.nome), 'pt-BR'); })
+      .map(function (c) { var k = String(c.contabil || '').trim(); return [c.id, k ? k + ' · ' + c.nome : c.nome + ' — sem código contábil']; });
+  }
+  // contas de entrada para votos/campanhas: todas, menos a conta padrão do sistema (que é o "vazio" da lista)
+  function opCatsVoto() { return opCats('income').filter(function (c) { var k = catPor(c[0]); return !(k && k.codigo === 'campaign_receipt'); }); }
+  function avisoSemCodigo(campo) {
+    return { t: 'info', l: '⚠ Esta conta ainda <b>não tem código contábil</b>. O lançamento sai, mas no relatório do contador ela aparece sem código. Cadastre em <b>Cadastros › Plano de contas</b>.', vis: function (v) { return v[campo || 'categoriaId'] !== '__camp' && semCodigoContabil(v[campo || 'categoriaId']); } };
+  }
   function opFormas(semCartao) { return ((S.cat && S.cat.formas) || []).filter(function (f) { return f.ativa && (!semCartao || f.tipo !== 'card'); }).map(function (f) { return [f.id, f.nome]; }); }
   function formaTipo(id) { var f = ((S.cat && S.cat.formas) || []).filter(function (x) { return x.id === id; })[0]; return f ? f.tipo : ''; }
   function formaNome(id) { var f = ((S.cat && S.cat.formas) || []).filter(function (x) { return x.id === id; })[0]; return f ? f.nome : ''; }
@@ -694,12 +716,12 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
     if ((S.visao || null) === id) return Promise.resolve();
     return rpc('v39_fin_view_set', C({ p_entity: id })).then(function () {
       S.visao = id; S.cat = null; S.cache = null; S.cartDet = null; S.ov = null; S.rep = null; S.entEm = 0; D.dados = null; ANO = null;
-      CAMPS = []; CAMPMAP = {}; APAGAR = []; PREV = []; DESP = []; ITENS = {}; PLANOS = {}; FATS = []; FATIMP = []; SENT = null; CORR = [];
+      CAMPS = []; CAMPMAP = {}; CAMPCONTA = {}; APAGAR = []; PREV = []; DESP = []; ITENS = {}; PLANOS = {}; FATS = []; FATIMP = []; SENT = null; CORR = [];
       if (S.aberto) { pintarBase(); recarregar(); }
       else { var dd = $('g2f-dash'); if (dd) dd.remove(); dashCarregar(true); }
     }).catch(function (e) { console.warn('[2Gather][fin]', e); toast(traduz(e)); });
   }
-  var ITENS = {}, PRODS = null, CAMPMAP = {};
+  var ITENS = {}, PRODS = null, CAMPMAP = {}, CAMPCONTA = {};   // CAMPCONTA: campanha -> conta contábil padrão dos recebimentos
   function normItens(l) { return (l || []).map(function (i) { return { p: String(i.produtoId || ''), q: Math.round(num(i.qtd) * 1000) / 1000, v: Math.round(num(i.valorUnit) * 10000) / 10000 }; }); }
   function fmtQtd(q) { return String(Math.round(num(q) * 1000) / 1000).replace('.', ','); }
   function itensTxt(id) {
@@ -726,7 +748,8 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
     return Promise.all([um('mercado', 'Mercado'), um('farmacia', 'Farmácia')]).then(function (r) { var l = r[0].concat(r[1]); PRODS = { em: Date.now(), l: l }; return l; });
   }
   function rpcCamps() {
-    return Promise.all([rpc('v39_fin_campaigns', C({})), rpc('v39_fin_campaign_entities', C({})).catch(function () { return null; })]).then(function (r) {
+    return Promise.all([rpc('v39_fin_campaigns', C({})), rpc('v39_fin_campaign_entities', C({})).catch(function () { return null; }), rpc('v39_fin_campaign_accounts', C({})).catch(function () { return null; })]).then(function (r) {
+      CAMPCONTA = (r[2] && r[2].mapa) || {};
       var lista = r[0] || [], mapa = r[1] && r[1].mapa;
       if (!mapa) { CAMPMAP = {}; return lista; }   // sem o SQL novo: mantém tudo junto, como antes
       CAMPMAP = mapa;
@@ -1240,7 +1263,7 @@ function desenharLivro() {
     form('Editar entrada', [
       { k: 'descricao', l: 'Descrição', v: m.descricao },
       { k: 'valor', l: 'Valor', t: 'money', v: m.valor, req: true, h: 'Se o valor mudar, o pedido vai para aprovação de outro usuário.' },
-      { k: 'categoriaId', l: 'Categoria', t: 'select', o: opCats('income'), v: m.categoriaId, req: true },
+      { k: 'categoriaId', l: 'Conta contábil', t: 'select', o: opCats('income'), v: m.categoriaId, req: true }, avisoSemCodigo(),
       { k: 'formaId', l: 'Forma de recebimento', t: 'select', o: opFormas(true), v: m.formaId, req: true },
       { k: 'anonimo', l: 'Contribuição anônima', t: 'check', v: m.anonimo },
       { k: 'pessoaId', l: 'Pessoa (se identificada)', t: 'pessoa', v: m.pessoaId || '', nome: m.anonimo ? '' : m.pessoa },
@@ -1318,8 +1341,10 @@ return Promise.all([rpc('v39_fin_source_pending', C({})), rpc('v39_fin_sources',
     if (temCamp) cats = [['__camp', 'Recebimento de campanha ou voto']].concat(cats);
     var ehC = function (v) { return v.categoriaId === '__camp'; }, naoC = function (v) { return !ehC(v); };
     form('Nova entrada', [
-      { k: 'categoriaId', l: 'Tipo de entrada', t: 'select', o: cats, req: true },
+      { k: 'categoriaId', l: 'Conta contábil (tipo de entrada)', t: 'select', o: cats, req: true }, avisoSemCodigo(),
       { k: 'campanhaId', l: 'Campanha ou voto', t: 'select', o: opCampanhas(), req: true, vis: ehC, h: opCampanhas().length ? '' : 'Nenhuma campanha ativa. Crie uma em Campanhas.' },
+      { k: 'catCamp', l: 'Conta contábil do recebimento', t: 'select', o: opCatsVoto(), vazio: 'Padrão do sistema (recebimento de campanha ou voto)', vis: function (v) { return ehC(v) && !!v.campanhaId; },
+        fill: { dep: 'campanhaId', sempre: true, fn: function (v) { return CAMPCONTA[v.campanhaId] || ''; } }, h: 'Já vem a conta definida na campanha. Troque se este recebimento for em outra conta.' },
       { k: 'compromissoId', l: 'Quem está pagando', t: 'select', req: true, vis: function (v) { return ehC(v) && !!v.campanhaId; }, opts: function (v) { return partsDe(v.campanhaId); }, unico: true,
         h: 'Só aparecem participantes com valor a receber.' },
       { k: 'data', l: 'Data', t: 'date', v: hoje(), req: true },
@@ -1337,8 +1362,12 @@ return Promise.all([rpc('v39_fin_source_pending', C({})), rpc('v39_fin_sources',
       if (v.categoriaId === '__camp') {
         var x = achaComp(v.compromissoId); if (!x) return Promise.reject(new Error('Escolha a campanha e quem está pagando.'));
         return enviarComprovante(v.arq).then(function (ev) {
-          return rpc('v39_fin_commitment_receive', C({ p: { compromissoId: v.compromissoId, data: v.data, valor: v.valor, contaId: v.contaId, formaId: v.formaId, comprovanteId: ev, obs: v.obs || null, chave: uuid() } }));
-        }).then(function () { setTimeout(function () { ofertarRecibo(x.g, x.c, v.valor); }, 500); return 'Recebimento lançado e baixado da campanha.'; });
+          return rpc('v39_fin_commitment_receive', C({ p: { compromissoId: v.compromissoId, data: v.data, valor: v.valor, contaId: v.contaId, formaId: v.formaId, comprovanteId: ev, categoriaId: v.catCamp || null, obs: v.obs || null, chave: uuid() } }));
+        }).then(function (rr) {
+          setTimeout(function () { ofertarRecibo(x.g, x.c, v.valor); }, 500);
+          if (rr && rr.categoriaAplicada === false) setTimeout(function () { toast('O recebimento foi lançado, mas a conta contábil não pôde ser aplicada: ' + (rr.categoriaErro || 'o banco recusou a troca') + '. Avise o administrador.', 9000); }, 900);
+          return 'Recebimento lançado e baixado da campanha.';
+        });
       }
       return enviarComprovante(v.arq).then(function (ev) {
         return rpc('v39_fin_post_income', C({ p: { data: v.data, valor: v.valor, categoriaId: v.categoriaId, contaId: v.contaId, formaId: v.formaId, anonimo: v.anonimo || !v.pessoaId, pessoaId: v.pessoaId || null, origemTipo: v.origemTipo || null, descricao: v.descricao, comprovanteId: ev, obs: v.obs || null, chave: uuid() } }));
@@ -1564,7 +1593,7 @@ return Promise.all([rpc('v39_fin_source_pending', C({})), rpc('v39_fin_sources',
     }
     var campos = [
       { k: 'descricao', l: 'Descrição', v: e.descricao || pre.descricao, req: true },
-      { k: 'categoriaId', l: 'Categoria', t: 'select', o: opCats('expense'), v: e.categoriaId, req: true },
+      { k: 'categoriaId', l: 'Conta contábil', t: 'select', o: opCats('expense'), v: e.categoriaId, req: true, h: 'A conta contábil da despesa vale também para o pagamento (saída).' }, avisoSemCodigo(),
       { k: 'valor', l: 'Valor', t: 'money', v: e.valor || pre.valor, req: true },
       { t: 'info', l: '<b>Será lançada em: ' + esc(visaoRot()) + '</b>' + (visaoCnpj() ? ' · CNPJ ' + esc(visaoCnpj()) : '') + '. Para lançar no outro CNPJ, feche e troque o seletor no topo do Financeiro.', vis: function () { return temInstituto(); } },
       { k: 'itens', t: 'itens', l: 'Itens comprados (para o estoque do Instituto)', o: prods, v: (e.id && ITENS[e.id]) ? ITENS[e.id].map(function (i) { return { produtoId: i.produtoId, qtd: i.qtd, valorUnit: i.valorUnit }; }) : [],
@@ -1693,7 +1722,7 @@ return Promise.all([rpc('v39_fin_source_pending', C({})), rpc('v39_fin_sources',
     function genCron(v) { return genParcelas({ total: v.valor, parcelas: Math.max(0, Math.min(36, parseInt(v.nParc, 10) || 0)), primeiroVencimento: v.vencimento }); }
     var campos = [
       { k: 'descricao', l: 'Descrição', v: e.descricao, req: true },
-      { k: 'categoriaId', l: 'Categoria', t: 'select', o: opCats('expense'), v: e.categoriaId, req: true },
+      { k: 'categoriaId', l: 'Conta contábil', t: 'select', o: opCats('expense'), v: e.categoriaId, req: true, h: 'A conta contábil da despesa vale também para o pagamento (saída).' }, avisoSemCodigo(),
       { k: 'valor', l: 'Valor', t: 'money', v: e.valor, req: true, h: 'Se o valor mudar (para mais ou para menos), a despesa volta para aprovação.' },
       { t: 'preview', deps: ['valor'], gen: function (v) {
         if (!mudou(v)) return (nPag || nCart) ? 'Sem mudar o valor, descrição e categoria também são atualizadas no Livro dos meses abertos.' : '';
@@ -1751,7 +1780,7 @@ return Promise.all([rpc('v39_fin_source_pending', C({})), rpc('v39_fin_sources',
   function formRec(r) {
     r = r || {};
     form(r.id ? 'Editar conta fixa' : 'Nova conta fixa', [
-      { k: 'nome', l: 'Nome', v: r.nome, req: true }, { k: 'categoriaId', l: 'Categoria', t: 'select', o: opCats('expense'), v: r.categoriaId, req: true },
+      { k: 'nome', l: 'Nome', v: r.nome, req: true }, { k: 'categoriaId', l: 'Conta contábil', t: 'select', o: opCats('expense'), v: r.categoriaId, req: true }, avisoSemCodigo(),
       { k: 'fornecedorId', l: 'Fornecedor', t: 'select', o: opFornec(), v: r.fornecedorId, vazio: '— nenhum —' }, { k: 'valor', l: 'Valor padrão', t: 'money', v: r.valor, req: true },
       { k: 'tipo', l: 'Periodicidade', t: 'select', o: [['monthly', 'Mensal'], ['quarterly', 'Trimestral'], ['semiannual', 'Semestral'], ['annual', 'Anual']], v: r.tipo || 'monthly', vazio: false },
       { k: 'inicio', l: 'Primeiro vencimento', t: 'date', v: r.inicio ? String(r.inicio).slice(0, 10) : '', req: !r.id },
@@ -2109,9 +2138,15 @@ function itensAbertos(f) {
       { k: 'inicio', l: 'Início da campanha', t: 'date', v: g.inicio ? String(g.inicio).slice(0, 10) : hoje(), h: 'No dia do início, os participantes recebem o resumo do compromisso.' },
       { k: 'fim', l: 'Fim', t: 'date', v: g.fim ? String(g.fim).slice(0, 10) : '' }, { k: 'meta', l: 'Meta da campanha (valor total a arrecadar)', t: 'money', v: g.meta, h: 'Com a meta definida, a tela mostra quanto já foi recebido e quanto ainda falta.' },
       { k: 'status', l: 'Situação', t: 'select', o: [['active', 'Ativa'], ['planned', 'Planejada'], ['completed', 'Concluída'], ['cancelled', 'Cancelada']], v: g.status || 'active', vazio: false },
+      { k: 'contaCamp', l: 'Conta contábil dos recebimentos', t: 'select', o: opCatsVoto(), v: g.id ? (CAMPCONTA[g.id] || '') : '', vazio: 'Padrão do sistema (recebimento de campanha ou voto)',
+        h: 'Cada recebimento desta campanha/voto já vem com esta conta. Dá para trocar no lançamento.' },
       { k: 'motivo', l: 'Motivo (se cancelar)', t: 'textarea' }, { k: 'obs', l: 'Observação', t: 'textarea', v: g.obs }
     ], 'Salvar', function (v) {
-      return rpc('v39_fin_campaign_save', C({ p_id: g.id || null, p: { nome: v.nome, tipo: v.tipo, objetivo: v.objetivo, responsavelId: v.responsavelId || g.responsavelId || null, inicio: v.inicio || null, fim: v.fim || null, meta: v.meta, status: v.status, motivo: v.motivo || null, obs: v.obs || null } })).then(function () { return visaoInst() ? rpc('v39_fin_campaign_adopt', C({})).catch(function () { return null; }) : null; }).then(function () { return 'Campanha salva' + (temInstituto() ? ' em ' + visaoRot() : '') + '.'; });
+      return rpc('v39_fin_campaign_save', C({ p_id: g.id || null, p: { nome: v.nome, tipo: v.tipo, objetivo: v.objetivo, responsavelId: v.responsavelId || g.responsavelId || null, inicio: v.inicio || null, fim: v.fim || null, meta: v.meta, status: v.status, motivo: v.motivo || null, obs: v.obs || null } })).then(function (rs) {
+        var id = (rs && rs.id) || g.id, nova = String(v.contaCamp || ''), ant = String(g.id ? (CAMPCONTA[g.id] || '') : '');
+        if (!id || nova === ant) return rs;
+        return rpc('v39_fin_campaign_account_set', C({ p_campaign: id, p_category: nova || null })).then(function () { if (nova) CAMPCONTA[id] = nova; else delete CAMPCONTA[id]; return rs; });
+      }).then(function () { return visaoInst() ? rpc('v39_fin_campaign_adopt', C({})).catch(function () { return null; }) : null; }).then(function () { return 'Campanha salva' + (temInstituto() ? ' em ' + visaoRot() : '') + '.'; });
     });
   }
   function addMeses(iso, n) {
@@ -2221,9 +2256,9 @@ function itensAbertos(f) {
       }).join('') || '<div class="empty">Nenhuma conta.</div>') + '</div>';
     }
     if (pode('financial.categories.manage')) {
-      h += '<div class="sec">Plano de contas</div><div class="g2f-tool g2f-noprint">' + btn('novaCat', 'Categoria', 'plus', 'g2f-soft') + '</div><div class="card lp">' + ((C2.categorias || []).map(function (c) {
+      h += '<div class="sec">Plano de contas (contas contábeis)</div>' + (nSemCodigo() ? '<div class="aviso">⚠ <b>' + nSemCodigo() + ' conta(s) sem código contábil.</b> Toque em <b>Editar</b> e informe o código do contador. Elas continuam funcionando, mas aparecem sem código nos relatórios.</div>' : '') + '<div class="g2f-tool g2f-noprint">' + btn('novaCat', 'Conta contábil', 'plus', 'g2f-soft') + '</div><div class="card lp">' + ((C2.categorias || []).map(function (c) {
         return '<div class="row g2f-mv"><span class="g2f-ri ' + (c.natureza === 'income' ? 'in' : c.natureza === 'expense' ? 'out' : '') + '">' + ic('tag') + '</span><div class="info"><div class="nm">' + esc(c.nome) + (c.ativa ? '' : ' ' + pill('inativa', 'cinza')) + (c.sistema ? ' ' + pill('padrão', 'cinza') : '') + '</div>' +
-          '<div class="sb">' + esc([c.codigo, ROT.nat[c.natureza] || c.natureza, c.contabil ? 'cód. contábil ' + c.contabil : 'sem cód. contábil'].join(' · ')) + '</div></div><div class="g2f-acts">' + bt('editCat', c.id, 'Editar', 'sec') + '</div></div>';
+          '<div class="sb">' + esc([c.codigo, ROT.nat[c.natureza] || c.natureza, c.contabil ? 'cód. contábil ' + c.contabil : '⚠ sem código contábil'].join(' · ')) + '</div></div><div class="g2f-acts">' + bt('editCat', c.id, 'Editar', 'sec') + '</div></div>';
       }).join('') || '<div class="empty">Nenhuma categoria.</div>') + '</div><div class="g2f-note">O código contábil é o do contador; preencha quando receber a lista.</div>';
     }
     if (pode('financial.expenses.create') || pode('financial.bills.manage')) {
@@ -2244,11 +2279,11 @@ function itensAbertos(f) {
   }
   function formCat(c) {
     c = c || {}; var fixa = !!c.sistema;
-    form(c.id ? 'Editar categoria' : 'Nova categoria', (fixa ? [{ t: 'info', l: 'Categoria padrão: só o código contábil pode mudar.' }] : [
+    form(c.id ? 'Editar conta contábil' : 'Nova conta contábil', (fixa ? [{ t: 'info', l: 'Conta padrão do sistema: só o código contábil pode mudar.' }] : [
       { k: 'codigo', l: 'Código interno', v: c.codigo, req: true }, { k: 'nome', l: 'Nome', v: c.nome, req: true },
       { k: 'natureza', l: 'Natureza', t: 'select', o: [['income', 'Entrada'], ['expense', 'Saída']], v: c.natureza || 'expense', vazio: false },
       { k: 'descricao', l: 'Descrição', v: c.descricao }, { k: 'ativa', l: 'Ativa', t: 'check', v: c.id ? c.ativa : true }
-    ]).concat([{ k: 'contabil', l: 'Código contábil (do contador)', v: c.contabil }]), 'Salvar', function (v) {
+    ]).concat([{ k: 'contabil', l: 'Código contábil (do contador)', v: c.contabil, req: true, h: 'Obrigatório: é com este código que a conta aparece nos lançamentos e nos relatórios do contador.' }]), 'Salvar', function (v) {
       var p = fixa ? { codigo: c.codigo, nome: c.nome, natureza: c.natureza, contabil: v.contabil } : v;
       return rpc('v39_fin_save_category', C({ p_id: c.id || null, p_payload: p })).then(function () { return 'Categoria salva.'; });
     });
