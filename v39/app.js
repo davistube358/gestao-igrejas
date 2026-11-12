@@ -83,7 +83,8 @@ function carregando(on, txt) { $('carregando').classList.toggle('on', !!on); $('
 var DIAS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 var PAPEL_NOME = { master: 'Master', pastor: 'Pastor(a)', supervisor: 'Supervisor', lider: 'Líder', discipulo: 'Discípulo', secretaria: 'Secretaria', tesouraria: 'Tesouraria', voluntario: 'Voluntário', voluntarioLV: 'Voluntário Lar de Vida', voluntarioInst: 'Voluntário Instituto', profissional: 'Profissional de saúde' };
 var ETAPAS = ['1. Visitou', '2. Frequentando', '3. Membro da igreja', '4. Batizado', '5. Em discipulado', '6. Em formação de líder', 'Instituto'];
-/* SYNC-V39-18: Instituto — agendas e atendimentos no Supabase (profissional = pessoa com acesso; prontuário cifrado). Requer app_v39_instituto.js INST-7 e INST_S14.
+/* SYNC-V39-19: Instituto — ficha do atendimento com prontuário (anamnese, conduta, receita), histórico compartilhado entre profissionais de saúde, impressão/PDF; "Novo atendido" some para o profissional. Requer app_v39_inst_prontuario.js (PRONT-1) e INST_S15 v2.
+   SYNC-V39-18: Instituto — agendas e atendimentos no Supabase (profissional = pessoa com acesso; prontuário cifrado). Requer app_v39_instituto.js INST-7 e INST_S14.
    SYNC-V39-17: etapas da jornada vêm da configuração da igreja (v39_journey_stages); 'Instituto' é fixa. */
 var JORNADA = { visitante: '1. Visitou', promovido: '2. Frequentando', membro: '3. Membro da igreja', emUso: {}, podeEditar: false };
 function JV() { return JORNADA.visitante || ETAPAS[0]; }
@@ -1717,7 +1718,7 @@ function blocoConta() {
     '<div class="card" style="font-size:12.5px;color:var(--tx2,#5E6470);line-height:1.55;display:flex;gap:10px;align-items:center">' +
       '<span style="flex:0 0 30px;height:30px;border-radius:50%;background:var(--pri);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:11px">' + esc(ini(u.nome || '?')) + '</span>' +
       '<span>Sincronizar, trocar a senha e sair do app ficam no botão com as suas iniciais, no canto superior direito.</span></div>' +
-    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-18</div>';
+    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-19</div>';
 }
 function rConta() { return blocoConta(); }
 function trocarSenha() {
@@ -5688,12 +5689,12 @@ function rInstituto() { if (!temInstSaude()) { var tb0 = instTabsLista()[0]; if 
   }
   // atalhos
   h += '<div class="sec">Mais do Instituto</div><div class="mods" style="grid-template-columns:repeat(4,1fr)">' +
-    '<button class="mod" data-a="instNovoAtendido"><span class="mi" style="background:#fff!important;color:#E5484D"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span><span class="mn">Novo atendido</span></button>' +
+    (instMostraNovoAtendido() ? '<button class="mod" data-a="instNovoAtendido"><span class="mi" style="background:#fff!important;color:#E5484D"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span><span class="mn">Novo atendido</span></button>' : '') +
     (temEstMercado() ? '<button class="mod" data-a="aba" data-v="instmercado"><span class="mi" style="background:#fff!important;color:#C9930A"><svg viewBox="0 0 24 24"><path d="M6 6h15l-1.5 9h-12z"/><path d="M6 6L5 3H2"/><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/></svg></span><span class="mn">Mercado</span></button>' : '') +
     (temEstFarmacia() ? '<button class="mod" data-a="aba" data-v="instfarmacia"><span class="mi" style="background:#fff!important;color:#16A36A"><svg viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="12" rx="2"/><path d="M8 9V6a4 4 0 0 1 8 0v3M12 12v6M9 15h6"/></svg></span><span class="mn">Farmácia</span></button>' : '') +
     (temInstCursos() ? '<button class="mod" data-a="aba" data-v="instcursos"><span class="mi" style="background:#fff!important;color:#0F8A8A"><svg viewBox="0 0 24 24">' + IC_CURSO + '</svg></span><span class="mn">Cursos</span></button>' : '') + '</div>';
-  h += '<div class="card" style="font-size:11.5px;color:var(--tx2);line-height:1.55;background:#FFF8E6"><b>Privacidade:</b> os nomes dos pacientes e as anotações do atendimento aparecem <b>somente para o profissional responsável</b> pela agenda. ' +
-    'Secretaria, voluntários, pastor e master veem apenas “horário ocupado” e o protocolo.</div>';
+  h += '<div class="card" style="font-size:11.5px;color:var(--tx2);line-height:1.55;background:#FFF8E6"><b>Privacidade:</b> os nomes dos pacientes aparecem <b>somente para o profissional responsável</b> pela agenda. ' +
+    'Secretaria, voluntários, pastor e master veem apenas “horário ocupado” e o protocolo. O <b>prontuário</b> (consultas, anamnese, receitas) é compartilhado só entre os profissionais de saúde que atendem o paciente; cada anotação pode ser marcada como <b>reservada</b>.</div>';
   return h;
 }
 /** Linha de atendimento. dono = true mostra o paciente (quando o servidor liberou o nome). */
@@ -5937,46 +5938,145 @@ function instCdSalvar() {
 }
 
 /* ═════ atendimento e prontuário (somente o profissional responsável) ═════ */
+/* ═════ SYNC-V39-19 · atendimento: ficha do paciente + prontuário (consulta, anamnese, conduta, receita) + impressão/PDF ═════ */
+var PRONT_ROT = {
+  med: { q: 'Queixa principal', an: 'Anamnese — história atual, antecedentes, medicamentos em uso, alergias', ex: 'Exame físico e achados', av: 'Avaliação / hipótese diagnóstica', c: 'Conduta e recomendações', rc: 'Receita / prescrição', cm: 'Comentários e observações', rcTit: 'Receita / Prescrição' },
+  psi: { q: 'Demanda / queixa', an: 'Anamnese e histórico', ex: 'Observações da sessão', av: 'Avaliação / formulação', c: 'Conduta e encaminhamentos', rc: 'Orientações ao paciente (opcional)', cm: 'Comentários e observações', rcTit: 'Orientações ao paciente' },
+  past: { q: 'Assunto', an: null, ex: 'Anotações do atendimento', av: null, c: 'Encaminhamentos / próximos passos', rc: null, cm: null, rcTit: '' }
+};
+var PRONT_CAMPOS = [['q', 'queixa', 'pr-q', 2], ['an', 'anamnese', 'pr-an', 6], ['ex', 'exame', 'pr-ex', 4], ['av', 'avaliacao', 'pr-av', 2], ['c', 'conduta', 'pr-c', 3], ['rc', 'receita', 'pr-rc', 4], ['cm', 'comentarios', 'pr-cm', 2]];
+var instPr = { id: '', modo: 'med', itens: [], atual: {}, clinico: true };
+function instModoPr(ag) { return ag.tipo === 'pastoral' ? 'past' : /psic/i.test(ag.especialidade || '') ? 'psi' : 'med'; }
+function instMostraNovoAtendido() { var p = instD.perm || {}; return !(cfg.token === 'supabase-v39' && p.profissionalId && !p.admin && !p.agenda); }
+function instPrLer() {
+  var o = { retorno: ($('pr-r') || {}).value || '', reservado: !!($('pr-res') && $('pr-res').checked) };
+  PRONT_CAMPOS.forEach(function (c) { var e = $(c[2]); o[c[1]] = e ? e.value : ''; });
+  return o;
+}
 function instAtender(id) {
   var a = instD.ags.filter(function (x) { return x.id === id; })[0], ag = a && agendaPor(a.agendaId), pc = a && instD.pac[a.pessoaId];
   if (!a || !ag || !ag.dono || !pc) return toast('Somente o profissional responsável abre este atendimento.');
-  var past = ag.tipo === 'pastoral';
+  var modo = instModoPr(ag), v39 = cfg.token === 'supabase-v39';
+  instPr = { id: a.id, modo: modo, itens: [], atual: {}, clinico: true };
+  var quando = brCompleto(a.data) + (a.hora ? ' às ' + a.hora : '');
   abrirModal('<div class="perfil" style="padding-top:0">' + avatarInst(pc, pc.nome, 72) + '<h2 style="font-size:19px">' + esc(pc.nome) + '</h2>' +
     '<p>' + esc([pc.codigo, pc.idade !== null && pc.idade !== undefined ? pc.idade + ' anos' : '', pc.sexo, pc.bairro].filter(Boolean).join(' · ')) + '</p>' +
-    '<div class="pills">' + pillAt(a.status) + (pc.igreja ? '<span class="pill p-dour">membro/visitante da igreja</span>' : '') + '</div></div>' +
+    '<div class="pills">' + pillAt(a.status) + '<span class="pill p-cinza">consulta ' + esc(quando) + '</span>' + (pc.igreja ? '<span class="pill p-dour">membro/visitante da igreja</span>' : '') + '</div></div>' +
     (pc.fone ? '<div class="qas" style="grid-template-columns:1fr 1fr"><a class="qa" target="_blank" rel="noopener" href="https://wa.me/' + (fone(pc.fone).length <= 11 ? '55' : '') + fone(pc.fone) + '"><span>WhatsApp</span></a><a class="qa" href="tel:' + fone(pc.fone) + '"><span>Ligar</span></a></div>' : '') +
-    '<div class="aviso" style="margin:10px 0 4px;font-size:12px;line-height:1.45">🔒 Anotações <b>cifradas</b> e visíveis <b>somente para você</b>' + (past ? '' : '. Master, pastor e secretaria não têm acesso.') + '</div>' +
+    '<div class="aviso" style="margin:10px 0 4px;font-size:12px;line-height:1.45">\uD83D\uDD12 Prontuário <b>cifrado</b>. ' + (modo === 'past' ? 'As anotações pastorais ficam <b>somente com você</b>.' : 'Visível só para <b>profissionais de saúde</b> que atendem este paciente; secretaria, voluntários, pastor e master não têm acesso. Marque como <b>reservada</b> o que só você deve ver.') + '</div>' +
     (a.motivo ? '<div style="background:var(--bg);border-radius:12px;padding:9px 12px;font-size:12.5px;margin:8px 0"><b>Motivo informado no agendamento:</b><br>' + esc(a.motivo) + '</div>' : '') +
-    '<div id="pr-corpo"><div class="empty" style="padding:14px">Abrindo anotações…</div></div>');
+    '<div id="pr-corpo"><div class="empty" style="padding:14px">Abrindo o prontuário…</div></div>');
+  var semPres = function (msg) {
+    if (!$('pr-corpo')) return;
+    $('pr-corpo').innerHTML = '<div class="aviso" style="font-size:12.5px;line-height:1.5">' + msg + '</div><div style="height:10px"></div>' +
+      (a.data <= hoje() && a.status !== 'atendido' ? '<button class="btn pr" data-a="instRegSalvar" data-v="' + esc(a.id + '|1') + '">Marcar como atendido</button><div class="gap"></div>' : '') +
+      (a.data <= hoje() && (a.status === 'agendado' || a.status === 'confirmado') ? '<button class="btn gh" data-a="instStatusAt" data-v="' + esc(a.id + '|faltou') + '" style="color:var(--vermelho)">Registrar falta</button><div class="gap"></div>' : '') +
+      '<button class="btn gh" data-a="fechar">Fechar</button>';
+  };
+  if (v39 && !window.G2_PRONT) return semPres('<b>Módulo do prontuário não carregado.</b> Publique o arquivo <b>app_v39_inst_prontuario.js</b> (PRONT-1) e atualize a página. Por enquanto você registra só a presença do paciente.');
   chamar('instProntuarioDe', { pessoaId: a.pessoaId }).then(function (r) {
-    if (r.semProntuario) {
-      if ($('pr-corpo')) $('pr-corpo').innerHTML = '<div class="aviso" style="font-size:12.5px;line-height:1.5"><b>Anotações clínicas ainda não liberadas.</b> Elas só serão gravadas depois que a cifra do prontuário for ativada no servidor (INST_S15). Por enquanto você registra a presença do paciente.</div><div style="height:10px"></div>' +
-        (a.data <= hoje() && a.status !== 'atendido' ? '<button class="btn pr" data-a="instRegSalvar" data-v="' + esc(a.id + '|1') + '">Marcar como atendido</button><div class="gap"></div>' : '') +
-        (a.data <= hoje() && (a.status === 'agendado' || a.status === 'confirmado') ? '<button class="btn gh" data-a="instStatusAt" data-v="' + esc(a.id + '|faltou') + '" style="color:var(--vermelho)">Registrar falta</button><div class="gap"></div>' : '') +
-        '<button class="btn gh" data-a="fechar">Fechar</button>';
-      return;
-    }
-    var itens = r.itens || [], atual = itens.filter(function (e) { return e.agendamentoId === a.id; })[0] || {}, ant = itens.filter(function (e) { return e.agendamentoId !== a.id; });
-    if (r.invalidos) setTimeout(function () { toast(r.invalidos + ' registro(s) antigo(s) não puderam ser abertos (integridade). Avise o administrador.', 7000); }, 300);
-    var L = past ? ['Assunto', 'Anotações do atendimento', 'Encaminhamentos / próximos passos'] : ['Queixa / motivo da consulta', 'Evolução, exame e anotações clínicas', 'Conduta e prescrição'];
-    var h = '<label>' + L[0] + '</label><textarea id="pr-q" rows="2" maxlength="4000">' + esc(atual.queixa) + '</textarea><label>' + L[1] + '</label><textarea id="pr-e" rows="5" maxlength="4000">' + esc(atual.evolucao) + '</textarea>' +
-      '<label>' + L[2] + '</label><textarea id="pr-c" rows="3" maxlength="4000">' + esc(atual.conduta) + '</textarea><label>Retorno sugerido em</label><input id="pr-r" type="date" value="' + esc(atual.retorno || '') + '">' +
-      '<div style="height:12px"></div>' + (a.data <= hoje() && a.status !== 'atendido' ? '<button class="btn pr" data-a="instRegSalvar" data-v="' + esc(a.id + '|1') + '">Salvar e marcar como atendido</button><div class="gap"></div>' : '') +
-      '<button class="btn ' + (a.status === 'atendido' ? 'pr' : 'gh') + '" data-a="instRegSalvar" data-v="' + esc(a.id + '|0') + '">Salvar anotações</button>' +
-      (a.data <= hoje() && (a.status === 'agendado' || a.status === 'confirmado') ? '<div class="gap"></div><button class="btn gh" data-a="instStatusAt" data-v="' + esc(a.id + '|faltou') + '" style="color:var(--vermelho)">Registrar falta</button>' : '') +
-      '<div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>';
-    if (ant.length) h += '<div class="sec">Histórico com você (' + ant.length + ')</div>' + ant.map(function (e) {
-      return '<div class="card" style="box-shadow:none;background:var(--bg);padding:10px 12px"><div style="font-size:11.5px;color:var(--tx3);font-weight:800">' + brCompleto(e.data) + '</div>' +
-        (e.queixa ? '<div style="font-size:12.5px;margin-top:3px"><b>' + L[0] + ':</b> ' + esc(e.queixa) + '</div>' : '') + (e.evolucao ? '<div style="font-size:12.5px;margin-top:3px;white-space:pre-line"><b>' + L[1] + ':</b> ' + esc(e.evolucao) + '</div>' : '') +
-        (e.conduta ? '<div style="font-size:12.5px;margin-top:3px;white-space:pre-line"><b>' + L[2] + ':</b> ' + esc(e.conduta) + '</div>' : '') + '</div>'; }).join('');
-    if ($('pr-corpo')) $('pr-corpo').innerHTML = h;
-  }).catch(function (e) { if ($('pr-corpo')) $('pr-corpo').innerHTML = '<div class="aviso r">' + esc(e.message) + '</div>'; });
+    if (r.semProntuario) return semPres('<b>Prontuário ainda não liberado neste servidor.</b> As anotações só serão gravadas depois que a cifra for ativada (INST_S15). Por enquanto você registra a presença do paciente.');
+    instPrDesenhar(a, ag, pc, r);
+  }).catch(function (e) { if ($('pr-corpo')) $('pr-corpo').innerHTML = '<div class="aviso r">' + esc(e.message) + '</div><div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>'; });
+}
+function instPrCardHist(e, i, R) {
+  var linhas = PRONT_CAMPOS.map(function (c) { return e[c[1]] && R[c[0]] ? '<div style="font-size:12.5px;margin-top:4px;white-space:pre-line"><b>' + esc(R[c[0]].split(' — ')[0]) + ':</b> ' + esc(e[c[1]]) + '</div>' : ''; }).join('');
+  return '<div class="card" style="box-shadow:none;background:var(--bg);padding:10px 12px"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span style="font-size:12px;color:var(--tx3);font-weight:800">' + brCompleto(e.data) + (e.hora ? ' · ' + esc(e.hora) : '') + '</span>' +
+    '<span class="pill ' + (e.meu ? 'p-verde' : 'p-cinza') + '">' + (e.meu ? 'você' : esc(e.profissional || 'outro profissional')) + (e.especialidade && !e.meu ? ' · ' + esc(e.especialidade) : '') + '</span>' +
+    (e.reservado ? '<span class="pill p-dour">reservada</span>' : '') + '</div>' + linhas +
+    (e.retorno ? '<div style="font-size:12px;color:var(--tx2);margin-top:4px">Retorno sugerido: ' + brCompleto(e.retorno) + '</div>' : '') +
+    '<div style="margin-top:6px"><button class="btn gh sm" data-a="instPrImprimir" data-v="h|' + i + '">Imprimir / PDF</button></div></div>';
+}
+function instPrDesenhar(a, ag, pc, r) {
+  var R = PRONT_ROT[instPr.modo], itens = r.itens || [], atual = itens.filter(function (e) { return e.agendamentoId === a.id; })[0] || {}, hist = itens.filter(function (e) { return e.agendamentoId !== a.id; });
+  instPr.itens = hist; instPr.atual = atual; instPr.clinico = r.clinico !== false;
+  if (r.invalidos) setTimeout(function () { toast(r.invalidos + ' registro(s) antigo(s) não puderam ser abertos (integridade). Avise o administrador.', 7000); }, 300);
+  var podeMarcar = a.data <= hoje() && a.status !== 'atendido';
+  var campo = function (c) {
+    if (!R[c[0]]) return '';
+    return '<label>' + esc(R[c[0]]) + '</label><textarea id="' + c[2] + '" rows="' + c[3] + '" maxlength="6000">' + esc(atual[c[1]] || '') + '</textarea>';
+  };
+  var f = '<div style="background:var(--bg);border-radius:12px;padding:8px 12px;font-size:12.5px;margin:4px 0 2px"><b>Data da consulta:</b> ' + esc(brCompleto(a.data) + (a.hora ? ' às ' + a.hora : '')) + ' · <b>Profissional:</b> ' + esc((ag.profissionalNome || '') + (ag.especialidade ? ' (' + ag.especialidade + ')' : '')) + '</div>' +
+    PRONT_CAMPOS.map(campo).join('') +
+    '<label>Retorno sugerido em</label><input id="pr-r" type="date" value="' + esc(atual.retorno || '') + '">' +
+    (instPr.modo !== 'past' ? '<label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:12.5px"><input type="checkbox" id="pr-res" style="width:auto"' + (atual.reservado ? ' checked' : '') + '><span><b>Reservada</b>: só eu vejo esta anotação' + (instPr.modo === 'psi' ? ' <span style="color:var(--tx3)">(recomendado para sessões de psicologia)</span>' : '') + '</span></label>' : '') +
+    '<div style="height:12px"></div>' + (podeMarcar ? '<button class="btn pr" data-a="instRegSalvar" data-v="' + esc(a.id + '|1') + '">Salvar e marcar como atendido</button><div class="gap"></div>' : '') +
+    '<button class="btn ' + (a.status === 'atendido' ? 'pr' : 'gh') + '" data-a="instRegSalvar" data-v="' + esc(a.id + '|0') + '">Salvar anotações</button><div class="gap"></div>' +
+    '<div style="display:grid;grid-template-columns:1fr' + (R.rc ? ' 1fr' : '') + ';gap:8px"><button class="btn gh" data-a="instPrImprimir" data-v="atual">Imprimir / PDF da consulta</button>' + (R.rc ? '<button class="btn gh" data-a="instPrImprimir" data-v="receita">Imprimir ' + esc(instPr.modo === 'psi' ? 'orientações' : 'receita') + '</button>' : '') + '</div>' +
+    (a.data <= hoje() && (a.status === 'agendado' || a.status === 'confirmado') ? '<div class="gap"></div><button class="btn gh" data-a="instStatusAt" data-v="' + esc(a.id + '|faltou') + '" style="color:var(--vermelho)">Registrar falta</button>' : '') +
+    '<div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>';
+  var h = '<div class="chips" role="tablist" style="margin:6px 0"><button type="button" role="tab" data-a="instPrTab" data-v="nova" class="on">Consulta de hoje</button><button type="button" role="tab" data-a="instPrTab" data-v="hist">Prontuário · ' + hist.length + '</button></div>' +
+    '<div id="pr-nova">' + f + '</div>' +
+    '<div id="pr-hist" class="hide">' + (hist.length
+      ? '<div class="sb" style="font-size:12px;color:var(--tx2);margin:2px 0 8px">Consultas anteriores deste paciente' + (instPr.clinico ? ' feitas por profissionais de saúde do Instituto' : ' feitas por você') + ', da mais recente para a mais antiga.</div>' +
+        '<button class="btn pr" data-a="instPrImprimir" data-v="tudo" style="margin-bottom:8px">Imprimir / salvar PDF do prontuário completo</button>' + hist.map(function (e, i) { return instPrCardHist(e, i, R); }).join('')
+      : '<div class="empty" style="padding:14px">Nenhuma consulta anterior registrada.</div>') +
+    '<div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button></div>';
+  if ($('pr-corpo')) $('pr-corpo').innerHTML = h;
+}
+function instPrTab(v) {
+  var n = $('pr-nova'), hh = $('pr-hist'); if (!n || !hh) return;
+  n.classList.toggle('hide', v !== 'nova'); hh.classList.toggle('hide', v !== 'hist');
+  [].forEach.call(document.querySelectorAll('[data-a="instPrTab"]'), function (b) { var on = b.getAttribute('data-v') === v; b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
+}
+function instPrBlocos(R, e) {
+  var out = [];
+  PRONT_CAMPOS.forEach(function (c) { if (R[c[0]] && String(e[c[1]] || '').trim()) out.push([R[c[0]].split(' — ')[0], e[c[1]]]); });
+  if (e.retorno) out.push(['Retorno sugerido em', brCompleto(e.retorno)]);
+  return out;
+}
+function instPrDoc(titulo, pc, consultas, R, sohReceita) {
+  var css = 'body{font:13px/1.5 Arial,Helvetica,sans-serif;color:#111;margin:0;padding:22px}h1{font-size:18px;margin:0}.top{display:flex;justify-content:space-between;gap:12px;border-bottom:2px solid #111;padding-bottom:8px;margin-bottom:12px}.sm{font-size:11px;color:#555}' +
+    '.pac{background:#f3f4f6;padding:8px 10px;border-radius:6px;margin-bottom:10px}.cons{margin-bottom:16px;page-break-inside:avoid}.cons h2{font-size:14px;margin:0 0 4px;border-bottom:1px solid #999;padding-bottom:3px}' +
+    '.sec{margin:7px 0}.sec b{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;color:#444}.sec div{white-space:pre-wrap}' +
+    '.ass{margin-top:48px;width:280px;border-top:1px solid #111;padding-top:4px;font-size:11px}.rod{margin-top:22px;font-size:10px;color:#666;border-top:1px solid #ccc;padding-top:6px}@page{margin:12mm}';
+  var quem = ((typeof eu === 'function' && eu().nome) || '').trim();
+  var h = '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(titulo + ' · ' + pc.nome) + '</title><style>' + css + '</style></head><body>' +
+    '<div class="top"><div><h1>' + esc(titulo) + '</h1><div class="sm">' + esc(igrNome()) + ' · Instituto</div></div><div class="sm" style="text-align:right">Emitido em ' + esc(brCompleto(hoje())) + '</div></div>' +
+    '<div class="pac"><b>' + esc(pc.nome) + '</b><div class="sm">' + esc([pc.codigo ? 'Cód. ' + pc.codigo : '', pc.idade !== null && pc.idade !== undefined ? pc.idade + ' anos' : '', pc.sexo].filter(Boolean).join(' · ')) + '</div></div>';
+  consultas.forEach(function (c) {
+    h += '<div class="cons"><h2>Consulta de ' + esc(brCompleto(c.data) + (c.hora ? ' às ' + c.hora : '')) + '</h2><div class="sm">' + esc([c.profissional, c.especialidade].filter(Boolean).join(' · ')) + '</div>';
+    (sohReceita ? [[R.rcTit, c.receita]] : instPrBlocos(R, c)).forEach(function (b) { if (String(b[1] || '').trim()) h += '<div class="sec"><b>' + esc(b[0]) + '</b><div>' + esc(b[1]) + '</div></div>'; });
+    h += '</div>';
+  });
+  h += '<div class="ass">' + esc((consultas[0] && consultas[0].profissional) || 'Profissional responsável') + '<br>Assinatura e carimbo (nº do registro profissional)</div>' +
+    '<div class="rod">Documento confidencial — dados de saúde protegidos pela LGPD. Impresso por ' + esc(quem || 'usuário') + ' em ' + esc(brCompleto(hoje())) + '. Não compartilhe.</div></body></html>';
+  return h;
+}
+function instImprimirHtml(html) {
+  try {
+    var f = document.createElement('iframe'); f.setAttribute('aria-hidden', 'true'); f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
+    document.body.appendChild(f);
+    var d = f.contentWindow.document; d.open(); d.write(html); d.close();
+    setTimeout(function () { try { f.contentWindow.focus(); f.contentWindow.print(); } catch (e) { toast('Não foi possível abrir a impressão neste aparelho.', 5000); } setTimeout(function () { if (f.parentNode) f.parentNode.removeChild(f); }, 90000); }, 350);
+  } catch (e) { toast('Não foi possível abrir a impressão neste aparelho.', 5000); }
+}
+function instPrImprimir(v) {
+  var a = instD.ags.filter(function (x) { return x.id === instPr.id; })[0], ag = a && agendaPor(a.agendaId), pc = a && instD.pac[a.pessoaId]; if (!a || !ag || !pc) return;
+  var R = PRONT_ROT[instPr.modo], base = { data: a.data, hora: a.hora, profissional: ag.profissionalNome, especialidade: ag.especialidade };
+  var atualForm = function () { var o = instPrLer(); return Object.assign({}, base, o); };
+  if (v === 'receita') {
+    var c1 = atualForm(); if (!String(c1.receita || '').trim()) return toast('Escreva a receita antes de imprimir.');
+    return instImprimirHtml(instPrDoc(R.rcTit || 'Receita', pc, [c1], R, true));
+  }
+  if (v === 'atual') {
+    var c2 = atualForm(); if (!instPrBlocos(R, c2).length) return toast('Preencha a consulta antes de imprimir.');
+    return instImprimirHtml(instPrDoc('Consulta · Prontuário', pc, [c2], R));
+  }
+  if (v === 'tudo') {
+    var l = [], c3 = atualForm(); if (instPrBlocos(R, c3).length) l.push(c3);
+    instPr.itens.forEach(function (e) { l.push(e); });
+    if (!l.length) return toast('Não há consultas para imprimir.');
+    return instImprimirHtml(instPrDoc('Prontuário', pc, l, R));
+  }
+  var m = String(v).match(/^h\|(\d+)$/), e = m && instPr.itens[+m[1]]; if (!e) return;
+  instImprimirHtml(instPrDoc('Consulta · Prontuário', pc, [e], R));
 }
 function instRegSalvar(v) {
   var p = v.split('|'), id = p[0], marcar = p[1] === '1';
   carregando(true, 'Salvando...');
-  var lerPr = function (x) { var e = $(x); return e ? e.value : ''; };
-  chamar('instRegistro', { agendamentoId: id, queixa: lerPr('pr-q'), evolucao: lerPr('pr-e'), conduta: lerPr('pr-c'), retorno: lerPr('pr-r'), marcarAtendido: marcar }).then(function () {
+  var d = instPrLer(); d.agendamentoId = id; d.marcarAtendido = marcar;
+  chamar('instRegistro', d).then(function () {
     fechar(); toast(marcar ? 'Atendimento registrado ✓' : 'Anotações salvas ✓'); return carregarInst(true);
   }).catch(function (e) { toast(e.message, 5000); }).then(function () { carregando(false); render(); });
 }
@@ -6503,7 +6603,7 @@ var ACOES = {
     instFlPessoa: instFlPessoa, instFlConfirmar: instFlConfirmar, instCompartilhar: instCompartilhar,
     instFlVoltar: function (v) { var f = instFl; if (v === 'esp') { f.esp = ''; f.agenda = ''; f.data = ''; f.hora = ''; f.pessoa = null; } else if (v === 'agenda') { f.agenda = ''; var gx = gruposEsp(instD.agendas.filter(function (a) { return a.ativa && podeAgendarNa(a); })).filter(function (g) { return g.chave === f.esp; })[0]; if (gx && gx.agendas.length === 1) f.esp = ''; f.data = ''; f.hora = ''; f.pessoa = null; } else if (v === 'data') { f.data = ''; f.hora = ''; f.pessoa = null; } else if (v === 'hora') { f.hora = ''; f.pessoa = null; } else f.pessoa = null; instFluxo(); },
     instStatusAt: instStatusAt, instRemarcar: instRemarcarAbrir, instRemDia: function (v) { instFl.data = v; instRemFluxo(); }, instRemHora: instRemConfirmar,
-    instAtender: instAtender, instRegSalvar: instRegSalvar,
+    instAtender: instAtender, instRegSalvar: instRegSalvar, instPrTab: instPrTab, instPrImprimir: instPrImprimir,
     instNovoAtendido: function (v) { instNovoAtendido(v); },
     instCdIgreja: function (v) { instCd.igreja = v === '1'; instCdTela(); if (instCd.igreja) setTimeout(function () { try { $('cd-busca').focus(); } catch (e) {} }, 250); },
     instCdEscolher: function (v) { var x = (instCd.res || []).filter(function (r) { return r.id === v; })[0]; if (x) instCdConcluir({ id: x.id, nome: x.nome, codigo: x.codigo, autorizou: x.autorizou }); },
@@ -7407,7 +7507,7 @@ window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'SYNC-V39-18';
+  var BUILD = 'SYNC-V39-19';
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 
