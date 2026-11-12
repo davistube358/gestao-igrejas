@@ -1,4 +1,7 @@
-/* 2Gather v39 · Instituto · INST-6
+/* 2Gather v39 · Instituto · INST-7
+   INST-7: AGENDAS E ATENDIMENTOS (médico, psicológico e outros). Liga as telas de agenda do app.js ao banco: dados, agendar, confirmar, remarcar, cancelar, faltou,
+   atendido, cadastro de profissional e horários da agenda. O prontuário (anotações) usa a cifra do INST_S15. Requer INST_S14 (e INST_S15 para as anotações).
+   Base INST-6:
    INST-6: a entrada por COMPRA só lista despesas do CNPJ do Instituto e já traz os itens comprados na despesa (produto, quantidade comprada, já recebido, valor);
    você informa quanto chegou, lote e validade. Lote obrigatório na Farmácia e nos produtos que exigem lote (mensagem clara). Requer FIN_S15 (e INST_S12).
    Base INST-5:
@@ -18,7 +21,7 @@
    Diagnóstico no Console: G2_INST.versao · G2_INST.acoes() */
 (function () {
   'use strict';
-  var VERSAO = 'INST-6';
+  var VERSAO = 'INST-7';
   if (window.G2_INST) return;
   var M = window.G2_INST = { versao: VERSAO, ultimo: {} };
   console.info('[2Gather] instituto ' + VERSAO);
@@ -76,7 +79,18 @@
     PURCHASE_EXPENSE_NOT_FOUND: 'Despesa não encontrada. Atualize a lista.',
     PURCHASE_EXPENSE_INVALID: 'Esta despesa está recusada, cancelada ou estornada e não pode receber entradas.',
     PURCHASE_EXPENSE_ENTITY: 'Esta despesa não é do CNPJ do Instituto. No Financeiro, lance a despesa com o seletor em Instituto.',
-    PURCHASE_PRODUCT_NOT_IN_EXPENSE: 'Este produto não está nos itens da despesa.'
+    PURCHASE_PRODUCT_NOT_IN_EXPENSE: 'Este produto não está nos itens da despesa.',
+    SLOT_TAKEN: 'Este horário já está ocupado. Escolha outro.',
+    SLOT_OUTSIDE_HOURS: 'Horário fora da agenda do profissional. Escolha um horário livre da grade.',
+    SLOT_BLOCKED: 'Dia sem atendimento (folga ou feriado) — fora da agenda. Escolha outro dia.',
+    DATE_IN_PAST: 'A data já passou.', DATE_TIME_REQUIRED: 'Informe a data e o horário.',
+    INSTITUTE_AGENDA_NOT_FOUND: 'Agenda não encontrada ou inativa. Atualize a tela.', APPOINTMENT_NOT_FOUND: 'Atendimento não encontrado. Atualize a tela.',
+    APPOINTMENT_CLOSED: 'Este atendimento já foi cancelado ou remarcado.', INVALID_APPOINTMENT_STATUS: 'Situação inválida.',
+    AGENDA_TITLE_REQUIRED: 'Informe o nome da agenda.', PROFESSIONAL_NOT_FOUND: 'Profissional não encontrado. Atualize a tela.',
+    PROFESSIONAL_DUPLICATE: 'Esta pessoa já é profissional ativo.', AGENDA_HOURS_INVALID: 'Confira os horários: o início deve ser antes do fim e as datas devem ser válidas.',
+    RECORD_TOO_LONG: 'Cada campo aceita até 4000 caracteres.', RETURN_DATE_INVALID: 'Data de retorno inválida.',
+    INST_RECORD_KEY_MISSING: 'A chave de cifra do prontuário não foi encontrada no servidor. Avise o administrador.',
+    PRONTUARIO_INDISPONIVEL: 'As anotações clínicas ainda não estão liberadas neste servidor (falta rodar o INST_S15). A agenda e o registro de atendimento funcionam.'
   };
   function traduz(e) {
     var t = String((e && (e.message || e.code)) || e || ''), det = (e && e.details) || '';
@@ -180,6 +194,7 @@
     P.read = function (a, d) { return ACOES[a] ? ACOES[a](d || {}) : (typeof rd === 'function' ? rd.apply(P, arguments) : Promise.reject(new Error('Acao v39 nao mapeada: ' + a))); };
     P.__inst = true;
     recarregarEstoque();   // o app pode ter aberto direto no Mercado/Farmácia antes deste módulo
+    try { var g0 = G(); if (g0 && typeof g0.instRecarregar === 'function') g0.instRecarregar(); } catch (e) { /* segue */ }   // e na agenda do Instituto
     return true;
   }
   var tent = 0, tm = setInterval(function () { if (instalar() || ++tent > 240) clearInterval(tm); }, 250);
@@ -408,6 +423,103 @@
     var b = document.createElement('button'); b.type = 'button'; b.setAttribute('data-a', 'instNovoAtendido'); b.style.display = 'none';
     document.body.appendChild(b); b.click(); b.remove();   // usa o formulário de cadastro com LGPD que o app já tem
   }
+
+  /* ───────────── INST-7: agendas e atendimentos (médico, psicológico e outros) ─────────────
+     O app.js já tem as telas de agenda; aqui só se traduz entre o formato da tela e o do banco (INST_S14). */
+  var AG = { dados: null, raw: null, pessoas: {} };
+  var ST_V2L = { scheduled: 'agendado', confirmed: 'confirmado', completed: 'atendido', cancelled: 'cancelado', no_show: 'faltou' };
+  var ST_L2V = { agendado: 'scheduled', confirmado: 'confirmed', atendido: 'completed', cancelado: 'cancelled', faltou: 'no_show' };
+  function lembrarPessoa(x) { if (x && x.id) AG.pessoas[x.id] = { nome: x.nome || x.full_name || '', codigo: x.codigo || x.person_code || '' }; }
+  function lembrarPessoas(r) { var l = r && (r.itens || r.pessoas || r); if (Array.isArray(l)) l.forEach(lembrarPessoa); }
+  function sexoTxt(x) { var n = String(x || '').toLowerCase(); if (/^(m$|male|masc)/.test(n)) return 'Masculino'; if (/^(f$|female|fem)/.test(n)) return 'Feminino'; return x || ''; }
+  function idadeDe(nasc) {
+    var m = String(nasc || '').match(/^(\d{4})-(\d{2})-(\d{2})/); if (!m) return null;
+    var h = new Date(), a = h.getFullYear() - (+m[1]);
+    if (h.getMonth() + 1 < +m[2] || (h.getMonth() + 1 === +m[2] && h.getDate() < +m[3])) a--;
+    return a >= 0 && a < 130 ? a : null;
+  }
+  function mapDados(r) {
+    r = r || {}; AG.raw = r;
+    var perm = r.perm || {}, profs = r.profissionais || [];
+    var agendas = (r.agendas || []).filter(function (g) { return !(g.config && g.config.excluida); }).map(function (g) {
+      var c = g.config || {};
+      return { id: g.id, nome: g.titulo || 'Agenda', tipo: g.tipo === 'pastoral' ? 'pastoral' : 'saude', especialidade: g.especialidade || '', local: c.local || '',
+        duracaoMin: +c.duracao || 30, horarios: Array.isArray(c.horarios) ? c.horarios : [], bloqueios: Array.isArray(c.bloqueios) ? c.bloqueios : [],
+        ativa: g.ativa !== false, profissionalId: g.profissionalId || '', profissionalNome: g.profissional || '', dono: !!g.minha };
+    });
+    var vis = {}; agendas.forEach(function (a) { vis[a.id] = 1; });
+    var ags = (r.atendimentos || []).filter(function (a) { return a.status !== 'rescheduled' && vis[a.agendaId]; }).map(function (a) {
+      return { id: a.id, agendaId: a.agendaId, data: String(a.data || '').slice(0, 10), hora: a.inicio, duracao: a.duracao || null, status: ST_V2L[a.status] || a.status, codigo: a.protocolo || '',
+        pessoaId: a.pessoaId || '', pessoaNome: a.pessoaNome || '', pessoaCodigo: a.pessoaCodigo || '', motivo: a.motivo || '', criadoPorNome: '' };
+    });
+    var pac = {}; Object.keys(r.pacientes || {}).forEach(function (k) {
+      var x = r.pacientes[k]; pac[k] = { nome: x.nome, codigo: x.codigo, idade: idadeDe(x.nasc), sexo: sexoTxt(x.sexo), bairro: '', fone: '', foto: '', igreja: !!x.igreja };
+      lembrarPessoa({ id: k, nome: x.nome, codigo: x.codigo });
+    });
+    var out = { agendas: agendas, agendamentos: ags, pacientes: pac,
+      profissionais: profs.filter(function (p) { return p.ativo !== false; }).map(function (p) { return { id: p.id, nome: p.nome, papel: /pastor/i.test(p.especialidade || '') ? 'pastor' : 'profissional', especialidade: p.especialidade || '', pessoaId: p.pessoaId, temLogin: !!p.temLogin }; }),
+      perm: { admin: !!perm.gerencia, agenda: !!perm.agenda, profissionalId: perm.profissionalId || '' }, elegiveis: r.elegiveis || [] };
+    AG.dados = out; return out;
+  }
+  function rawAgenda(id) { return ((AG.raw && AG.raw.agendas) || []).filter(function (g) { return g.id === id; })[0] || null; }
+  function semFuncao(e) { return /PGRST202|find the function|does not exist|schema cache/i.test(String((e && (e.message || e.code || e.details)) || e || '')); }
+  function rpcRaw(nome, args) {
+    var ig = igrejaId(); if (!ig) return Promise.reject(new Error('Igreja não identificada. Atualize a página.'));
+    args = args || {}; args.p_church_id = ig; return rpc(nome, args);
+  }
+  var okObj = function () { return { ok: true }; };
+  LEITURA.instDados = 1; LEITURA.instProntuarioDe = 1;
+  ACOES.instDados = function () { return chamarRpc('v39_inst_dados', {}).then(mapDados); };
+  ACOES.instAgendar = function (d) {
+    var p = { agendaId: d.agendaId, data: d.data, hora: d.hora, pessoaId: d.pessoaId, motivo: d.motivo || '', autorizou: !!d.autorizou };
+    return chamarRpc('v39_inst_schedule', { p: p }).then(function (r) {
+      var ag = ((AG.dados && AG.dados.agendas) || []).filter(function (a) { return a.id === d.agendaId; })[0] || {}, pe = AG.pessoas[d.pessoaId] || {};
+      return { ok: true, comprovante: { codigo: r.protocolo, agenda: ag.nome || 'Agenda', especialidade: ag.especialidade || '', data: r.data, hora: r.inicio, local: ag.local || '', pessoaNome: pe.nome || '', pessoaCodigo: pe.codigo || '' } };
+    });
+  };
+  ACOES.instStatus = function (d) {
+    var st = ST_L2V[d.status]; if (!st) return Promise.reject(new Error('Situação inválida.'));
+    var motivo = d.motivo || '';
+    if (st === 'cancelled' && !motivo) { motivo = prompt('Motivo do cancelamento (mín. 3 letras):', 'Cancelado a pedido'); if (motivo === null) return Promise.reject(new Error('Cancelamento não confirmado.')); }
+    return chamarRpc('v39_inst_set_status', { p: { id: d.id, status: st, motivo: motivo } }).then(okObj);
+  };
+  ACOES.instRemarcar = function (d) { return chamarRpc('v39_inst_reschedule', { p: { id: d.id, data: d.data, hora: d.hora } }).then(okObj); };
+  ACOES.instSalvarAgenda = function (d) {
+    var a = (d && d.agenda) || {}, perm = (AG.dados && AG.dados.perm) || {};
+    var horarios = (a.horarios || []).map(function (h) { return { dow: +h.dow, ini: h.ini, fim: h.fim }; }), bloq = a.bloqueios || [], dur = +a.duracaoMin || 30;
+    if (a.nome === undefined || !perm.admin) {            // o próprio profissional: só horários, folgas e duração
+      return chamarRpc('v39_inst_agenda_hours', { p_agenda: a.id, p: { duracao: dur, horarios: horarios, bloqueios: bloq } }).then(okObj);
+    }
+    var atual = rawAgenda(a.id), base = (atual && atual.config) || {};
+    var config = Object.assign({}, base, { duracao: dur, horarios: horarios, bloqueios: bloq, local: a.local || '', especialidade: a.especialidade || '' });
+    if (a.deleted) config.excluida = true;
+    return chamarRpc('v39_inst_save_agenda', { p: { id: a.id || null, titulo: a.nome, profissionalId: a.profissionalId || null, tipo: a.tipo === 'pastoral' ? 'pastoral' : 'saude', ativa: a.deleted ? false : a.ativa !== false, config: config } }).then(okObj);
+  };
+  ACOES.instCriarProfissional = function (d) {
+    var x = (d && d.profissional) || {};
+    return chamarRpc('v39_inst_save_professional', { p: { nome: x.nome, pessoaId: x.pessoaId || null, especialidade: x.especialidade || '' } })
+      .then(function (r) { return { ok: true, profissional: { id: r.id, nome: x.nome, usuario: '' }, temLogin: !!r.temLogin }; });
+  };
+  /* prontuário: cifrado no banco (INST_S15). Sem o S15, a agenda funciona e o app avisa que as anotações ainda não estão liberadas. */
+  ACOES.instProntuarioDe = function (d) {
+    return rpcRaw('v39_inst_record_list', { p_person: d.pessoaId }).then(function (r) { return { itens: (r && r.itens) || [], invalidos: (r && r.invalidos) || 0 }; })
+      .catch(function (e) { if (semFuncao(e)) return { itens: [], semProntuario: true }; throw erro(e); });
+  };
+  ACOES.instRegistro = function (d) {
+    var temTexto = ['queixa', 'evolucao', 'conduta', 'retorno'].some(function (k) { return String(d[k] || '').trim(); });
+    var grava = temTexto ? rpcRaw('v39_inst_record_save', { p: { agendamentoId: d.agendamentoId, queixa: d.queixa || '', evolucao: d.evolucao || '', conduta: d.conduta || '', retorno: d.retorno || '' } })
+                            .catch(function (e) { if (semFuncao(e)) throw new Error(MSG.PRONTUARIO_INDISPONIVEL); throw erro(e); }) : Promise.resolve();
+    return grava.then(function () { return d.marcarAtendido ? chamarRpc('v39_inst_set_status', { p: { id: d.agendamentoId, status: 'completed' } }) : null; }).then(okObj);
+  };
+  // guarda nome e código de quem foi buscado ou cadastrado, para o comprovante do agendamento
+  (function () {
+    var b = ACOES.instBuscarPessoa, c = ACOES.instCriarPessoa;
+    ACOES.instBuscarPessoa = function (d) { return Promise.resolve(b(d)).then(function (r) { lembrarPessoas(r); return r; }); };
+    ACOES.instCriarPessoa = function (d) { return Promise.resolve(c(d)).then(function (r) { if (r && r.pessoa) lembrarPessoa(r.pessoa); return r; }); };
+  })();
+  M._ag = { mapDados: mapDados, estado: function () { return AG; } };
+  // as ações acima já existem: se o app abriu direto na tela do Instituto antes deste módulo, refaz a leitura agora
+  setTimeout(function () { try { var g1 = G(); if (g1 && typeof g1.instRecarregar === 'function') g1.instRecarregar(); } catch (e) { /* segue */ } }, 0);
 
   /* ───────────── INST-6: entrada por compra ligada a uma despesa do Financeiro (só do CNPJ do Instituto) ───────────── */
   var CP = null;

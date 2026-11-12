@@ -83,7 +83,8 @@ function carregando(on, txt) { $('carregando').classList.toggle('on', !!on); $('
 var DIAS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 var PAPEL_NOME = { master: 'Master', pastor: 'Pastor(a)', supervisor: 'Supervisor', lider: 'Líder', discipulo: 'Discípulo', secretaria: 'Secretaria', tesouraria: 'Tesouraria', voluntario: 'Voluntário', voluntarioLV: 'Voluntário Lar de Vida', voluntarioInst: 'Voluntário Instituto', profissional: 'Profissional de saúde' };
 var ETAPAS = ['1. Visitou', '2. Frequentando', '3. Membro da igreja', '4. Batizado', '5. Em discipulado', '6. Em formação de líder', 'Instituto'];
-/* SYNC-V39-17: etapas da jornada vêm da configuração da igreja (v39_journey_stages); 'Instituto' é fixa. */
+/* SYNC-V39-18: Instituto — agendas e atendimentos no Supabase (profissional = pessoa com acesso; prontuário cifrado). Requer app_v39_instituto.js INST-7 e INST_S14.
+   SYNC-V39-17: etapas da jornada vêm da configuração da igreja (v39_journey_stages); 'Instituto' é fixa. */
 var JORNADA = { visitante: '1. Visitou', promovido: '2. Frequentando', membro: '3. Membro da igreja', emUso: {}, podeEditar: false };
 function JV() { return JORNADA.visitante || ETAPAS[0]; }
 function JP() { return JORNADA.promovido || ETAPAS[1]; }
@@ -1716,7 +1717,7 @@ function blocoConta() {
     '<div class="card" style="font-size:12.5px;color:var(--tx2,#5E6470);line-height:1.55;display:flex;gap:10px;align-items:center">' +
       '<span style="flex:0 0 30px;height:30px;border-radius:50%;background:var(--pri);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:11px">' + esc(ini(u.nome || '?')) + '</span>' +
       '<span>Sincronizar, trocar a senha e sair do app ficam no botão com as suas iniciais, no canto superior direito.</span></div>' +
-    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-17</div>';
+    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-18</div>';
 }
 function rConta() { return blocoConta(); }
 function trocarSenha() {
@@ -5556,7 +5557,7 @@ function rLVVol() {
 var IC_INST = '<path d="M12 21s-7-4.4-9-9.2C1.8 8.6 3.6 5 7 5c2 0 3.4 1.1 5 3 1.6-1.9 3-3 5-3 3.4 0 5.2 3.6 4 6.8C19 16.6 12 21 12 21z"/><path d="M12 9v6M9 12h6"/>';
 var instD = { t: 0, carregando: false, agendas: [], ags: [], pac: {}, profissionais: [], perm: {}, hoje: '' };
 var instSel = { agenda: '', data: '' }, instFl = null, instCd = null, instAgForm = null, instBuscaT = null;
-function instLimpar() { instD = { t: 0, carregando: false, agendas: [], ags: [], pac: {}, profissionais: [], perm: {}, hoje: '' }; instSel = { agenda: '', data: '' }; instFl = null; instCd = null; instAgForm = null; estLimpar(); }
+function instLimpar() { instD = { t: 0, carregando: false, agendas: [], ags: [], pac: {}, profissionais: [], elegiveis: [], perm: {}, hoje: '' }; instSel = { agenda: '', data: '' }; instFl = null; instCd = null; instAgForm = null; estLimpar(); }
 function temInst() { return pode('instituto') || pode('agendaPastoral') || pode('prontuario') || temInstCursos() || temEstMercado() || temEstFarmacia(); }
 function agendaPor(id) { return instD.agendas.filter(function (a) { return a.id === id; })[0] || null; }
 function podeAgendarNa(ag) { return ag && (ag.dono || (ag.tipo === 'pastoral' ? pode('agendaPastoral') : pode('instituto'))); }
@@ -5564,10 +5565,11 @@ function podeAgendarNa(ag) { return ag && (ag.dono || (ag.tipo === 'pastoral' ? 
 function carregarInst(forcar) {
   if (!(pode('instituto') || pode('agendaPastoral') || pode('prontuario') || pode('institutoCursos'))) { instD.t = instD.t || Date.now(); return Promise.resolve(); }
   if (instD.carregando || (!forcar && instD.t && Date.now() - instD.t < 45000)) return Promise.resolve();
+  if (cfg.token === 'supabase-v39' && window.G2_V39 && G2_V39.p1 && typeof G2_V39.p1.isRead === 'function' && !G2_V39.p1.isRead('instDados')) return Promise.resolve();   // módulo do Instituto ainda carregando: __gc.instRecarregar() refaz quando ele ficar pronto
   instD.carregando = true;
   return chamar('instDados', {}).then(function (r) {
     instD.agendas = r.agendas || []; instD.ags = r.agendamentos || []; instD.pac = r.pacientes || {}; instD.profissionais = r.profissionais || [];
-    instD.perm = r.perm || {}; instD.hoje = r.hoje || hoje(); instD.t = Date.now();
+    instD.perm = r.perm || {}; instD.elegiveis = r.elegiveis || []; instD.hoje = r.hoje || hoje(); instD.t = Date.now();
   }).catch(function (e) { toast(e.message, 5000); instD.t = Date.now(); })
     .then(function () { instD.carregando = false; if (['instituto', 'instagenda'].indexOf(cfg.aba) >= 0) render(); });
 }
@@ -5675,10 +5677,11 @@ function rInstituto() { if (!temInstSaude()) { var tb0 = instTabsLista()[0]; if 
   // equipe
   if (instD.perm.admin) {
     var eq = profissionaisDe(instD.agendas);
+    (instD.profissionais || []).forEach(function (p0) { if (!eq.some(function (e) { return e.id === p0.id; })) eq.push({ id: p0.id, nome: p0.nome, agendas: [], esp: p0.especialidade }); });
     h += '<div class="sec sec-l"><span>Equipe — profissionais e pastores (' + eq.length + ')</span><a data-a="instProfForm">+ Adicionar profissional</a></div><div class="card lp">' +
       (eq.length ? eq.map(function (p) {
         return '<div class="row"><div class="av" style="' + corAvatar(p.nome) + '">' + ini(p.nome) + '</div><div class="info"><div class="nm">' + esc(p.nome) + '</div><div class="sb">' +
-          p.agendas.map(function (a) { return esc(espNome(a)); }).filter(function (v, i, arr) { return arr.indexOf(v) === i; }).join(' · ') + '</div></div>' +
+          (p.agendas.length ? p.agendas.map(function (a) { return esc(espNome(a)); }).filter(function (v, i, arr) { return arr.indexOf(v) === i; }).join(' · ') : (p.esp ? esc(p.esp) + ' · ' : '') + '<b style="color:var(--vermelho)">sem agenda ainda</b>') + '</div></div>' +
           '<button class="btn gh sm" data-a="instAgendaProf" data-v="' + esc(p.id) + '" title="Outra especialidade ou local para este profissional">+ agenda</button></div>';
       }).join('') : '<div class="empty" style="padding:12px">Nenhum profissional ainda.</div>') + '</div>' +
       '<div style="font-size:11.5px;color:var(--tx3);margin:-4px 4px 6px;line-height:1.45">Cada profissional tem a <b>própria agenda</b> e é o único a ver os nomes dos pacientes. Várias especialidades? Cadastre quantos profissionais precisar — o agendamento já pergunta primeiro a especialidade.</div>';
@@ -5856,10 +5859,17 @@ function instCompartilhar() {
 function instStatusAt(v) {
   var p = v.split('|'), id = p[0], st = p[1];
   var a = instD.ags.filter(function (x) { return x.id === id; })[0];
-  if (st === 'cancelado' && !confirm('Cancelar o atendimento ' + (a ? a.codigo : '') + '? O horário volta a ficar livre.')) return;
+  var motivoCanc = '';
+  if (st === 'cancelado') {
+    if (cfg.token === 'supabase-v39') {
+      motivoCanc = prompt('Cancelar o atendimento ' + (a ? a.codigo : '') + '? O horário volta a ficar livre.\nInforme o motivo (mín. 3 letras):', '');
+      if (motivoCanc === null) return;
+      if (motivoCanc.trim().length < 3) return toast('Informe o motivo do cancelamento (mín. 3 letras).');
+    } else if (!confirm('Cancelar o atendimento ' + (a ? a.codigo : '') + '? O horário volta a ficar livre.')) return;
+  }
   if (st === 'faltou' && !confirm('Registrar falta?')) return;
   carregando(true, 'Salvando...');
-  chamar('instStatus', { id: id, status: st }).then(function () { toast(st === 'cancelado' ? 'Atendimento cancelado' : st === 'faltou' ? 'Falta registrada' : 'Atualizado ✓'); return carregarInst(true); })
+  chamar('instStatus', { id: id, status: st, motivo: motivoCanc.trim() }).then(function () { toast(st === 'cancelado' ? 'Atendimento cancelado' : st === 'faltou' ? 'Falta registrada' : 'Atualizado ✓'); return carregarInst(true); })
     .catch(function (e) { toast(e.message, 5000); }).then(function () { carregando(false); render(); });
 }
 function instRemarcarAbrir(id) {
@@ -5939,7 +5949,15 @@ function instAtender(id) {
     (a.motivo ? '<div style="background:var(--bg);border-radius:12px;padding:9px 12px;font-size:12.5px;margin:8px 0"><b>Motivo informado no agendamento:</b><br>' + esc(a.motivo) + '</div>' : '') +
     '<div id="pr-corpo"><div class="empty" style="padding:14px">Abrindo anotações…</div></div>');
   chamar('instProntuarioDe', { pessoaId: a.pessoaId }).then(function (r) {
+    if (r.semProntuario) {
+      if ($('pr-corpo')) $('pr-corpo').innerHTML = '<div class="aviso" style="font-size:12.5px;line-height:1.5"><b>Anotações clínicas ainda não liberadas.</b> Elas só serão gravadas depois que a cifra do prontuário for ativada no servidor (INST_S15). Por enquanto você registra a presença do paciente.</div><div style="height:10px"></div>' +
+        (a.data <= hoje() && a.status !== 'atendido' ? '<button class="btn pr" data-a="instRegSalvar" data-v="' + esc(a.id + '|1') + '">Marcar como atendido</button><div class="gap"></div>' : '') +
+        (a.data <= hoje() && (a.status === 'agendado' || a.status === 'confirmado') ? '<button class="btn gh" data-a="instStatusAt" data-v="' + esc(a.id + '|faltou') + '" style="color:var(--vermelho)">Registrar falta</button><div class="gap"></div>' : '') +
+        '<button class="btn gh" data-a="fechar">Fechar</button>';
+      return;
+    }
     var itens = r.itens || [], atual = itens.filter(function (e) { return e.agendamentoId === a.id; })[0] || {}, ant = itens.filter(function (e) { return e.agendamentoId !== a.id; });
+    if (r.invalidos) setTimeout(function () { toast(r.invalidos + ' registro(s) antigo(s) não puderam ser abertos (integridade). Avise o administrador.', 7000); }, 300);
     var L = past ? ['Assunto', 'Anotações do atendimento', 'Encaminhamentos / próximos passos'] : ['Queixa / motivo da consulta', 'Evolução, exame e anotações clínicas', 'Conduta e prescrição'];
     var h = '<label>' + L[0] + '</label><textarea id="pr-q" rows="2" maxlength="4000">' + esc(atual.queixa) + '</textarea><label>' + L[1] + '</label><textarea id="pr-e" rows="5" maxlength="4000">' + esc(atual.evolucao) + '</textarea>' +
       '<label>' + L[2] + '</label><textarea id="pr-c" rows="3" maxlength="4000">' + esc(atual.conduta) + '</textarea><label>Retorno sugerido em</label><input id="pr-r" type="date" value="' + esc(atual.retorno || '') + '">' +
@@ -5957,7 +5975,8 @@ function instAtender(id) {
 function instRegSalvar(v) {
   var p = v.split('|'), id = p[0], marcar = p[1] === '1';
   carregando(true, 'Salvando...');
-  chamar('instRegistro', { agendamentoId: id, queixa: $('pr-q').value, evolucao: $('pr-e').value, conduta: $('pr-c').value, retorno: $('pr-r').value, marcarAtendido: marcar }).then(function () {
+  var lerPr = function (x) { var e = $(x); return e ? e.value : ''; };
+  chamar('instRegistro', { agendamentoId: id, queixa: lerPr('pr-q'), evolucao: lerPr('pr-e'), conduta: lerPr('pr-c'), retorno: lerPr('pr-r'), marcarAtendido: marcar }).then(function () {
     fechar(); toast(marcar ? 'Atendimento registrado ✓' : 'Anotações salvas ✓'); return carregarInst(true);
   }).catch(function (e) { toast(e.message, 5000); }).then(function () { carregando(false); render(); });
 }
@@ -5968,7 +5987,35 @@ function sugerirLogin(nome) {
   var p = normalizar(nome).replace(/[^a-z ]/g, ' ').split(' ').filter(function (w) { return w && !tit[w]; });
   return p.length > 1 ? p[0] + '.' + p[p.length - 1] : (p[0] || '');
 }
+function instProfFormV39() {
+  var el = instD.elegiveis || [];
+  var h = '<h2>Novo profissional</h2><div class="sb" style="font-size:12.5px;color:var(--tx2);line-height:1.5;margin:2px 0 6px">Escolha uma pessoa que <b>já tem acesso ao app</b> como <b>Profissional de saúde</b> (ou Pastor). Ela passa a ver só a própria agenda e os próprios pacientes.</div>' +
+    (el.length
+      ? '<label>Pessoa com acesso *</label><select id="pf-pessoa">' + opts([['', '— escolher —']].concat(el.map(function (x) { return [x.pessoaId, x.nome + ' (' + (x.perfil === 'pastor' ? 'pastor(a)' : 'profissional de saúde') + (x.usuario ? ' · @' + x.usuario : '') + ')']; })), '') + '</select>' +
+        '<label>Especialidade *</label><input id="pf-esp" list="esp-lista2" placeholder="Ex.: Psicologia, Clínica geral" autocomplete="off"><datalist id="esp-lista2">' +
+        ESPECIALIDADES_SUG.concat(instD.agendas.map(function (x) { return x.especialidade; })).filter(function (v, i, arr) { return v && arr.indexOf(v) === i; }).map(function (v) { return '<option value="' + esc(v) + '">'; }).join('') + '</datalist>' +
+        '<div style="font-size:11.5px;color:var(--tx3);margin-top:4px;line-height:1.45">Para pastor(a), escreva <b>Pastoral</b> como especialidade e crie uma agenda do tipo Pastoral.</div>' +
+        '<div style="height:10px"></div><button class="btn pr" data-a="instProfSalvar">Cadastrar e configurar a agenda</button><div class="gap"></div>'
+      : '<div class="aviso" style="font-size:12.5px;line-height:1.5"><b>Nenhuma pessoa disponível.</b> Primeiro libere o acesso em <b>Usuários</b> (menu de configurações → Cadastros aguardando liberação) com o nível <b>Profissional de saúde</b> e volte aqui. Quem já é profissional não aparece nesta lista.</div><div class="gap"></div>') +
+    '<button class="btn gh" data-a="fechar">Cancelar</button>';
+  abrirModal(h);
+}
+function instProfSalvarV39() {
+  var v = function (id) { var e = $(id); return e ? e.value.trim() : ''; };
+  if (!v('pf-pessoa')) return toast('Escolha a pessoa.');
+  if (!v('pf-esp')) return toast('Informe a especialidade.');
+  var x = (instD.elegiveis || []).filter(function (e) { return e.pessoaId === v('pf-pessoa'); })[0] || {}, esp = v('pf-esp');
+  carregando(true, 'Cadastrando...');
+  chamar('instCriarProfissional', { profissional: { pessoaId: v('pf-pessoa'), nome: x.nome || '', especialidade: esp } }).then(function (r) {
+    carregando(false);
+    abrirModal('<div class="perfil" style="padding-top:2px"><div class="av" style="background:var(--verde);color:#fff;width:64px;height:64px;font-size:28px;margin:0 auto 8px">✓</div><h2>Profissional cadastrado</h2><p>' + esc(r.profissional.nome) + ' · ' + esc(esp) + '</p></div>' +
+      '<div style="font-size:12px;color:var(--tx3);margin:6px 2px 10px;line-height:1.45">Agora monte a agenda dele: dias, horários e duração de cada atendimento.</div>' +
+      '<button class="btn pr" data-a="instProfAgenda" data-v="' + esc(r.profissional.id + '|' + esp + '|' + r.profissional.nome) + '">Configurar a agenda agora</button><div class="gap"></div><button class="btn gh" data-a="fechar">Depois</button>');
+    carregarInst(true);
+  }).catch(function (e) { carregando(false); toast(e.message, 5500); });
+}
 function instProfForm() {
+  if (cfg.token === 'supabase-v39') return instProfFormV39();
   var h = '<h2>Novo profissional</h2><div class="sb" style="font-size:12.5px;color:var(--tx2);line-height:1.5;margin:2px 0 4px">Cria o acesso do profissional (ele vê só a própria agenda e os próprios pacientes) e, em seguida, a agenda dele. ' +
     'Para pastor(a), use <b>Perfil → Usuários</b> (nível Pastor) e depois crie a agenda pastoral.</div>' +
     '<label>Nome completo *</label><input id="pf-nome" placeholder="Ex.: Dra. Maria Souza" autocomplete="off">' +
@@ -5982,6 +6029,7 @@ function instProfForm() {
   abrirModal(h);
 }
 function instProfSalvar() {
+  if (cfg.token === 'supabase-v39') return instProfSalvarV39();
   var v = function (id) { var e = $(id); return e ? e.value.trim() : ''; };
   if (v('pf-nome').length < 3) return toast('Informe o nome completo.');
   if (!v('pf-user')) return toast('Informe o usuário de acesso.');
@@ -6064,6 +6112,8 @@ function lerAgendaForm() {
 function instAgendaSalvar(excluir) {
   var d = lerAgendaForm(); if (excluir === true) d.deleted = true;
   if (instHoraErr) return toast('Horário inválido: “' + instHoraErr + '”. Use o formato 08:30.', 4500);
+  if (d.nome !== undefined && excluir !== true && !d.profissionalId) return toast('Escolha o profissional responsável pela agenda.', 4500);
+  if (d.nome !== undefined && excluir !== true && String(d.nome).length < 2) return toast('Informe o nome da agenda.', 4000);
   for (var i = 0; i < d.horarios.length; i++) if (!d.horarios[i].ini || !d.horarios[i].fim) return toast('Preencha o início e o fim de cada período.');
   carregando(true, 'Salvando...');
   chamar('instSalvarAgenda', { agenda: d }).then(function () { fechar(); toast(excluir === true ? 'Agenda excluída' : 'Agenda salva ✓'); if (excluir === true && cfg.aba === 'instagenda') irAba('instituto'); return carregarInst(true); })
@@ -6443,7 +6493,7 @@ var ACOES = {
     estEntradaForm: function (v) { estEntradaForm(v || ''); }, estEntradaSalvar: estEntradaSalvar,
     estBaixaForm: estBaixaForm, estBaixaSalvar: estBaixaSalvar, estExportar: estExportar,
     instProfAgenda: function (v) { var p = v.split('|'); instAgendaDe(p[0], p[1], p[2]); },
-    instAgendaProf: function (v) { var pr = profissionaisDe(instD.agendas).filter(function (x) { return x.id === v; })[0]; instAgendaForm('', { profissionalId: v, nome: pr ? pr.nome + ' — ' : '' }); },
+    instAgendaProf: function (v) { var pr = profissionaisDe(instD.agendas).filter(function (x) { return x.id === v; })[0] || (instD.profissionais || []).filter(function (x) { return x.id === v; })[0]; instAgendaForm('', { profissionalId: v, especialidade: (pr && pr.especialidade) || '', nome: pr ? pr.nome + ' — ' + ((pr && pr.especialidade) || '') : '' }); },
     instFiltroEsp: function (v) { instFiltroEsp = v || ''; render(); },
     instFlEsp: function (v) { instFl.esp = v; instFl.agenda = ''; instFluxo(); },
     instAbrirAgenda: function (v) { instSel.agenda = v; instSel.data = hoje(); if (cfg.aba === 'instagenda') render(); else irAba('instagenda'); },
@@ -7341,7 +7391,8 @@ if (cfg.token && cfg.usuario) {
 else mostrarTela('s-login');
 
 window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }, render: function () { render(); }, sincronizar: sincronizar, metricas: metricas, pendentes: pendentesLocais,
-  estRecarregar: function () { estD = { mercado: estNovo(), farmacia: estNovo() }; if (cfg.token && /^inst(mercado|farmacia)$/.test(cfg.aba || '')) render(); } };
+  estRecarregar: function () { estD = { mercado: estNovo(), farmacia: estNovo() }; if (cfg.token && /^inst(mercado|farmacia)$/.test(cfg.aba || '')) render(); },
+  instRecarregar: function () { instD.t = 0; instD.carregando = false; if (cfg.token && /^(instituto|instagenda)$/.test(cfg.aba || '')) render(); } };
 } catch (err) { mostrarErro((err && err.message) || String(err), 'inicialização'); }
 })();
 
@@ -7356,7 +7407,7 @@ window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'SYNC-V39-17';
+  var BUILD = 'SYNC-V39-18';
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 
