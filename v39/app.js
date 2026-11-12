@@ -83,7 +83,8 @@ function carregando(on, txt) { $('carregando').classList.toggle('on', !!on); $('
 var DIAS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 var PAPEL_NOME = { master: 'Master', pastor: 'Pastor(a)', supervisor: 'Supervisor', lider: 'Líder', discipulo: 'Discípulo', secretaria: 'Secretaria', tesouraria: 'Tesouraria', voluntario: 'Voluntário', voluntarioLV: 'Voluntário Lar de Vida', voluntarioInst: 'Voluntário Instituto', profissional: 'Profissional de saúde' };
 var ETAPAS = ['1. Visitou', '2. Frequentando', '3. Membro da igreja', '4. Batizado', '5. Em discipulado', '6. Em formação de líder', 'Instituto'];
-/* SYNC-V39-19: Instituto — ficha do atendimento com prontuário (anamnese, conduta, receita), histórico compartilhado entre profissionais de saúde, impressão/PDF; "Novo atendido" some para o profissional. Requer app_v39_inst_prontuario.js (PRONT-1) e INST_S15 v2.
+/* SYNC-V39-20: Instituto — documentos (receita, orientações, prontuário) com a identidade do INSTITUTO (logo, CNPJ, endereço), registro profissional (CRM/CRP), 2ª via com registro de cada impressão e tela "Pacientes e prontuários". Requer app_v39_inst_prontuario.js (PRONT-2) e INST_S18.
+   SYNC-V39-19: Instituto — ficha do atendimento com prontuário (anamnese, conduta, receita), histórico compartilhado entre profissionais de saúde, impressão/PDF; "Novo atendido" some para o profissional. Requer app_v39_inst_prontuario.js (PRONT-1) e INST_S15 v2.
    SYNC-V39-18: Instituto — agendas e atendimentos no Supabase (profissional = pessoa com acesso; prontuário cifrado). Requer app_v39_instituto.js INST-7 e INST_S14.
    SYNC-V39-17: etapas da jornada vêm da configuração da igreja (v39_journey_stages); 'Instituto' é fixa. */
 var JORNADA = { visitante: '1. Visitou', promovido: '2. Frequentando', membro: '3. Membro da igreja', emUso: {}, podeEditar: false };
@@ -1122,7 +1123,7 @@ function render() {
   validarContexto();
   var g = cfg.modo === 'gc' ? gcPor(cfg.gcAtual) : null;
   $('h-img').src = g ? iconeGC(g.id) : LOGO;
-  var TIT = { instituto: 'Instituto', instcursos: 'Cursos do Instituto', instmercado: 'Mercado solidário', instfarmacia: 'Farmácia solidária', instagenda: 'Agenda', lvcasas: 'Lar de Vida', relatorios: 'Relatórios', financeiro: 'Financeiro', usuarios: 'Usuários e acessos', avisos: 'Avisos', gcs: 'GCs', conta: 'Configurações', mais: 'Configurações' };
+  var TIT = { instituto: 'Instituto', instcursos: 'Cursos do Instituto', instmercado: 'Mercado solidário', instfarmacia: 'Farmácia solidária', instpac: 'Pacientes e prontuários', instagenda: 'Agenda', lvcasas: 'Lar de Vida', relatorios: 'Relatórios', financeiro: 'Financeiro', usuarios: 'Usuários e acessos', avisos: 'Avisos', gcs: 'GCs', conta: 'Configurações', mais: 'Configurações' };
   $('h-tit').textContent = TIT[cfg.aba] ? TIT[cfg.aba] : cfg.modo === 'lv' ? igrNome() : cfg.aba === 'config' ? 'Configurações' : cfg.aba === 'cultos' ? 'Cultos e eventos' : cfg.aba === 'membros' ? 'Cadastro de pessoas' : cfg.aba === 'cursos' ? 'Treinamentos/Reuniões' : cfg.modo === 'ger' ? igrNome() : (g ? g.nome : 'Meu GC');
   $('h-papel').textContent = PAPEL_NOME[papel()] || '';
   var raizes = abasAtuais().map(function (a) { return a.id; }), naRaiz = raizes.indexOf(cfg.aba) >= 0 && !cursoAberto;
@@ -1138,7 +1139,7 @@ function render() {
   var f = {
     bi: rBI, gcs: rGCs, novo: rNovoGC, usuarios: rUsuarios, conta: rConta,
     painel: rPainel, pessoas: rPessoas, chamada: rChamada, alertas: rAlertas, mais: rMaisGC,
-    lv: rLVGer, lar: rLar, instituto: rInstituto, instcursos: rInstCursos, instmercado: rEstoque, instfarmacia: rEstoque, instagenda: rInstAgenda, lvcasas: rLVVol, avisos: rAvisos, relatorios: rRelatorios, financeiro: rFinanceiro, lvnovo: rLVNovo, lvmeus: rLVMeus, cultos: rCultos, config: rConfig, membros: rConsulta, cursos: rCursos
+    lv: rLVGer, lar: rLar, instituto: rInstituto, instcursos: rInstCursos, instmercado: rEstoque, instfarmacia: rEstoque, instagenda: rInstAgenda, instpac: rInstPac, lvcasas: rLVVol, avisos: rAvisos, relatorios: rRelatorios, financeiro: rFinanceiro, lvnovo: rLVNovo, lvmeus: rLVMeus, cultos: rCultos, config: rConfig, membros: rConsulta, cursos: rCursos
   }[cfg.aba];
   if (cfg.modo === 'gc' && !g) {
     $('main').innerHTML = '<div class="empty">' + (db.gcs.length ? 'Você ainda não está vinculado a um GC. Fale com a liderança.' : 'Carregando dados do GC...') + '</div>';
@@ -1718,7 +1719,7 @@ function blocoConta() {
     '<div class="card" style="font-size:12.5px;color:var(--tx2,#5E6470);line-height:1.55;display:flex;gap:10px;align-items:center">' +
       '<span style="flex:0 0 30px;height:30px;border-radius:50%;background:var(--pri);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:11px">' + esc(ini(u.nome || '?')) + '</span>' +
       '<span>Sincronizar, trocar a senha e sair do app ficam no botão com as suas iniciais, no canto superior direito.</span></div>' +
-    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-19</div>';
+    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-20</div>';
 }
 function rConta() { return blocoConta(); }
 function trocarSenha() {
@@ -3205,7 +3206,7 @@ function abasExtras() {
   if (cfg.modo === 'lv' && pode('visitantes')) x.push('lvnovo', 'lvmeus');
   if (cfg.modo === 'lv' && pode('lvVisitas')) x.push('lvcasas');
   x.push('avisos');
-  if (temInst()) x.push('instituto', 'instagenda'); if (temInstCursos()) x.push('instcursos'); if (temEstMercado()) x.push('instmercado'); if (temEstFarmacia()) x.push('instfarmacia');
+  if (temInst()) x.push('instituto', 'instagenda', 'instpac'); if (temInstCursos()) x.push('instcursos'); if (temEstMercado()) x.push('instmercado'); if (temEstFarmacia()) x.push('instfarmacia');
   if (pode('rede')) x.push('novo');
   if (pode('config')) x.push('config');
   if (pode('visitantes')) x.push('lvnovo', 'lvmeus');
@@ -5558,7 +5559,7 @@ function rLVVol() {
 var IC_INST = '<path d="M12 21s-7-4.4-9-9.2C1.8 8.6 3.6 5 7 5c2 0 3.4 1.1 5 3 1.6-1.9 3-3 5-3 3.4 0 5.2 3.6 4 6.8C19 16.6 12 21 12 21z"/><path d="M12 9v6M9 12h6"/>';
 var instD = { t: 0, carregando: false, agendas: [], ags: [], pac: {}, profissionais: [], perm: {}, hoje: '' };
 var instSel = { agenda: '', data: '' }, instFl = null, instCd = null, instAgForm = null, instBuscaT = null;
-function instLimpar() { instD = { t: 0, carregando: false, agendas: [], ags: [], pac: {}, profissionais: [], elegiveis: [], perm: {}, hoje: '' }; instSel = { agenda: '', data: '' }; instFl = null; instCd = null; instAgForm = null; estLimpar(); }
+function instLimpar() { instCtxCache = null; instPac = { q: '', itens: null, carregando: false, erro: '', semSql: false }; instD = { t: 0, carregando: false, agendas: [], ags: [], pac: {}, profissionais: [], elegiveis: [], perm: {}, hoje: '' }; instSel = { agenda: '', data: '' }; instFl = null; instCd = null; instAgForm = null; estLimpar(); }
 function temInst() { return pode('instituto') || pode('agendaPastoral') || pode('prontuario') || temInstCursos() || temEstMercado() || temEstFarmacia(); }
 function agendaPor(id) { return instD.agendas.filter(function (a) { return a.id === id; })[0] || null; }
 function podeAgendarNa(ag) { return ag && (ag.dono || (ag.tipo === 'pastoral' ? pode('agendaPastoral') : pode('instituto'))); }
@@ -5650,6 +5651,10 @@ function rInstituto() { if (!temInstSaude()) { var tb0 = instTabsLista()[0]; if 
       [['Abrir minha agenda', 'instAbrirAgenda', minhas[0].id, true]]);
     if (lista.length) h += '<div class="card lp">' + lista.map(function (a) { return linhaAtend(a, true); }).join('') + '</div>';
   }
+  if ((instD.perm || {}).profissionalId && cfg.token === 'supabase-v39') {
+    h += '<div class="big-cta" data-a="instPacAbrir"><div class="bi"><svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg></div>' +
+        '<div><b>Pacientes e prontuários</b><span>buscar paciente, imprimir e reimprimir receita (2ª via)</span></div></div>';
+  }
   if (instD.agendas.some(podeAgendarNa)) {
     h += '<div class="big-cta" data-a="instNovoAg"><div class="bi"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18M12 14v4M10 16h4"/></svg></div>' +
       '<div><b>Agendar atendimento</b><span>escolha a especialidade, o profissional e o horário</span></div></div>';
@@ -5690,6 +5695,7 @@ function rInstituto() { if (!temInstSaude()) { var tb0 = instTabsLista()[0]; if 
   // atalhos
   h += '<div class="sec">Mais do Instituto</div><div class="mods" style="grid-template-columns:repeat(4,1fr)">' +
     (instMostraNovoAtendido() ? '<button class="mod" data-a="instNovoAtendido"><span class="mi" style="background:#fff!important;color:#E5484D"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span><span class="mn">Novo atendido</span></button>' : '') +
+    (instD.perm && instD.perm.admin && cfg.token === 'supabase-v39' ? '<button class="mod" data-a="instIdentForm"><span class="mi" style="background:#fff!important;color:#2F5BEA"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h4M7 13h10M7 16h6"/></svg></span><span class="mn">Dados do Instituto</span></button>' : '') +
     (temEstMercado() ? '<button class="mod" data-a="aba" data-v="instmercado"><span class="mi" style="background:#fff!important;color:#C9930A"><svg viewBox="0 0 24 24"><path d="M6 6h15l-1.5 9h-12z"/><path d="M6 6L5 3H2"/><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/></svg></span><span class="mn">Mercado</span></button>' : '') +
     (temEstFarmacia() ? '<button class="mod" data-a="aba" data-v="instfarmacia"><span class="mi" style="background:#fff!important;color:#16A36A"><svg viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="12" rx="2"/><path d="M8 9V6a4 4 0 0 1 8 0v3M12 12v6M9 15h6"/></svg></span><span class="mn">Farmácia</span></button>' : '') +
     (temInstCursos() ? '<button class="mod" data-a="aba" data-v="instcursos"><span class="mi" style="background:#fff!important;color:#0F8A8A"><svg viewBox="0 0 24 24">' + IC_CURSO + '</svg></span><span class="mn">Cursos</span></button>' : '') + '</div>';
@@ -5957,7 +5963,7 @@ function instAtender(id) {
   var a = instD.ags.filter(function (x) { return x.id === id; })[0], ag = a && agendaPor(a.agendaId), pc = a && instD.pac[a.pessoaId];
   if (!a || !ag || !ag.dono || !pc) return toast('Somente o profissional responsável abre este atendimento.');
   var modo = instModoPr(ag), v39 = cfg.token === 'supabase-v39';
-  instPr = { id: a.id, modo: modo, itens: [], atual: {}, clinico: true };
+  instPr = { id: a.id, modo: modo, itens: [], atual: {}, clinico: true, pc: pc, pessoaId: a.pessoaId };
   var quando = brCompleto(a.data) + (a.hora ? ' às ' + a.hora : '');
   abrirModal('<div class="perfil" style="padding-top:0">' + avatarInst(pc, pc.nome, 72) + '<h2 style="font-size:19px">' + esc(pc.nome) + '</h2>' +
     '<p>' + esc([pc.codigo, pc.idade !== null && pc.idade !== undefined ? pc.idade + ' anos' : '', pc.sexo, pc.bairro].filter(Boolean).join(' · ')) + '</p>' +
@@ -5973,19 +5979,23 @@ function instAtender(id) {
       (a.data <= hoje() && (a.status === 'agendado' || a.status === 'confirmado') ? '<button class="btn gh" data-a="instStatusAt" data-v="' + esc(a.id + '|faltou') + '" style="color:var(--vermelho)">Registrar falta</button><div class="gap"></div>' : '') +
       '<button class="btn gh" data-a="fechar">Fechar</button>';
   };
-  if (v39 && !window.G2_PRONT) return semPres('<b>Módulo do prontuário não carregado.</b> Publique o arquivo <b>app_v39_inst_prontuario.js</b> (PRONT-1) e atualize a página. Por enquanto você registra só a presença do paciente.');
+  if (v39 && !window.G2_PRONT) return semPres('<b>Módulo do prontuário não carregado.</b> Publique o arquivo <b>app_v39_inst_prontuario.js</b> (PRONT-2) e atualize a página. Por enquanto você registra só a presença do paciente.');
   chamar('instProntuarioDe', { pessoaId: a.pessoaId }).then(function (r) {
     if (r.semProntuario) return semPres('<b>Prontuário ainda não liberado neste servidor.</b> As anotações só serão gravadas depois que a cifra for ativada (INST_S15). Por enquanto você registra a presença do paciente.');
     instPrDesenhar(a, ag, pc, r);
   }).catch(function (e) { if ($('pr-corpo')) $('pr-corpo').innerHTML = '<div class="aviso r">' + esc(e.message) + '</div><div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>'; });
 }
-function instPrCardHist(e, i, R) {
+function instModoItem(e) { if (e && e.modo) return e.modo; if (!instPr.clinico) return 'past'; return /psic/i.test((e && e.especialidade) || '') ? 'psi' : 'med'; }
+function instPrCardHist(e, i) {
+  var R = PRONT_ROT[instModoItem(e)];
   var linhas = PRONT_CAMPOS.map(function (c) { return e[c[1]] && R[c[0]] ? '<div style="font-size:12.5px;margin-top:4px;white-space:pre-line"><b>' + esc(R[c[0]].split(' — ')[0]) + ':</b> ' + esc(e[c[1]]) + '</div>' : ''; }).join('');
+  var temRec = !!String(e.receita || '').trim() && R.rc;
   return '<div class="card" style="box-shadow:none;background:var(--bg);padding:10px 12px"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span style="font-size:12px;color:var(--tx3);font-weight:800">' + brCompleto(e.data) + (e.hora ? ' · ' + esc(e.hora) : '') + '</span>' +
     '<span class="pill ' + (e.meu ? 'p-verde' : 'p-cinza') + '">' + (e.meu ? 'você' : esc(e.profissional || 'outro profissional')) + (e.especialidade && !e.meu ? ' · ' + esc(e.especialidade) : '') + '</span>' +
     (e.reservado ? '<span class="pill p-dour">reservada</span>' : '') + '</div>' + linhas +
     (e.retorno ? '<div style="font-size:12px;color:var(--tx2);margin-top:4px">Retorno sugerido: ' + brCompleto(e.retorno) + '</div>' : '') +
-    '<div style="margin-top:6px"><button class="btn gh sm" data-a="instPrImprimir" data-v="h|' + i + '">Imprimir / PDF</button></div></div>';
+    '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn gh sm" data-a="instPrImprimir" data-v="h|' + i + '">Imprimir / PDF</button>' +
+    (e.meu && temRec ? '<button class="btn gh sm" data-a="instPrImprimir" data-v="r|' + i + '">Reimprimir ' + (R.rcTit && /orienta/i.test(R.rcTit) ? 'orientações' : 'receita') + ' (2ª via)</button>' : '') + '</div></div>';
 }
 function instPrDesenhar(a, ag, pc, r) {
   var R = PRONT_ROT[instPr.modo], itens = r.itens || [], atual = itens.filter(function (e) { return e.agendamentoId === a.id; })[0] || {}, hist = itens.filter(function (e) { return e.agendamentoId !== a.id; });
@@ -6019,28 +6029,55 @@ function instPrTab(v) {
   n.classList.toggle('hide', v !== 'nova'); hh.classList.toggle('hide', v !== 'hist');
   [].forEach.call(document.querySelectorAll('[data-a="instPrTab"]'), function (b) { var on = b.getAttribute('data-v') === v; b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
 }
+/* ═════ SYNC-V39-20 · documentos com a identidade do INSTITUTO, registro profissional, 2ª via e tela "Pacientes e prontuários" ═════ */
+var instCtxCache = null, instDicaIdent = false, instDicaReg = false;
+function instTemPront2() { return !!(window.G2_PRONT && window.G2_PRONT.v2); }
+function instCtxImpressao(forcar) {
+  if (instCtxCache && !forcar && Date.now() - instCtxCache.t < 120000) return Promise.resolve(instCtxCache.d);
+  return chamar('instImpressaoCtx', {}).then(function (r) { instCtxCache = { t: Date.now(), d: r }; return r; })
+    .catch(function () { return { identidade: null, meuProfissionalId: '', registros: {}, semModulo: true }; });
+}
+function instEnderecoDoc(i) {
+  var rua = [i.rua, i.numero].filter(Boolean).join(', ') + (i.complemento ? ' - ' + i.complemento : '');
+  return [rua, i.bairro, [i.cidade, i.cep ? 'CEP ' + i.cep : ''].filter(Boolean).join(' · ')].filter(Boolean).join(' · ');
+}
+function instViaTxt(n) { return n > 1 ? n + 'ª via' : ''; }
 function instPrBlocos(R, e) {
   var out = [];
   PRONT_CAMPOS.forEach(function (c) { if (R[c[0]] && String(e[c[1]] || '').trim()) out.push([R[c[0]].split(' — ')[0], e[c[1]]]); });
   if (e.retorno) out.push(['Retorno sugerido em', brCompleto(e.retorno)]);
   return out;
 }
-function instPrDoc(titulo, pc, consultas, R, sohReceita) {
-  var css = 'body{font:13px/1.5 Arial,Helvetica,sans-serif;color:#111;margin:0;padding:22px}h1{font-size:18px;margin:0}.top{display:flex;justify-content:space-between;gap:12px;border-bottom:2px solid #111;padding-bottom:8px;margin-bottom:12px}.sm{font-size:11px;color:#555}' +
+/** tipo: receita | consulta | prontuario. ident = dados do INSTITUTO. assinante = {nome, especialidade, registro}. */
+function instPrDoc(tipo, pc, consultas, ident, via, assinante) {
+  var css = 'body{font:13px/1.5 Arial,Helvetica,sans-serif;color:#111;margin:0;padding:22px}h1{font-size:18px;margin:0}.top{display:flex;align-items:center;gap:14px;border-bottom:2px solid #111;padding-bottom:10px;margin-bottom:10px}' +
+    '.top img{max-height:64px;max-width:170px;object-fit:contain}.top .id{flex:1}.top .id b{font-size:16px;display:block}.sm{font-size:11px;color:#555}.tit{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:6px 0 10px}' +
+    '.via{border:2px solid #111;border-radius:6px;padding:2px 10px;font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:.5px}' +
     '.pac{background:#f3f4f6;padding:8px 10px;border-radius:6px;margin-bottom:10px}.cons{margin-bottom:16px;page-break-inside:avoid}.cons h2{font-size:14px;margin:0 0 4px;border-bottom:1px solid #999;padding-bottom:3px}' +
     '.sec{margin:7px 0}.sec b{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;color:#444}.sec div{white-space:pre-wrap}' +
-    '.ass{margin-top:48px;width:280px;border-top:1px solid #111;padding-top:4px;font-size:11px}.rod{margin-top:22px;font-size:10px;color:#666;border-top:1px solid #ccc;padding-top:6px}@page{margin:12mm}';
-  var quem = ((typeof eu === 'function' && eu().nome) || '').trim();
+    '.ass{margin-top:48px;width:300px;border-top:1px solid #111;padding-top:4px;font-size:11.5px}.rod{margin-top:22px;font-size:10px;color:#666;border-top:1px solid #ccc;padding-top:6px;line-height:1.5}@page{margin:12mm}';
+  var nomeI = (ident && ident.nome) || 'Instituto', quem = ((typeof eu === 'function' && eu().nome) || '').trim();
+  var linhas = [];
+  if (ident && ident.razaoSocial && ident.razaoSocial !== nomeI) linhas.push(ident.razaoSocial);
+  if (ident && ident.cnpj) linhas.push('CNPJ ' + ident.cnpj);
+  var l2 = ident ? instEnderecoDoc(ident) : '', l3 = ident ? [ident.telefone, ident.email].filter(Boolean).join(' · ') : '';
+  var R0 = PRONT_ROT[instModoItem(consultas[0] || {})];
+  var titulo = tipo === 'receita' ? (R0.rcTit || 'Receita') : tipo === 'prontuario' ? 'Prontuário' : 'Consulta · Prontuário';
   var h = '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(titulo + ' · ' + pc.nome) + '</title><style>' + css + '</style></head><body>' +
-    '<div class="top"><div><h1>' + esc(titulo) + '</h1><div class="sm">' + esc(igrNome()) + ' · Instituto</div></div><div class="sm" style="text-align:right">Emitido em ' + esc(brCompleto(hoje())) + '</div></div>' +
+    '<div class="top">' + (ident && ident.logo ? '<img src="' + esc(ident.logo) + '" alt="">' : '') + '<div class="id"><b>' + esc(nomeI) + '</b>' +
+      (linhas.length ? '<div class="sm">' + esc(linhas.join(' · ')) + '</div>' : '') + (l2 ? '<div class="sm">' + esc(l2) + '</div>' : '') + (l3 ? '<div class="sm">' + esc(l3) + '</div>' : '') + '</div></div>' +
+    '<div class="tit"><h1>' + esc(titulo) + '</h1>' + (via > 1 ? '<span class="via">' + esc(instViaTxt(via)) + ' · reimpressa em ' + esc(brCompleto(hoje())) + '</span>' : '<span class="sm">Emitido em ' + esc(brCompleto(hoje())) + '</span>') + '</div>' +
     '<div class="pac"><b>' + esc(pc.nome) + '</b><div class="sm">' + esc([pc.codigo ? 'Cód. ' + pc.codigo : '', pc.idade !== null && pc.idade !== undefined ? pc.idade + ' anos' : '', pc.sexo].filter(Boolean).join(' · ')) + '</div></div>';
   consultas.forEach(function (c) {
+    var R = PRONT_ROT[instModoItem(c)];
     h += '<div class="cons"><h2>Consulta de ' + esc(brCompleto(c.data) + (c.hora ? ' às ' + c.hora : '')) + '</h2><div class="sm">' + esc([c.profissional, c.especialidade].filter(Boolean).join(' · ')) + '</div>';
-    (sohReceita ? [[R.rcTit, c.receita]] : instPrBlocos(R, c)).forEach(function (b) { if (String(b[1] || '').trim()) h += '<div class="sec"><b>' + esc(b[0]) + '</b><div>' + esc(b[1]) + '</div></div>'; });
+    (tipo === 'receita' ? [[R.rcTit || 'Receita', c.receita]] : instPrBlocos(R, c)).forEach(function (b) { if (String(b[1] || '').trim()) h += '<div class="sec"><b>' + esc(b[0]) + '</b><div>' + esc(b[1]) + '</div></div>'; });
     h += '</div>';
   });
-  h += '<div class="ass">' + esc((consultas[0] && consultas[0].profissional) || 'Profissional responsável') + '<br>Assinatura e carimbo (nº do registro profissional)</div>' +
-    '<div class="rod">Documento confidencial — dados de saúde protegidos pela LGPD. Impresso por ' + esc(quem || 'usuário') + ' em ' + esc(brCompleto(hoje())) + '. Não compartilhe.</div></body></html>';
+  var a = assinante || {};
+  h += '<div class="ass"><b>' + esc(a.nome || 'Profissional responsável') + '</b>' + (a.especialidade ? '<br>' + esc(a.especialidade) : '') + '<br>' +
+    (a.registro ? 'Registro profissional: <b>' + esc(a.registro) + '</b>' : 'Registro profissional: ________________') + '<br><span class="sm">Assinatura e carimbo</span></div>' +
+    '<div class="rod">' + esc(nomeI) + (ident && ident.cnpj ? ' · CNPJ ' + esc(ident.cnpj) : '') + (l3 ? ' · ' + esc(l3) : '') + '<br>Documento confidencial — dados de saúde protegidos pela LGPD. Impresso por ' + esc(quem || 'usuário') + ' em ' + esc(brCompleto(hoje())) + (via > 1 ? ' (' + esc(instViaTxt(via)) + ')' : '') + '. Não compartilhe.</div></body></html>';
   return h;
 }
 function instImprimirHtml(html) {
@@ -6048,29 +6085,201 @@ function instImprimirHtml(html) {
     var f = document.createElement('iframe'); f.setAttribute('aria-hidden', 'true'); f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
     document.body.appendChild(f);
     var d = f.contentWindow.document; d.open(); d.write(html); d.close();
-    setTimeout(function () { try { f.contentWindow.focus(); f.contentWindow.print(); } catch (e) { toast('Não foi possível abrir a impressão neste aparelho.', 5000); } setTimeout(function () { if (f.parentNode) f.parentNode.removeChild(f); }, 90000); }, 350);
+    setTimeout(function () { try { f.contentWindow.focus(); f.contentWindow.print(); } catch (e) { toast('Não foi possível abrir a impressão neste aparelho.', 5000); } setTimeout(function () { if (f.parentNode) f.parentNode.removeChild(f); }, 90000); }, 600);
   } catch (e) { toast('Não foi possível abrir a impressão neste aparelho.', 5000); }
 }
+/** Registra a impressão no servidor (e recebe o nº da via), monta o documento do Instituto e abre a impressão / Salvar como PDF. */
+function instImprimirDoc(tipo, consultas, o) {
+  o = o || {}; var pc = instPr.pc; if (!pc || !consultas.length) return;
+  carregando(true, 'Preparando o documento...');
+  instCtxImpressao().then(function (ctx) {
+    var log = chamar('instImpressaoLog', { pessoaId: instPr.pessoaId, agendamentoId: o.agendamentoId || '', tipo: tipo })
+      .catch(function (e) { if (e && e.code === 'V39_ACTION_NOT_MAPPED') return { via: 1, semLog: true }; throw e; });
+    return log.then(function (lg) { return { ctx: ctx, via: Number(lg.via || 1) }; });
+  }).then(function (x) {
+    var ctx = x.ctx, ident = ctx.identidade, a;
+    if (tipo === 'prontuario') {
+      var meu = (instD.profissionais || []).filter(function (p) { return p.id === ctx.meuProfissionalId; })[0] || {};
+      a = { nome: meu.nome, especialidade: meu.especialidade, registro: (ctx.registros || {})[ctx.meuProfissionalId] || '' };
+    } else {
+      var c0 = consultas[0]; a = { nome: c0.profissional, especialidade: c0.especialidade, registro: (ctx.registros || {})[c0.profissionalId] || '' };
+    }
+    carregando(false);
+    instImprimirHtml(instPrDoc(tipo, pc, consultas, ident, x.via, a));
+    if (x.via > 1) toast(instViaTxt(x.via) + ' — a reimpressão ficou registrada.', 4500);
+    else if (!ident && !ctx.semModulo && !instDicaIdent) { instDicaIdent = true; setTimeout(function () { toast('Os dados do Instituto ainda não foram cadastrados: o documento sai só com o nome “Instituto”. A gerência cadastra em Instituto › Dados do Instituto.', 7000); }, 900); }
+    else if (!a.registro && ctx.meuProfissionalId && !instDicaReg && (!consultas[0] || consultas[0].profissionalId === ctx.meuProfissionalId || tipo === 'prontuario')) { instDicaReg = true; setTimeout(function () { toast('Informe seu CRM/CRP em Pacientes e prontuários › Meu registro profissional para sair na assinatura.', 7000); }, 900); }
+  }).catch(function (e) { carregando(false); toast((e && e.message) || 'Não foi possível preparar o documento.', 6000); });
+}
 function instPrImprimir(v) {
-  var a = instD.ags.filter(function (x) { return x.id === instPr.id; })[0], ag = a && agendaPor(a.agendaId), pc = a && instD.pac[a.pessoaId]; if (!a || !ag || !pc) return;
-  var R = PRONT_ROT[instPr.modo], base = { data: a.data, hora: a.hora, profissional: ag.profissionalNome, especialidade: ag.especialidade };
-  var atualForm = function () { var o = instPrLer(); return Object.assign({}, base, o); };
+  var pc = instPr.pc; if (!pc) return;
+  var a = instPr.id ? instD.ags.filter(function (x) { return x.id === instPr.id; })[0] : null, ag = a && agendaPor(a.agendaId);
+  var base = a && ag ? { data: a.data, hora: a.hora, profissionalId: ag.profissionalId, profissional: ag.profissionalNome, especialidade: ag.especialidade, modo: instPr.modo, meu: true } : null;
+  var form = function () { return Object.assign({}, base, instPrLer()); };
   if (v === 'receita') {
-    var c1 = atualForm(); if (!String(c1.receita || '').trim()) return toast('Escreva a receita antes de imprimir.');
-    return instImprimirHtml(instPrDoc(R.rcTit || 'Receita', pc, [c1], R, true));
+    if (!base) return; var c1 = form(); if (!String(c1.receita || '').trim()) return toast('Escreva a receita antes de imprimir.');
+    return instImprimirDoc('receita', [c1], { agendamentoId: instPr.id });
   }
   if (v === 'atual') {
-    var c2 = atualForm(); if (!instPrBlocos(R, c2).length) return toast('Preencha a consulta antes de imprimir.');
-    return instImprimirHtml(instPrDoc('Consulta · Prontuário', pc, [c2], R));
+    if (!base) return; var c2 = form(); if (!instPrBlocos(PRONT_ROT[instPr.modo], c2).length) return toast('Preencha a consulta antes de imprimir.');
+    return instImprimirDoc('consulta', [c2], { agendamentoId: instPr.id });
   }
   if (v === 'tudo') {
-    var l = [], c3 = atualForm(); if (instPrBlocos(R, c3).length) l.push(c3);
+    var l = [], c3 = base ? form() : null; if (c3 && instPrBlocos(PRONT_ROT[instPr.modo], c3).length) l.push(c3);
     instPr.itens.forEach(function (e) { l.push(e); });
     if (!l.length) return toast('Não há consultas para imprimir.');
-    return instImprimirHtml(instPrDoc('Prontuário', pc, l, R));
+    return instImprimirDoc('prontuario', l, {});
   }
-  var m = String(v).match(/^h\|(\d+)$/), e = m && instPr.itens[+m[1]]; if (!e) return;
-  instImprimirHtml(instPrDoc('Consulta · Prontuário', pc, [e], R));
+  var m = String(v).match(/^([hr])\|(\d+)$/), e = m && instPr.itens[+m[2]]; if (!e) return;
+  if (m[1] === 'r') { if (!String(e.receita || '').trim()) return toast('Esta consulta não tem receita.'); return instImprimirDoc('receita', [e], { agendamentoId: e.agendamentoId }); }
+  instImprimirDoc('consulta', [e], { agendamentoId: e.agendamentoId });
+}
+/* ── tela "Pacientes e prontuários" (profissionais de saúde): buscar, abrir o prontuário, imprimir e reimprimir (2ª via) ── */
+var instPac = { q: '', itens: null, carregando: false, erro: '', semSql: false }, instPacT = null;
+function carregarInstPac(q) {
+  instPac.carregando = true;
+  return chamar('instPacientes', { q: q || '' }).then(function (r) { instPac.itens = r.itens || []; instPac.semSql = !!r.semSql; instPac.erro = ''; })
+    .catch(function (e) { instPac.erro = e.message; instPac.itens = []; })
+    .then(function () { instPac.carregando = false; if (cfg.aba === 'instpac') pintarInstPac(); });
+}
+function instPacLinhas() {
+  if (instPac.carregando && !instPac.itens) return '<div class="empty" style="padding:14px">Carregando…</div>';
+  if (instPac.erro) return '<div class="aviso r">' + esc(instPac.erro) + '</div>';
+  if (instPac.semSql) return '<div class="aviso" style="font-size:12.5px;line-height:1.5"><b>Falta rodar o INST_S18 no Supabase</b> para listar os pacientes aqui.</div>';
+  var l = instPac.itens || [];
+  if (!l.length) return '<div class="empty" style="padding:14px">' + (instPac.q ? 'Nenhum paciente com esta busca.' : 'Você ainda não tem pacientes atendidos.') + '</div>';
+  return '<div class="card lp">' + l.map(function (x) {
+    var id = idadeDe({ nasc: x.nasc });
+    return '<div class="row cl" data-a="instPacVer" data-v="' + esc(x.pessoaId) + '"><div class="av" style="' + corAvatar(x.nome) + '">' + ini(x.nome) + '</div><div class="info"><div class="nm">' + esc(x.nome) + '</div>' +
+      '<div class="sb">' + esc([x.codigo, id !== null ? id + ' anos' : '', x.atendimentos + (x.atendimentos === 1 ? ' atendimento' : ' atendimentos'), x.ultimo ? 'último ' + br(String(x.ultimo).slice(0, 10)) : ''].filter(Boolean).join(' · ')) + '</div></div><span style="color:var(--tx3);font-size:18px">›</span></div>';
+  }).join('') + '</div>';
+}
+function pintarInstPac() { var el = $('ip-lista'); if (el) el.innerHTML = instPacLinhas(); }
+function instPintarReg() {
+  var p = instD.perm || {};
+  instCtxImpressao().then(function (ctx) {
+    var el = $('ip-reg'); if (!el) return;
+    var reg = (ctx.registros || {})[p.profissionalId];
+    el.innerHTML = '<div class="card" style="display:flex;gap:10px;align-items:center;padding:12px 14px"><div style="flex:1;min-width:0"><b style="font-size:13.5px">Meu registro profissional (CRM, CRP…)</b><div class="sb" style="font-size:12.5px">' +
+      (reg ? esc(reg) + ' · sai na assinatura da receita' : '<span style="color:var(--vermelho)">não informado — a assinatura sai com linha em branco</span>') + '</div></div><button class="btn gh sm" data-a="instRegProfForm">' + (reg ? 'Alterar' : 'Informar') + '</button></div>' +
+      (!ctx.identidade && !ctx.semModulo ? '<div class="aviso" style="font-size:12px;line-height:1.5;margin-bottom:8px">Os <b>dados do Instituto</b> (logo, CNPJ, endereço) ainda não foram cadastrados: os documentos saem só com o nome “Instituto”. A gerência cadastra em <b>Instituto › Dados do Instituto</b>.</div>' : '') +
+      (ctx.semSql ? '<div class="aviso" style="font-size:12px;line-height:1.5;margin-bottom:8px">Falta rodar o <b>INST_S18</b> no Supabase para os documentos do Instituto, o registro profissional e a 2ª via.</div>' : '');
+  });
+}
+function rInstPac() {
+  if (!temInst()) return '<div class="empty">Sem acesso.</div>';
+  carregarInst();
+  var h = '<div class="ini-ola" style="font-size:22px">Pacientes e prontuários</div><div class="ini-sub">Pacientes que você atende ou já atendeu. Abra o prontuário, imprima e reimprima a receita (2ª via).</div>';
+  if (!instD.t) return h + '<div class="card"><div class="empty">Carregando…</div></div>';
+  if (!(instD.perm || {}).profissionalId) return h + '<div class="card"><div class="empty">Esta tela é só para profissionais de saúde cadastrados no Instituto.</div></div>';
+  if (!instTemPront2()) return h + '<div class="aviso" style="font-size:12.5px;line-height:1.5"><b>Módulo do prontuário desatualizado.</b> Publique o <b>app_v39_inst_prontuario.js (PRONT-2)</b> e atualize a página.</div>';
+  if (!instPac.itens && !instPac.carregando) carregarInstPac(instPac.q);
+  setTimeout(instPintarReg, 0);
+  return h + '<div id="ip-reg"></div><div class="busca"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input id="ip-busca" placeholder="Buscar pelo nome ou código do paciente" value="' + esc(instPac.q) + '" autocomplete="off"></div>' +
+    '<div id="ip-lista">' + instPacLinhas() + '</div>' +
+    '<div class="card" style="font-size:11.5px;color:var(--tx2);line-height:1.55;background:#FFF8E6"><b>Privacidade:</b> a lista é só dos <b>seus</b> pacientes. A <b>receita</b> só é reimpressa por quem fez o atendimento; a 2ª via sai marcada e cada impressão fica registrada.</div>';
+}
+function instPacVer(pid) {
+  var x = (instPac.itens || []).filter(function (i) { return i.pessoaId === pid; })[0]; if (!x) return;
+  var pc = { nome: x.nome, codigo: x.codigo, idade: idadeDe({ nasc: x.nasc }), sexo: v39Sexo(x.sexo), bairro: '', foto: '' };
+  instPr = { id: '', modo: 'med', itens: [], atual: {}, clinico: true, pc: pc, pessoaId: pid };
+  abrirModal('<div class="perfil" style="padding-top:0">' + avatarInst(null, pc.nome, 72) + '<h2 style="font-size:19px">' + esc(pc.nome) + '</h2><p>' + esc([pc.codigo, pc.idade !== null && pc.idade !== undefined ? pc.idade + ' anos' : '', pc.sexo].filter(Boolean).join(' · ')) + '</p></div>' +
+    '<div class="aviso" style="margin:10px 0 4px;font-size:12px;line-height:1.45">\uD83D\uDD12 Prontuário <b>cifrado</b>: visível só para profissionais de saúde que atendem este paciente.</div><div id="pr-corpo"><div class="empty" style="padding:14px">Abrindo o prontuário…</div></div>');
+  chamar('instProntuarioDe', { pessoaId: pid }).then(function (r) {
+    if (!$('pr-corpo')) return;
+    if (r.semProntuario) { $('pr-corpo').innerHTML = '<div class="aviso" style="font-size:12.5px">Prontuário ainda não liberado neste servidor (INST_S15).</div><div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>'; return; }
+    instPr.itens = r.itens || []; instPr.clinico = r.clinico !== false;
+    if (r.invalidos) setTimeout(function () { toast(r.invalidos + ' registro(s) antigo(s) não puderam ser abertos (integridade). Avise o administrador.', 7000); }, 300);
+    $('pr-corpo').innerHTML = (instPr.itens.length
+      ? '<div class="sb" style="font-size:12px;color:var(--tx2);margin:2px 0 8px">' + instPr.itens.length + ' consulta(s), da mais recente para a mais antiga. Para a <b>2ª via da receita</b>, toque em “Reimprimir receita” na consulta desejada.</div>' +
+        '<button class="btn pr" data-a="instPrImprimir" data-v="tudo" style="margin-bottom:8px">Imprimir / salvar PDF do prontuário completo</button>' + instPr.itens.map(function (e, i) { return instPrCardHist(e, i); }).join('')
+      : '<div class="empty" style="padding:14px">Nenhuma consulta registrada para este paciente.</div>') + '<div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>';
+  }).catch(function (e) { if ($('pr-corpo')) $('pr-corpo').innerHTML = '<div class="aviso r">' + esc(e.message) + '</div><div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>'; });
+}
+function instRegProfForm() {
+  instCtxImpressao().then(function (ctx) {
+    var reg = (ctx.registros || {})[(instD.perm || {}).profissionalId] || '';
+    abrirModal('<h2>Registro profissional</h2><div class="sb" style="font-size:12.5px;color:var(--tx2);line-height:1.5;margin:4px 0">Número do seu conselho (CRM, CRP, CRN, CREFITO…). Sai na assinatura da receita, das orientações e do prontuário.</div>' +
+      '<label>Registro</label><input id="rp-reg" maxlength="40" value="' + esc(reg) + '" placeholder="Ex.: CRM-SP 123456" autocomplete="off">' +
+      '<div style="height:12px"></div><button class="btn pr" data-a="instRegProfSalvar">Salvar</button><div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>');
+  });
+}
+function instRegProfSalvar() {
+  var v = ($('rp-reg') ? $('rp-reg').value : '').trim();
+  carregando(true, 'Salvando...');
+  chamar('instRegistroProf', { profissionalId: (instD.perm || {}).profissionalId, registro: v }).then(function () { instCtxCache = null; fechar(); toast(v ? 'Registro salvo ✓' : 'Registro removido'); instPintarReg(); })
+    .catch(function (e) { toast(e.message, 5000); }).then(function () { carregando(false); });
+}
+/* ── dados do Instituto para os documentos (logo, CNPJ, endereço) — semelhante às configurações da igreja ── */
+var instIdent = { logo: '' };
+function instIdentHtml(i) {
+  var logo = instIdent.logo, igrLogo = (igr && (igr.logo || igr.icone)) || '';
+  return '<h2>Dados do Instituto</h2><div class="sb" style="font-size:12.5px;color:var(--tx2);line-height:1.5;margin:4px 0">Aparecem no cabeçalho e no rodapé da <b>receita</b>, das <b>orientações</b> e do <b>prontuário</b>. Os documentos mostram só o Instituto.</div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0"><button class="btn gh sm" data-a="instIdentIgreja">Preencher endereço e CNPJ com os dados da igreja</button></div>' +
+    '<label>Logo do Instituto</label><div class="fotoprev" id="ii-logoprev" style="height:110px;background-size:contain;background-color:#F0F1F4;' + (logo ? "background-image:url('" + logo + "');border:none;color:transparent" : '') + '">Sem logo</div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button class="btn gh sm" data-a="instIdentLogo">Escolher imagem</button>' + (/^data:image/.test(igrLogo) ? '<button class="btn gh sm" data-a="instIdentLogoIgreja">Usar o logo da igreja</button>' : '') + '<button class="btn gh sm" data-a="instIdentLogoRem" style="color:var(--vermelho)">Remover</button></div>' +
+    '<div style="font-size:10.5px;color:var(--tx3);margin-top:4px">PNG ou JPG, de preferência com fundo transparente ou branco.</div>' +
+    '<label>Nome do Instituto *</label><input id="ii-nome" maxlength="200" value="' + esc(i.nome) + '" placeholder="Ex.: Instituto Viver">' +
+    '<label>Razão social</label><input id="ii-razao" maxlength="200" value="' + esc(i.razaoSocial) + '">' +
+    '<div class="g2"><div><label>CNPJ</label><input id="ii-cnpj" inputmode="numeric" maxlength="18" value="' + esc(i.cnpj) + '" placeholder="00.000.000/0000-00"></div><div><label>Responsável / presidente</label><input id="ii-resp" maxlength="200" value="' + esc(i.responsavel) + '"></div></div>' +
+    '<div class="g2"><div><label>Telefone</label><input id="ii-fone" type="tel" maxlength="40" value="' + esc(i.telefone) + '"></div><div><label>E-mail</label><input id="ii-email" type="email" maxlength="200" autocapitalize="none" value="' + esc(i.email) + '"></div></div>' +
+    '<label>CEP</label><input id="ii-cep" inputmode="numeric" maxlength="9" placeholder="00000-000" value="' + esc(mascaraCep(i.cep)) + '"><div id="ii-cepinfo" style="font-size:11.5px;margin-top:5px;line-height:1.4"></div>' +
+    '<label>Rua</label><input id="ii-endereco" maxlength="200" value="' + esc(i.rua) + '">' +
+    '<div class="g2"><div><label>Número</label><input id="ii-numero" maxlength="40" value="' + esc(i.numero) + '"></div><div><label>Complemento</label><input id="ii-complemento" maxlength="200" value="' + esc(i.complemento) + '"></div></div>' +
+    '<div class="g2"><div><label>Bairro</label><input id="ii-bairro" maxlength="200" value="' + esc(i.bairro) + '"></div><div><label>Cidade</label><input id="ii-cidade" maxlength="200" value="' + esc(i.cidade) + '"></div></div>' +
+    '<div style="height:12px"></div><button class="btn pr" data-a="instIdentSalvar">Salvar dados do Instituto</button><div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>';
+}
+function instIdentForm() {
+  if (!instTemPront2()) return toast('Publique o app_v39_inst_prontuario.js (PRONT-2) e atualize a página.', 5000);
+  carregando(true, 'Carregando...');
+  chamar('instIdentidade', {}).then(function (r) {
+    carregando(false);
+    if (r.semSql) return toast('Falta rodar o INST_S18 no Supabase.', 6000);
+    if (!r.edita) return toast('Somente quem gerencia o Instituto altera estes dados.', 5000);
+    var i = r.identidade || {}; ['nome', 'razaoSocial', 'cnpj', 'responsavel', 'telefone', 'email', 'cep', 'rua', 'numero', 'complemento', 'bairro', 'cidade', 'logo'].forEach(function (k) { if (i[k] == null) i[k] = ''; });
+    instIdent = { logo: i.logo || '' }; abrirModal(instIdentHtml(i));
+  }).catch(function (e) { carregando(false); toast(e.message, 5000); });
+}
+function instIdentPintarLogo() { var p = $('ii-logoprev'); if (!p) return; var l = instIdent.logo; p.style.backgroundImage = l ? "url('" + l + "')" : ''; p.style.border = l ? 'none' : ''; p.style.color = l ? 'transparent' : ''; p.textContent = l ? '' : 'Sem logo'; }
+function instProcessarLogo(file) {
+  if (!file) return;
+  var fr = new FileReader();
+  fr.onload = function () {
+    var img = new Image();
+    img.onload = function () {
+      var max = 480, url = '';
+      for (var t = 0; t < 7; t++) {
+        var k = Math.min(1, max / Math.max(img.width, img.height)), cv = document.createElement('canvas');
+        cv.width = Math.max(1, Math.round(img.width * k)); cv.height = Math.max(1, Math.round(img.height * k));
+        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+        url = cv.toDataURL('image/png'); if (url.length > 150000) url = cv.toDataURL('image/jpeg', 0.85);
+        if (url.length < 150000) break; max = Math.round(max * 0.8);
+      }
+      if (url.length >= 150000) return toast('Não foi possível reduzir esta logo. Tente outra imagem.');
+      instIdent.logo = url; instIdentPintarLogo();
+    };
+    img.onerror = function () { toast('Arquivo de imagem inválido.'); };
+    img.src = fr.result;
+  };
+  fr.readAsDataURL(file);
+}
+function instIdentLogo() {
+  var inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.style.display = 'none'; document.body.appendChild(inp);
+  inp.addEventListener('change', function () { var f = inp.files && inp.files[0]; if (inp.parentNode) inp.parentNode.removeChild(inp); if (f) instProcessarLogo(f); });
+  inp.click();
+}
+function instIdentIgreja() {
+  var c = igr.config || {}, e = c.endereco || {}, set = function (id, v) { var el = $(id); if (el && !String(el.value || '').trim() && v) el.value = v; };
+  set('ii-cnpj', c.cnpj); set('ii-resp', c.pastorPresidente); set('ii-cep', mascaraCep(e.cep)); set('ii-endereco', e.rua); set('ii-numero', e.numero); set('ii-complemento', e.complemento); set('ii-bairro', e.bairro); set('ii-cidade', e.cidade);
+  toast('Campos vazios preenchidos com os dados da igreja. Confira e ajuste o que for do Instituto.', 5000);
+}
+function instIdentSalvar() {
+  var v = function (id) { var e = $(id); return e ? e.value.trim() : ''; };
+  if (v('ii-nome').length < 3) return toast('Informe o nome do Instituto.');
+  var d = { nome: v('ii-nome'), razaoSocial: v('ii-razao'), cnpj: v('ii-cnpj'), responsavel: v('ii-resp'), telefone: v('ii-fone'), email: v('ii-email'), cep: v('ii-cep'), rua: v('ii-endereco'), numero: v('ii-numero'), complemento: v('ii-complemento'), bairro: v('ii-bairro'), cidade: v('ii-cidade'), logo: instIdent.logo || '' };
+  carregando(true, 'Salvando...');
+  chamar('instIdentidadeSalvar', { identidade: d }).then(function () { instCtxCache = null; fechar(); toast('Dados do Instituto salvos ✓ Os próximos documentos já saem com eles.', 5000); })
+    .catch(function (e) { toast(e.message, 6000); }).then(function () { carregando(false); });
 }
 function instRegSalvar(v) {
   var p = v.split('|'), id = p[0], marcar = p[1] === '1';
@@ -6604,6 +6813,9 @@ var ACOES = {
     instFlVoltar: function (v) { var f = instFl; if (v === 'esp') { f.esp = ''; f.agenda = ''; f.data = ''; f.hora = ''; f.pessoa = null; } else if (v === 'agenda') { f.agenda = ''; var gx = gruposEsp(instD.agendas.filter(function (a) { return a.ativa && podeAgendarNa(a); })).filter(function (g) { return g.chave === f.esp; })[0]; if (gx && gx.agendas.length === 1) f.esp = ''; f.data = ''; f.hora = ''; f.pessoa = null; } else if (v === 'data') { f.data = ''; f.hora = ''; f.pessoa = null; } else if (v === 'hora') { f.hora = ''; f.pessoa = null; } else f.pessoa = null; instFluxo(); },
     instStatusAt: instStatusAt, instRemarcar: instRemarcarAbrir, instRemDia: function (v) { instFl.data = v; instRemFluxo(); }, instRemHora: instRemConfirmar,
     instAtender: instAtender, instRegSalvar: instRegSalvar, instPrTab: instPrTab, instPrImprimir: instPrImprimir,
+    instPacAbrir: function () { irAba('instpac'); }, instPacVer: instPacVer, instIdentForm: instIdentForm, instIdentSalvar: instIdentSalvar, instIdentLogo: instIdentLogo,
+    instIdentLogoIgreja: function () { var l = (igr && (igr.logo || igr.icone)) || ''; if (/^data:image/.test(l)) { instIdent.logo = l; instIdentPintarLogo(); } else toast('A igreja não tem logo cadastrada.'); },
+    instIdentLogoRem: function () { instIdent.logo = ''; instIdentPintarLogo(); }, instIdentIgreja: instIdentIgreja, instRegProfForm: instRegProfForm, instRegProfSalvar: instRegProfSalvar,
     instNovoAtendido: function (v) { instNovoAtendido(v); },
     instCdIgreja: function (v) { instCd.igreja = v === '1'; instCdTela(); if (instCd.igreja) setTimeout(function () { try { $('cd-busca').focus(); } catch (e) {} }, 250); },
     instCdEscolher: function (v) { var x = (instCd.res || []).filter(function (r) { return r.id === v; })[0]; if (x) instCdConcluir({ id: x.id, nome: x.nome, codigo: x.codigo, autorizou: x.autorizou }); },
@@ -6703,8 +6915,9 @@ document.addEventListener('click', function (ev) {
 document.addEventListener('input', function (ev) {
   if (ev.target.id === 'busca-m' && false) {}
   if (ev.target.id === 'busca-p') { buscaP = ev.target.value; var pos = ev.target.selectionStart; render(); var el = $('busca-p'); el.focus(); el.setSelectionRange(pos, pos); }
-  if (ev.target.id === 'cf-cnpj') ev.target.value = mascaraCnpj(ev.target.value);
-  if (['f-cep', 'g-cep', 'v-cep', 'cf-cep'].indexOf(ev.target.id) >= 0) {
+  if (ev.target.id === 'cf-cnpj' || ev.target.id === 'ii-cnpj') ev.target.value = mascaraCnpj(ev.target.value);
+    if (ev.target.id === 'ip-busca') { instPac.q = ev.target.value; clearTimeout(instPacT); instPacT = setTimeout(function () { carregarInstPac(instPac.q); }, 350); }
+  if (['f-cep', 'g-cep', 'v-cep', 'cf-cep', 'ii-cep'].indexOf(ev.target.id) >= 0) {
     var pxc = ev.target.id.replace('-cep', '');
     ev.target.value = mascaraCep(ev.target.value);
     if (soDigitos(ev.target.value).length === 8) aplicarCep(pxc);
@@ -7507,7 +7720,7 @@ window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'SYNC-V39-19';
+  var BUILD = 'SYNC-V39-20';
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 
