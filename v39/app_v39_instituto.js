@@ -1,4 +1,8 @@
-/* 2Gather v39 · Instituto · INST-7
+/* 2Gather v39 · Instituto · INST-8
+   INST-8: FOTO DO ATENDIDO. O "Novo atendido" passa a guardar a foto (bucket privado person-photos, caminho <igreja>/people/<pessoa>/<uuid>.jpg, registro pela função v39_inst_register_photo)
+     e a foto aparece na ficha do médico, em Pacientes e prontuários e na agenda; só para quem pode ver (equipe do Instituto ou o profissional que atende o paciente).
+     As fotos ficam só na memória da tela (nunca no aparelho). Requer INST_S20 (sem ele o cadastro é feito e o app avisa que a foto não foi salva).
+   INST-7: AGENDAS E ATENDIMENTOS (médico, psicológico e outros). Liga as telas de agenda do app.js ao banco: dados, agendar, confirmar, remarcar, cancelar, faltou,
    INST-7: AGENDAS E ATENDIMENTOS (médico, psicológico e outros). Liga as telas de agenda do app.js ao banco: dados, agendar, confirmar, remarcar, cancelar, faltou,
    atendido, cadastro de profissional e horários da agenda. O prontuário (anotações) usa a cifra do INST_S15. Requer INST_S14 (e INST_S15 para as anotações).
    Base INST-6:
@@ -21,7 +25,7 @@
    Diagnóstico no Console: G2_INST.versao · G2_INST.acoes() */
 (function () {
   'use strict';
-  var VERSAO = 'INST-7';
+  var VERSAO = 'INST-8';
   if (window.G2_INST) return;
   var M = window.G2_INST = { versao: VERSAO, ultimo: {} };
   console.info('[2Gather] instituto ' + VERSAO);
@@ -90,6 +94,9 @@
     PROFESSIONAL_DUPLICATE: 'Esta pessoa já é profissional ativo.', AGENDA_HOURS_INVALID: 'Confira os horários: o início deve ser antes do fim e as datas devem ser válidas.',
     RECORD_TOO_LONG: 'Cada campo aceita até 4000 caracteres.', RETURN_DATE_INVALID: 'Data de retorno inválida.',
     INST_RECORD_KEY_MISSING: 'A chave de cifra do prontuário não foi encontrada no servidor. Avise o administrador.',
+    PHOTO_PATH_INVALID: 'Caminho da foto inválido. Atualize a página e tente de novo.', PHOTO_SIZE_INVALID: 'A foto deve ter até 5 MB.', PHOTO_TYPE_INVALID: 'Tipo de arquivo da foto não confere com a extensão.',
+    PHOTO_OBJECT_NOT_FOUND: 'A foto não chegou ao armazenamento. Tente de novo.', PHOTO_REPOSITORY_MISSING: 'O repositório de fotos não está configurado. Avise o administrador.',
+    PHOTO_ALREADY_REGISTERED: 'Esta foto já foi registrada.', PHOTO_OWNED_BY_OTHER_CHURCH: 'A foto desta pessoa pertence a outra igreja.',
     PRONTUARIO_INDISPONIVEL: 'As anotações clínicas ainda não estão liberadas neste servidor (falta rodar o INST_S15). A agenda e o registro de atendimento funcionam.'
   };
   function traduz(e) {
@@ -134,6 +141,74 @@
       .then(function (r) { if (r.error) throw r.error; return path; });
   }
 
+  /* ───────────── foto do atendido (INST-8) ───────────── */
+    var FOTOS = {}, FOTO_TENT = {}, FOTO_PEND = {}, FOTO_T = null;   // FOTOS: pessoa -> dataURL (só memória) · FOTO_TENT: 1 = baixada, 2 = sem foto ou sem acesso
+    function uuid4() {
+      if (window.crypto && crypto.randomUUID) return String(crypto.randomUUID()).toLowerCase();
+      var b = new Uint8Array(16); crypto.getRandomValues(b); b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128;
+      var h = Array.prototype.map.call(b, function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
+      return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
+    }
+    function blobDataUrl(b) { return new Promise(function (ok, er) { var fr = new FileReader(); fr.onload = function () { ok(fr.result); }; fr.onerror = er; fr.readAsDataURL(b); }); }
+    function fotoErro(e) {
+      var t = String((e && (e.message || e.code)) || e || '');
+      if (/row-level|policy|403|unauthorized|not authorized/i.test(t)) return new Error('Sem permissão para guardar a foto. Confira se o INST_S20 foi rodado e se a pessoa foi cadastrada pelo Instituto.');
+      if (/PGRST202|find the function|does not exist|schema cache/i.test(t)) return new Error('Falta rodar o INST_S20 no Supabase para guardar a foto do atendido.');
+      return erro(e);
+    }
+    function aplicarFoto(pid, url) {
+      FOTOS[pid] = url; FOTO_TENT[pid] = 1;
+      try { var d = AG && AG.dados; if (d && d.pacientes && d.pacientes[pid]) d.pacientes[pid].foto = url; } catch (e) { /* segue */ }
+      try { var g = G(); if (g && typeof g.instFoto === 'function') g.instFoto(pid, url); } catch (e2) { /* segue */ }
+    }
+    function agendarRender() {
+      clearTimeout(FOTO_T);
+      FOTO_T = setTimeout(function () { try { var g = G(); if (g && typeof g.instFotoRender === 'function') g.instFotoRender(); } catch (e) { /* segue */ } }, 600);
+    }
+    /* envia a foto (data URL) e registra no cadastro da pessoa; devolve uma promessa */
+    function enviarFotoPessoa(pid, dataUrl) {
+      var ig = igrejaId(), path = ig + '/people/' + pid + '/' + uuid4() + '.jpg';
+      return cliente().then(function (c) { return c.storage.from('person-photos').upload(path, dataUrlBlob(dataUrl), { contentType: 'image/jpeg', upsert: false }); })
+        .then(function (r) { if (r.error) throw r.error; return rpc('v39_inst_register_photo', { p_church_id: ig, p_person_id: pid, p_storage_path: path, p_original_file_name: 'foto.jpg', p_checksum_sha256: null }); })
+        .then(function () { aplicarFoto(pid, dataUrl); return true; })
+        .catch(function (e) { throw fotoErro(e); });
+    }
+    /* baixa a foto de um paciente (se existir e se a pessoa puder ver); devolve o data URL ou '' */
+    function baixarFoto(pid) {
+      if (!uuid(pid)) return Promise.resolve('');
+      if (FOTOS[pid]) return Promise.resolve(FOTOS[pid]);
+      if (FOTO_TENT[pid] === 2) return Promise.resolve('');
+      if (FOTO_PEND[pid]) return FOTO_PEND[pid];
+      FOTO_PEND[pid] = rpc('v39_inst_patient_photo', { p_church_id: igrejaId(), p_person: pid }).then(function (r) {
+        var path = r && r.path; if (!path) { FOTO_TENT[pid] = 2; return ''; }
+        return cliente().then(function (c) { return c.storage.from('person-photos').download(path); }).then(function (d) {
+          if (!d || d.error || !d.data) { FOTO_TENT[pid] = 2; return ''; }
+          return blobDataUrl(d.data).then(function (u) { aplicarFoto(pid, u); return u; });
+        });
+      }).catch(function (e) { FOTO_TENT[pid] = 2; console.info('[2Gather][instituto] foto indisponível (rode INST_S20 se isso não era esperado)', e && (e.message || e)); return ''; })
+        .then(function (u) { delete FOTO_PEND[pid]; return u; });
+      return FOTO_PEND[pid];
+    }
+    /* depois de carregar a agenda: busca, em segundo plano e poucas por vez, as fotos dos pacientes visíveis (primeiro os próximos atendimentos) */
+    function carregarFotosAgenda(out) {
+      if (cfg().token !== 'supabase-v39' || !out || !out.pacientes) return;
+      var hj = new Date(), iso = hj.getFullYear() + '-' + ('0' + (hj.getMonth() + 1)).slice(-2) + '-' + ('0' + hj.getDate()).slice(-2), ids = [], vis = {};
+      (out.agendamentos || []).filter(function (a) { return a.pessoaId && out.pacientes[a.pessoaId] && a.status !== 'cancelado'; })
+        .sort(function (a, b) { var fa = a.data >= iso ? 0 : 1, fb = b.data >= iso ? 0 : 1; return fa - fb || (a.data + a.hora < b.data + b.hora ? -1 : 1); })
+        .forEach(function (a) { if (!vis[a.pessoaId]) { vis[a.pessoaId] = 1; ids.push(a.pessoaId); } });
+      Object.keys(out.pacientes).forEach(function (k) { if (!vis[k]) { vis[k] = 1; ids.push(k); } });
+      ids = ids.filter(function (id) { return !FOTOS[id] && FOTO_TENT[id] !== 2 && !FOTO_PEND[id]; }).slice(0, 40);
+      var i = 0, achou = false;
+      function um() {
+        if (i >= ids.length) return Promise.resolve();
+        var id = ids[i++];
+        return baixarFoto(id).then(function (u) { if (u) { achou = true; agendarRender(); } }).then(um);
+      }
+      Promise.all([um(), um(), um()]).then(function () { if (achou) agendarRender(); });
+    }
+    M.fotoDe = function (pid) { return FOTOS[pid] || ''; };
+    M.fotoCarregar = baixarFoto;
+    M.fotoEnviar = enviarFotoPessoa;
   /* ───────────── ações que o app.js chama ───────────── */
   var LEITURA = { estDados: 1, estPessoaResumo: 1, instBuscarPessoa: 1, estReceita: 1 };
   var ACOES = {
@@ -174,10 +249,13 @@
     },
     instBuscarPessoa: function (d) { return chamarRpc('v39_inst_people_search', { p_q: String((d && d.q) || '') }); },
     instCriarPessoa: function (d) {
-      var x = limpo((d && d.pessoa) || {});
-      x.consent = x.consent || x.consentimento || '';
-      if (x.foto) { delete x.foto; setTimeout(function () { aviso('O cadastro foi feito sem a foto: a foto do atendido chega numa próxima etapa.'); }, 80); }
-      return chamarRpc('v39_inst_create_person', { p: { pessoa: x } });
+      var x = limpo((d && d.pessoa) || {}), foto = x.foto || '';
+      x.consent = x.consent || x.consentimento || ''; delete x.foto;
+      return chamarRpc('v39_inst_create_person', { p: { pessoa: x } }).then(function (r) {
+        var pid = r && ((r.pessoa && r.pessoa.id) || r.id);
+        if (!foto || !pid) return r;
+        return enviarFotoPessoa(pid, foto).then(function () { return r; }, function (e) { aviso('O cadastro foi feito, mas a foto não foi salva: ' + e.message, 9000); return r; });
+      });
     }
   };
   M.acoes = function () { return Object.keys(ACOES); };
@@ -453,7 +531,7 @@
         pessoaId: a.pessoaId || '', pessoaNome: a.pessoaNome || '', pessoaCodigo: a.pessoaCodigo || '', motivo: a.motivo || '', criadoPorNome: '' };
     });
     var pac = {}; Object.keys(r.pacientes || {}).forEach(function (k) {
-      var x = r.pacientes[k]; pac[k] = { nome: x.nome, codigo: x.codigo, idade: idadeDe(x.nasc), sexo: sexoTxt(x.sexo), bairro: '', fone: '', foto: '', igreja: !!x.igreja };
+      var x = r.pacientes[k]; pac[k] = { nome: x.nome, codigo: x.codigo, idade: idadeDe(x.nasc), sexo: sexoTxt(x.sexo), bairro: '', fone: '', foto: FOTOS[k] || '', igreja: !!x.igreja };
       lembrarPessoa({ id: k, nome: x.nome, codigo: x.codigo });
     });
     var out = { agendas: agendas, agendamentos: ags, pacientes: pac,
@@ -469,7 +547,7 @@
   }
   var okObj = function () { return { ok: true }; };
   LEITURA.instDados = 1; LEITURA.instProntuarioDe = 1;
-  ACOES.instDados = function () { return chamarRpc('v39_inst_dados', {}).then(mapDados); };
+  ACOES.instDados = function () { return chamarRpc('v39_inst_dados', {}).then(mapDados).then(function (o) { carregarFotosAgenda(o); return o; }); };
   ACOES.instAgendar = function (d) {
     var p = { agendaId: d.agendaId, data: d.data, hora: d.hora, pessoaId: d.pessoaId, motivo: d.motivo || '', autorizou: !!d.autorizou };
     return chamarRpc('v39_inst_schedule', { p: p }).then(function (r) {

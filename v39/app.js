@@ -83,7 +83,10 @@ function carregando(on, txt) { $('carregando').classList.toggle('on', !!on); $('
 var DIAS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 var PAPEL_NOME = { master: 'Master', pastor: 'Pastor(a)', supervisor: 'Supervisor', lider: 'Líder', discipulo: 'Discípulo', secretaria: 'Secretaria', tesouraria: 'Tesouraria', voluntario: 'Voluntário', voluntarioLV: 'Voluntário Lar de Vida', voluntarioInst: 'Voluntário Instituto', profissional: 'Profissional de saúde' };
 var ETAPAS = ['1. Visitou', '2. Frequentando', '3. Membro da igreja', '4. Batizado', '5. Em discipulado', '6. Em formação de líder', 'Instituto'];
-/* SYNC-V39-21: Instituto — telefone/WhatsApp do paciente na ficha do médico (INST_S19), código do paciente na agenda da secretaria e aviso de privacidade atualizado. Sem o S19 a ficha continua igual (sem telefone).
+/* SYNC-V39-22: FOTO. (1) Foto de pessoa (Pessoas): o arquivo agora é enviado no caminho que o banco exige (<igreja>/people/<pessoa>/<uuid>.jpg). Antes ia para <igreja>/<pessoa>/<hora>.jpg,
+     o registro oficial era recusado em silêncio e a foto não ficava gravada no cadastro; agora, se o registro falhar, o app avisa. (2) Instituto: a foto do atendido aparece na ficha do médico e em
+     Pacientes e prontuários (requer app_v39_instituto.js INST-8 e INST_S20).
+   SYNC-V39-21: Instituto — telefone/WhatsApp do paciente na ficha do médico (INST_S19), código do paciente na agenda da secretaria e aviso de privacidade atualizado. Sem o S19 a ficha continua igual (sem telefone).
    SYNC-V39-20: Instituto — documentos (receita, orientações, prontuário) com a identidade do INSTITUTO (logo, CNPJ, endereço), registro profissional (CRM/CRP), 2ª via com registro de cada impressão e tela "Pacientes e prontuários". Requer app_v39_inst_prontuario.js (PRONT-2) e INST_S18.
    SYNC-V39-19: Instituto — ficha do atendimento com prontuário (anamnese, conduta, receita), histórico compartilhado entre profissionais de saúde, impressão/PDF; "Novo atendido" some para o profissional. Requer app_v39_inst_prontuario.js (PRONT-1) e INST_S15 v2.
    SYNC-V39-18: Instituto — agendas e atendimentos no Supabase (profissional = pessoa com acesso; prontuário cifrado). Requer app_v39_instituto.js INST-7 e INST_S14.
@@ -1720,7 +1723,7 @@ function blocoConta() {
     '<div class="card" style="font-size:12.5px;color:var(--tx2,#5E6470);line-height:1.55;display:flex;gap:10px;align-items:center">' +
       '<span style="flex:0 0 30px;height:30px;border-radius:50%;background:var(--pri);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:11px">' + esc(ini(u.nome || '?')) + '</span>' +
       '<span>Sincronizar, trocar a senha e sair do app ficam no botão com as suas iniciais, no canto superior direito.</span></div>' +
-    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-21</div>';
+    '<div class="meta">' + esc(igrNome()) + ' · 2Gather · versão v39 · SYNC-V39-22</div>';
 }
 function rConta() { return blocoConta(); }
 function trocarSenha() {
@@ -2232,6 +2235,13 @@ function v39GravarEquipeGC(g, gcId, ant) {
   });
 }
 /* fotos no Storage (bucket privado person-photos) */
+/* UUID v4 em minúsculas (o banco exige o nome do arquivo da foto neste formato) */
+function v39Uuid4() {
+  if (window.crypto && crypto.randomUUID) return String(crypto.randomUUID()).toLowerCase();
+  var b = new Uint8Array(16); crypto.getRandomValues(b); b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128;
+  var h = Array.prototype.map.call(b, function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
+  return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
+}
 function v39DataUrlBlob(u) {
   var p = String(u).split(','), mime = (p[0].match(/data:([^;]+)/) || [])[1] || 'image/jpeg', bin = atob(p[1] || ''), a = new Uint8Array(bin.length);
   for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
@@ -2249,7 +2259,7 @@ function v39SalvarFoto(pid, foto) {
     return v39RpcApp('v39_remove_person_photo', { p_church_id: ig, p_person_id: pid, p_reason: 'Foto removida no app' })
       .then(function () { var p = pessoaPor(pid); if (p) { p.temFoto = false; p.fotoV = ''; p.fotoPath = ''; } return { fotoV: '' }; });
   }
-  var blob = v39DataUrlBlob(foto), caminho = ig + '/' + pid + '/' + Date.now() + '.jpg';
+  var blob = v39DataUrlBlob(foto), caminho = ig + '/people/' + pid + '/' + v39Uuid4() + '.jpg';
   return v39Cliente().then(function (c) { return c.storage.from('person-photos').upload(caminho, blob, { contentType: 'image/jpeg', upsert: false }); })
     .then(function (r) {
       if (r.error) throw /row-level|policy|permission|403|unauthorized/i.test(r.error.message || '') ? new Error('Você não tem permissão para enviar fotos. Peça à liderança para liberar “Gerenciar foto de pessoa” no seu perfil.') : r.error;
@@ -2259,7 +2269,7 @@ function v39SalvarFoto(pid, foto) {
     })
     .then(function (h) {
       return v39RpcApp('register_person_photo', { p_church_id: ig, p_person_id: pid, p_storage_path: caminho, p_original_file_name: 'foto.jpg', p_checksum_sha256: h })
-        .catch(function (e) { console.warn('[2Gather][fotos] foto enviada, mas o registro oficial falhou (a foto continua visível)', e); });
+        .catch(function (e) { console.warn('[2Gather][fotos] foto enviada, mas o registro oficial falhou', e); toast('A foto foi enviada, mas não ficou registrada no cadastro: ' + ((e && (e.message || e.details)) || 'erro desconhecido') + '. Avise o administrador.', 8000); });
     })
     .then(function () { var p = pessoaPor(pid); if (p) { p.temFoto = true; p.fotoV = caminho; p.fotoPath = caminho; } return { fotoV: caminho }; });
 }
@@ -5966,7 +5976,7 @@ function instAtender(id) {
   var modo = instModoPr(ag), v39 = cfg.token === 'supabase-v39';
   instPr = { id: a.id, modo: modo, itens: [], atual: {}, clinico: true, pc: pc, pessoaId: a.pessoaId };
   var quando = brCompleto(a.data) + (a.hora ? ' às ' + a.hora : '');
-  abrirModal('<div class="perfil" style="padding-top:0">' + avatarInst(pc, pc.nome, 72) + '<h2 style="font-size:19px">' + esc(pc.nome) + '</h2>' +
+  abrirModal('<div class="perfil" style="padding-top:0"><div id="pr-foto" style="display:flex;justify-content:center">' + avatarInst(pc, pc.nome, 72) + '</div><h2 style="font-size:19px">' + esc(pc.nome) + '</h2>' +
     '<p>' + esc([pc.codigo, pc.idade !== null && pc.idade !== undefined ? pc.idade + ' anos' : '', pc.sexo, pc.bairro].filter(Boolean).join(' · ')) + '</p>' +
     '<div class="pills">' + pillAt(a.status) + '<span class="pill p-cinza">consulta ' + esc(quando) + '</span>' + (pc.igreja ? '<span class="pill p-dour">membro/visitante da igreja</span>' : '') + '</div></div>' +
     '<div id="pr-contato">' + instContatoHtml(pc.fone) + '</div>' +
@@ -5981,11 +5991,19 @@ function instAtender(id) {
       '<button class="btn gh" data-a="fechar">Fechar</button>';
   };
   if (v39 && !window.G2_PRONT) return semPres('<b>Módulo do prontuário não carregado.</b> Publique o arquivo <b>app_v39_inst_prontuario.js</b> (PRONT-2) e atualize a página. Por enquanto você registra só a presença do paciente.');
-  instContatoCarregar(a.pessoaId);
+  instContatoCarregar(a.pessoaId); instFotoNaFicha(a.pessoaId, pc.nome);
   chamar('instProntuarioDe', { pessoaId: a.pessoaId }).then(function (r) {
     if (r.semProntuario) return semPres('<b>Prontuário ainda não liberado neste servidor.</b> As anotações só serão gravadas depois que a cifra for ativada (INST_S15). Por enquanto você registra a presença do paciente.');
     instPrDesenhar(a, ag, pc, r);
   }).catch(function (e) { if ($('pr-corpo')) $('pr-corpo').innerHTML = '<div class="aviso r">' + esc(e.message) + '</div><div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>'; });
+}
+/* foto do atendido: baixada pelo módulo do Instituto (só para quem pode ver: equipe do Instituto ou o profissional que atende) e guardada só na memória */
+function instFotoNaFicha(pid, nome) {
+  var I = window.G2_INST; if (!I || typeof I.fotoCarregar !== 'function' || !pid) return;
+  I.fotoCarregar(pid).then(function (url) {
+    var el = $('pr-foto'); if (!url || !el || instPr.pessoaId !== pid) return;
+    el.innerHTML = avatarInst({ foto: url }, nome, 72);
+  }).catch(function () {});
 }
 /* botões WhatsApp / Ligar com o telefone do cadastro (buscado no servidor, só para o profissional que atende o paciente) */
 function instContatoHtml(f) {
@@ -6199,9 +6217,9 @@ function instPacVer(pid) {
   var x = (instPac.itens || []).filter(function (i) { return i.pessoaId === pid; })[0]; if (!x) return;
   var pc = { nome: x.nome, codigo: x.codigo, idade: idadeDe({ nasc: x.nasc }), sexo: v39Sexo(x.sexo), bairro: '', foto: '' };
   instPr = { id: '', modo: 'med', itens: [], atual: {}, clinico: true, pc: pc, pessoaId: pid };
-  abrirModal('<div class="perfil" style="padding-top:0">' + avatarInst(null, pc.nome, 72) + '<h2 style="font-size:19px">' + esc(pc.nome) + '</h2><p>' + esc([pc.codigo, pc.idade !== null && pc.idade !== undefined ? pc.idade + ' anos' : '', pc.sexo].filter(Boolean).join(' · ')) + '</p></div><div id="pr-contato"></div>' +
+  abrirModal('<div class="perfil" style="padding-top:0"><div id="pr-foto" style="display:flex;justify-content:center">' + avatarInst(null, pc.nome, 72) + '</div><h2 style="font-size:19px">' + esc(pc.nome) + '</h2><p>' + esc([pc.codigo, pc.idade !== null && pc.idade !== undefined ? pc.idade + ' anos' : '', pc.sexo].filter(Boolean).join(' · ')) + '</p></div><div id="pr-contato"></div>' +
     '<div class="aviso" style="margin:10px 0 4px;font-size:12px;line-height:1.45">\uD83D\uDD12 Prontuário <b>cifrado</b>: visível só para profissionais de saúde que atendem este paciente.</div><div id="pr-corpo"><div class="empty" style="padding:14px">Abrindo o prontuário…</div></div>');
-  instContatoCarregar(pid);
+  instContatoCarregar(pid); instFotoNaFicha(pid, pc.nome);
   chamar('instProntuarioDe', { pessoaId: pid }).then(function (r) {
     if (!$('pr-corpo')) return;
     if (r.semProntuario) { $('pr-corpo').innerHTML = '<div class="aviso" style="font-size:12.5px">Prontuário ainda não liberado neste servidor (INST_S15).</div><div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>'; return; }
@@ -7722,7 +7740,9 @@ else mostrarTela('s-login');
 
 window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }, render: function () { render(); }, sincronizar: sincronizar, metricas: metricas, pendentes: pendentesLocais,
   estRecarregar: function () { estD = { mercado: estNovo(), farmacia: estNovo() }; if (cfg.token && /^inst(mercado|farmacia)$/.test(cfg.aba || '')) render(); },
-  instRecarregar: function () { instD.t = 0; instD.carregando = false; if (cfg.token && /^(instituto|instagenda)$/.test(cfg.aba || '')) render(); } };
+  instRecarregar: function () { instD.t = 0; instD.carregando = false; if (cfg.token && /^(instituto|instagenda)$/.test(cfg.aba || '')) render(); },
+    instFoto: function (pid, url) { if (instD.pac && instD.pac[pid]) instD.pac[pid].foto = url; },
+    instFotoRender: function () { if (cfg.token && /^(instituto|instagenda)$/.test(cfg.aba || '') && !$('modal').classList.contains('on')) render(); } };
 } catch (err) { mostrarErro((err && err.message) || String(err), 'inicialização'); }
 })();
 
@@ -7737,7 +7757,7 @@ window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'SYNC-V39-21';
+  var BUILD = 'SYNC-V39-22';
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 
