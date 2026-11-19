@@ -1,4 +1,12 @@
-/* 2Gather v39 · Financeiro completo · FIN-ALL-20
+/* 2Gather v39 · Financeiro completo · FIN-ALL-20.2
+   FIN-ALL-20.2 (substitui o 20.1; parte do FIN-ALL-20 publicado). CONVÊNIOS:
+   - Códigos que o BANCO aceita (restrições da tabela v39_fin_grants): instrumento emenda_parlamentar, contrato_patrocinio, doacao_vinculada; origem international e other; situação reporting.
+   - Campo SITUAÇÃO no cadastro (rascunho, em execução, em prestação de contas, encerrado, cancelado): a função v39_fin_grant_save aceita e grava. Para encerrar ou passar para prestação de contas, edite o convênio.
+   - Regra da conta bancária igual à do servidor: recurso público só EXIGE conta quando a situação é "em execução" (rascunho, em prestação, encerrado e cancelado podem ficar sem conta).
+   - PRESTAÇÃO DE CONTAS com totais corretos: Entradas e Saídas não contam mais o saldo inicial da conta, as transferências nem os estornos (o estorno abate o que desfez); "Receitas/Despesas por conta contábil"
+     usam só contas de entrada e de saída. Aviso quando há saldo inicial ou transferência no período. (Os cartões Recebido/Gasto da lista vêm do servidor: corrigir com FIN_S18_convenios_totais.sql.)
+   - Alerta "sem conta bancária" só para recurso público em andamento. A lista separa "Em andamento" de "Rascunhos, encerrados e cancelados".
+   Base FIN-ALL-20:
    FIN-ALL-20: CONVÊNIOS. Nova aba "Convênios" (usa as funções que o banco já tem: v39_fin_grants_list, v39_fin_grant_save e v39_fin_grant_report; não exige SQL novo).
    - Lista com valor, recebido, gasto, saldo e % gasto de cada convênio (da conta bancária dele), alertas de vigência (vence em até 60 dias / encerrada) e de falta de conta.
    - Cadastro e edição (concedente, instrumento, nº, objeto, vigência, valor, contrapartida, conta bancária). Recurso público exige conta bancária específica (art. 51 da Lei 13.019/14).
@@ -89,7 +97,7 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
    - Pop-up: não fecha mais ao clicar fora. Só pelo botão X no canto, por Cancelar ou por Esc. Botões do rodapé alinhados. */
 (function () {
   'use strict';
-  var VERSAO = 'FIN-ALL-20';
+  var VERSAO = 'FIN-ALL-20.2';
   if (window.G2_FIN) return;
   window.G2_FIN = { versao: VERSAO };
   console.info('[2Gather] financeiro ' + VERSAO);
@@ -214,7 +222,7 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
   function traduz(e) {
     var t = String((e && (e.message || e.details || e.hint || e.code)) || e || '');
     var d = String((e && e.details) || '');
-    if (/violates check constraint/i.test(t) && /grant/i.test(t)) return 'O banco não aceitou a origem ou o instrumento escolhidos. Escolha "Outro" no instrumento e descreva no objeto; depois me avise para ajustarmos a lista.';
+    if (/violates check constraint/i.test(t) && /grant/i.test(t)) return 'O banco não aceitou algum dado do convênio (origem, instrumento ou situação). Atualize a página e tente de novo; se continuar, avise o administrador.';
     if (/PGRST202|find the function|does not exist/i.test(t) && /grants?_(list|save|report)/i.test(t)) return 'Faltam no Supabase as funções de convênio (INST_S7). Avise o administrador.';
     for (var k in MSG) if (t.indexOf(k) >= 0 || d === k) return MSG[k];
     if (/PGRST202|find the function|does not exist/i.test(t) && /view_set|expense_items|campaign_entities|campaign_adopt|campaign_move|campaign_account/i.test(t)) return 'Falta rodar o SQL FIN_S15_visao_cnpj_itens.sql (ou FIN_S17_conta_contabil.sql) no Supabase.';
@@ -2462,19 +2470,26 @@ function itensAbertos(f) {
 
   /* ───────────── CONVÊNIOS: lista, cadastro e prestação de contas (FIN-ALL-20) ───────────── */
   var GRANTS = [], GREP = null;   // GREP = prestação de contas aberta { g, de, ate, d }
-  var ROT_CONV = { origem: { 'public': 'Recurso público', 'private': 'Recurso privado' }, st: { active: 'Em execução', completed: 'Concluído', closed: 'Encerrado', cancelled: 'Cancelado', draft: 'Rascunho' } };
-  var INSTR = [['outro', 'Outro'], ['convenio', 'Convênio'], ['termo_fomento', 'Termo de fomento'], ['termo_colaboracao', 'Termo de colaboração'], ['acordo_cooperacao', 'Acordo de cooperação'], ['emenda', 'Emenda parlamentar'], ['contrato', 'Contrato']];
+  var ROT_CONV = {
+    origem: { 'public': 'Recurso público', 'private': 'Recurso privado', 'international': 'Recurso internacional', 'other': 'Outra origem' },
+    st: { draft: 'Rascunho', active: 'Em execução', reporting: 'Em prestação de contas', closed: 'Encerrado', cancelled: 'Cancelado' }
+  };
+  var ORIGENS = [['public', 'Recurso público'], ['private', 'Recurso privado'], ['international', 'Recurso internacional'], ['other', 'Outra origem']];
+  var SITUACOES = [['active', 'Em execução'], ['reporting', 'Em prestação de contas'], ['draft', 'Rascunho'], ['closed', 'Encerrado'], ['cancelled', 'Cancelado']];
+  var INSTR = [['convenio', 'Convênio'], ['termo_fomento', 'Termo de fomento'], ['termo_colaboracao', 'Termo de colaboração'], ['acordo_cooperacao', 'Acordo de cooperação'],
+    ['emenda_parlamentar', 'Emenda parlamentar'], ['contrato_patrocinio', 'Contrato de patrocínio'], ['doacao_vinculada', 'Doação vinculada'], ['outro', 'Outro']];
+  function emAndamento(g) { var s = g.status || 'active'; return s === 'active' || s === 'reporting'; }
   function instrRot(c) { for (var i = 0; i < INSTR.length; i++) if (INSTR[i][0] === c) return INSTR[i][1]; return c ? String(c) : ''; }
   function convFim(g) { return g && g.fim ? String(g.fim).slice(0, 10) : ''; }
-  function convStPill(g) { var s = g.status || 'active'; return pill((ROT_CONV.st[s] || s).toLowerCase(), s === 'active' ? 'verde' : 'cinza'); }
+  function convStPill(g) { var s = g.status || 'active'; return pill((ROT_CONV.st[s] || s).toLowerCase(), s === 'active' ? 'verde' : s === 'reporting' ? 'amarelo' : 'cinza'); }
   function convAlertas(g) {
     var out = [], fim = convFim(g), hj = hoje();
-    if ((g.status || 'active') === 'active' && fim) {
+    if (emAndamento(g) && fim) {
       var d = difDias(hj, fim);
       if (d < 0) out.push(pill('vigência encerrada em ' + dataBR(fim), 'vermelho'));
       else if (d <= 60) out.push(pill('vence em ' + d + ' dia(s)', 'amarelo'));
     }
-    if (!g.contaId) out.push(pill('sem conta bancária', 'amarelo'));
+    if (!g.contaId && g.origem === 'public' && emAndamento(g)) out.push(pill('sem conta bancária', 'amarelo'));
     return out.join(' ');
   }
   function cardConv(g, i) {
@@ -2497,12 +2512,12 @@ function itensAbertos(f) {
     var h = '<div class="g2f-tool g2f-noprint">' + (pode('financial.accounts.manage') ? btn('novoConv', 'Novo convênio', 'plus') : '') + '</div>';
     if (temInstituto()) h += '<div class="g2f-note" style="margin-top:0">Aparecem os convênios do CNPJ escolhido no seletor do topo (<b>' + esc(visaoRot()) + '</b>).</div>';
     if (!GRANTS.length) return h + '<div class="card"><div class="empty">Nenhum convênio cadastrado' + (temInstituto() ? ' em ' + esc(visaoRot()) : '') + '.' + (pode('financial.accounts.manage') ? ' Toque em “Novo convênio”.' : '') + '</div></div>';
-    var ativos = GRANTS.filter(function (g) { return (g.status || 'active') === 'active'; }), outros = GRANTS.filter(function (g) { return (g.status || 'active') !== 'active'; });
+    var ativos = GRANTS.filter(emAndamento), outros = GRANTS.filter(function (g) { return !emAndamento(g); });
     function som(l, k) { return arr2(l.reduce(function (t, g) { return t + num(g[k]); }, 0)); }
-    h += '<div class="stats">' + stat('Em execução', ativos.length, 'pri', 'bank', '', 'convênio(s)') + stat('Valor total', brl(som(ativos, 'valor')), 'pri', 'file') +
+    h += '<div class="stats">' + stat('Em andamento', ativos.length, 'pri', 'bank', '', 'convênio(s)') + stat('Valor total', brl(som(ativos, 'valor')), 'pri', 'file') +
       stat('Gasto', brl(som(ativos, 'gasto')), 'out', 'up', 'g2f-neg') + stat('Saldo nas contas', brl(som(ativos, 'saldo')), 'pri', 'wallet') + '</div>';
     ativos.forEach(function (g) { h += cardConv(g, GRANTS.indexOf(g)); });
-    if (outros.length) { h += '<div class="sec">Encerrados e outros</div>'; outros.forEach(function (g) { h += cardConv(g, GRANTS.indexOf(g)); }); }
+    if (outros.length) { h += '<div class="sec">Rascunhos, encerrados e cancelados</div>'; outros.forEach(function (g) { h += cardConv(g, GRANTS.indexOf(g)); }); }
     return h + '<div class="g2f-note">Recebido, gasto e saldo vêm da <b>conta bancária do convênio</b> (só lançamentos efetivados). Recurso público exige conta bancária específica (Lei 13.019/14, art. 51). A prestação de contas sai com o cabeçalho e o CNPJ da entidade.</div>';
   }
   function tConv() {
@@ -2513,9 +2528,10 @@ function itensAbertos(f) {
     g = g || {};
     var contas = ((S.cat && S.cat.contas) || []).filter(function (a) { return a.status === 'active' && a.tipo !== 'cash' || a.id === g.contaId; }).map(function (a) { return [a.id, a.nome + ' · ' + (ROT.conta[a.tipo] || a.tipo)]; });
     form(g.id ? 'Editar convênio' : 'Novo convênio', [
-      { t: 'info', l: 'Cada convênio usa <b>uma conta bancária própria</b>: o que entra e sai dessa conta forma a prestação de contas. Cadastre a conta antes em <b>Cadastros › Contas</b>. Recurso público exige conta específica.' },
-      { k: 'origem', l: 'Origem do recurso', t: 'select', o: [['public', 'Recurso público'], ['private', 'Recurso privado']], v: g.origem || 'public', vazio: false },
+      { t: 'info', l: 'Cada convênio usa <b>uma conta bancária própria</b>: o que entra e sai dessa conta forma a prestação de contas. Cadastre a conta antes em <b>Cadastros › Contas</b>. Recurso público <b>em execução</b> exige conta específica.' },
+      { k: 'origem', l: 'Origem do recurso', t: 'select', o: ORIGENS, v: g.origem || 'public', vazio: false },
       { k: 'instrumento', l: 'Instrumento', t: 'select', o: INSTR, v: g.instrumento || 'outro', vazio: false },
+      { k: 'situacao', l: 'Situação do convênio', t: 'select', o: SITUACOES, v: g.status || 'active', vazio: false, h: 'Em execução: recebendo e gastando. Em prestação de contas: acabou a vigência e falta prestar contas. Encerrado ou cancelado: sai da lista principal.' },
       { k: 'concedente', l: 'Concedente (quem repassa o recurso)', v: g.concedente, req: true },
       { k: 'documento', l: 'CNPJ ou CPF do concedente', v: g.documento ? cnpjFmt(g.documento) : '' },
       { k: 'numero', l: 'Número do instrumento', v: g.numero },
@@ -2523,14 +2539,14 @@ function itensAbertos(f) {
       { k: 'inicio', l: 'Início da vigência', t: 'date', v: g.inicio ? String(g.inicio).slice(0, 10) : '' },
       { k: 'fim', l: 'Fim da vigência', t: 'date', v: convFim(g) },
       { k: 'valor', l: 'Valor do convênio', t: 'money', v: g.valor }, { k: 'contrapartida', l: 'Contrapartida da entidade (se houver)', t: 'money', v: g.contrapartida },
-      { k: 'contaId', l: 'Conta bancária do convênio', t: 'select', o: contas, v: g.contaId || '', vazio: '— sem conta (só recurso privado) —' },
+      { k: 'contaId', l: 'Conta bancária do convênio', t: 'select', o: contas, v: g.contaId || '', vazio: '— sem conta (só se não for recurso público em execução) —' },
       { k: 'obs', l: 'Observações', t: 'textarea', v: g.obs }
     ], 'Salvar', function (v) {
       var conc = String(v.concedente || '').trim(), obj = String(v.objeto || '').trim();
       if (conc.length < 3 || obj.length < 5) return Promise.reject(new Error('Informe o concedente com ao menos 3 letras e o objeto com ao menos 5 letras.'));
-      if (v.origem === 'public' && !v.contaId) return Promise.reject(new Error('GRANT_ACCOUNT_REQUIRED'));
+      if (v.origem === 'public' && v.situacao === 'active' && !v.contaId) return Promise.reject(new Error('GRANT_ACCOUNT_REQUIRED'));
       if (v.inicio && v.fim && v.fim < v.inicio) return Promise.reject(new Error('A data final da vigência é anterior ao início.'));
-      var p = { origem: v.origem, instrumento: v.instrumento, concedente: conc, documento: v.documento || '', numero: v.numero || '', objeto: obj, inicio: v.inicio || '', fim: v.fim || '', valor: v.valor, contrapartida: v.contrapartida, contaId: v.contaId || '', obs: v.obs || '' };
+      var p = { origem: v.origem, instrumento: v.instrumento, status: v.situacao || 'active', concedente: conc, documento: v.documento || '', numero: v.numero || '', objeto: obj, inicio: v.inicio || '', fim: v.fim || '', valor: v.valor, contrapartida: v.contrapartida, contaId: v.contaId || '', obs: v.obs || '' };
       if (g.id) p.id = g.id;
       return rpc('v39_fin_grant_save', C({ p: p })).then(function () { return 'Convênio salvo.'; });
     });
@@ -2545,19 +2561,27 @@ function itensAbertos(f) {
       return rpc('v39_fin_grant_report', C({ p_grant: g.id, p_de: v.de || null, p_ate: v.ate || null })).then(function (d) { GREP = { g: g, de: v.de || '', ate: v.ate || '', d: d || {} }; return false; });
     });
   }
+  /* Entradas e saídas do período SEM saldo inicial, transferências e estornos (o estorno abate o que desfez). Saldo final = inicial + entradas − saídas + transferências + saldo lançado no período. */
   function convTotais(R) {
-    var mov = R.movimentos || [], ent = 0, sai = 0, sem = 0;
-    mov.forEach(function (m) { var v = num(m.valor); if (v > 0) ent += v; else sai += -v; if (!m.comprovante && Math.abs(v) > 0.004) sem++; });
-    ent = arr2(ent); sai = arr2(sai);
-    var calc = arr2(num(R.saldoInicial) + ent - sai);
-    return { ent: ent, sai: sai, sem: sem, dif: arr2(num(R.saldoFinal) - calc) };
+    var mov = R.movimentos || [], ent = 0, sai = 0, tr = 0, ab = 0, sem = 0;
+    mov.forEach(function (m) {
+      var v = num(m.valor), t = String(m.tipo || '');
+      if (t === 'opening_balance') ab += v;
+      else if (t === 'transfer_in' || t === 'transfer_out') tr += v;
+      else if (t === 'reversal') { if (v > 0) sai -= v; else ent -= -v; }
+      else if (v > 0) ent += v; else sai += -v;
+      if (!m.comprovante && Math.abs(v) > 0.004 && t !== 'opening_balance' && t !== 'reversal' && t !== 'transfer_in' && t !== 'transfer_out') sem++;
+    });
+    ent = arr2(ent); sai = arr2(sai); tr = arr2(tr); ab = arr2(ab);
+    var calc = arr2(num(R.saldoInicial) + ent - sai + tr + ab);
+    return { ent: ent, sai: sai, tr: tr, ab: ab, sem: sem, dif: arr2(num(R.saldoFinal) - calc) };
   }
   function desenharRelConv() {
     var R = GREP.d || {}, c = R.convenio || {}, e = R.entidade || {}, p = R.periodo || {}, mov = (R.movimentos || []).slice(), cats = R.porCategoria || [], T = convTotais(R);
     mov.sort(function (a, b) { return String(a.data).localeCompare(String(b.data)); });
     var codPor = {}; cats.forEach(function (x) { codPor[x.categoria] = x.contabil || ''; });
-    var rec = cats.filter(function (x) { return num(x.valor) > 0.004; }), des = cats.filter(function (x) { return num(x.valor) < -0.004; });
-    var semCod = cats.filter(function (x) { return !String(x.contabil || '').trim() && Math.abs(num(x.valor)) > 0.004; }).length;
+    var rec = cats.filter(function (x) { return x.natureza === 'income' && Math.abs(num(x.valor)) > 0.004; }), des = cats.filter(function (x) { return x.natureza === 'expense' && Math.abs(num(x.valor)) > 0.004; });
+    var semCod = cats.filter(function (x) { return (x.natureza === 'income' || x.natureza === 'expense') && !String(x.contabil || '').trim() && Math.abs(num(x.valor)) > 0.004; }).length;
     function tabCat(l, neg) {
       if (!l.length) return '<tr><td colspan="3">Sem lançamentos no período.</td></tr>';
       var t = 0;
@@ -2579,7 +2603,8 @@ function itensAbertos(f) {
       '<div class="c"><small>Entradas (recursos recebidos)</small><b class="g2f-pos">' + brl(T.ent) + '</b></div>' +
       '<div class="c"><small>Saídas (despesas pagas)</small><b class="g2f-neg">' + brl(T.sai) + '</b></div>' +
       '<div class="c big"><small>Saldo final</small><b class="' + (num(R.saldoFinal) < 0 ? 'g2f-neg' : '') + '">' + brl(R.saldoFinal) + '</b></div></div>';
-    if (Math.abs(T.dif) > 0.01) h += '<div class="aviso">⚠ O saldo final difere em <b>' + brl(T.dif) + '</b> do saldo inicial + entradas − saídas (estornos ou lançamentos fora do período). Confira antes de entregar.</div>';
+    if (Math.abs(T.tr) > 0.004 || Math.abs(T.ab) > 0.004) h += '<div class="g2f-note">Fora das entradas e saídas: ' + (Math.abs(T.ab) > 0.004 ? 'saldo inicial lançado no período ' + brl(T.ab) : '') + (Math.abs(T.ab) > 0.004 && Math.abs(T.tr) > 0.004 ? ' · ' : '') + (Math.abs(T.tr) > 0.004 ? 'transferências entre contas (líquido) ' + brl(T.tr) : '') + '. Elas entram no saldo final, mas não são recurso recebido nem despesa.</div>';
+    if (Math.abs(T.dif) > 0.01) h += '<div class="aviso">⚠ O saldo final difere em <b>' + brl(T.dif) + '</b> do saldo inicial + entradas − saídas + transferências. Confira os lançamentos antes de entregar.</div>';
     if (T.sem) h += '<div class="aviso">⚠ <b>' + T.sem + ' lançamento(s) sem comprovante</b> no período. A prestação de contas exige o comprovante de cada despesa.</div>';
     if (semCod) h += '<div class="aviso">⚠ <b>' + semCod + ' conta(s) contábil(eis) sem código.</b> Preencha o código em Cadastros › Plano de contas para o contador.</div>';
     h += '<div class="card"><h3>Receitas por conta contábil</h3><div class="g2f-tw"><table class="g2f-tbl"><thead><tr><th>Código</th><th>Conta</th><th class="r">Valor</th></tr></thead><tbody>' + tabCat(rec, false) + '</tbody></table></div></div>';
