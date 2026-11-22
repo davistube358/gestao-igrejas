@@ -1,4 +1,7 @@
-/* 2Gather v39 · Cadastro de acesso (autocadastro antes do login) · ACESSO-2
+/* 2Gather v39 · Cadastro de acesso (autocadastro antes do login) · ACESSO-3
+   ACESSO-3 (LGPD-1, Build 63): o cadastro envia politicaV (versão da Política de Privacidade exibida/vigente,
+     via G2_LGPD.versaoPublica). A Edge "auth" grava pedido + aceite numa transação. Sem a Edge nova ou sem
+     política publicada, o cadastro segue como antes (sem politicaV) e a Edge antiga continua aceitando.
    ACESSO-2: quem escolhe uma função que NÃO é de GC (Secretaria, Tesouraria, Voluntário Lar de Vida, Voluntário Instituto, Profissional de saúde) não escolhe mais GC:
      o campo "De qual GC você participa?" fica desligado ("Esta função não participa de GC") e o GC não é enviado. Evita que o profissional entre num GC na aprovação.
    ACESSO-1 (base)
@@ -105,13 +108,20 @@
     if (v('c-gc') && SEM_GC_FUNCAO.indexOf(d.perfil) < 0) d.gcId = v('c-gc');
     erroEm('c-erro', ''); var b = $('b-cadastrar'); if (b) b.disabled = true;
     carregando(true, 'Enviando cadastro...');
-    edge('cadastro', d).then(function () {
+    var L = window.G2_LGPD;
+    (L && typeof L.versaoPublica === 'function' ? L.versaoPublica().catch(function () { return null; }) : Promise.resolve(null)).then(function (ver) {
+      if (ver) d.politicaV = ver;
+      return edge('cadastro', d);
+    }).then(function () {
       if ($('cad-form')) $('cad-form').classList.add('hide');
       if ($('cad-ok')) $('cad-ok').classList.remove('hide');
       if ($('c-aceite')) $('c-aceite').checked = false;
       ['c-nome', 'c-usuario', 'c-fone', 'c-email', 'c-senha', 'c-senha2', 'c-obs'].forEach(function (id) { if ($(id)) $(id).value = ''; });
       if ($('l-usuario')) $('l-usuario').value = u;
-    }).catch(function (e) { erroEm('c-erro', (e && e.message) || 'Não foi possível enviar o cadastro.'); })
+    }).catch(function (e) {
+      if (L && typeof L.esquecerVersaoPublica === 'function') L.esquecerVersaoPublica();   // política pode ter mudado: busca de novo no próximo envio
+      erroEm('c-erro', (e && e.message) || 'Não foi possível enviar o cadastro.');
+    })
       .then(function () { if (b) b.disabled = false; carregando(false); });
   }
 
@@ -125,5 +135,5 @@
   }
   function instalar() { var a = religar('b-ir-cadastro', abrirCadastro), b = religar('b-cadastrar', cadastrar); return a && b; }
   if (!instalar()) { var n = 0, t = setInterval(function () { if (instalar() || ++n > 40) clearInterval(t); }, 250); }
-  window.G2_ACESSO = { versao: 'ACESSO-1', perfil: perfil };
+  window.G2_ACESSO = { versao: 'ACESSO-3', perfil: perfil };
 })();
