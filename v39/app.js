@@ -3614,8 +3614,12 @@ function rConfig() {
     politicaTexto().then(function (r) {
       if (!cfgDraft) return;
       cfgDraft.politicaVersao = (r && r.versao) || ''; cfgDraft.politicaPublicadaEm = (r && r.publicadaEm) || ''; cfgDraft.politicaFonte = (r && r.fonte) || 'legado';
-      cfgDraft.politica = r && r.ok ? r.texto : ''; cfgDraft.politicaModelo = r && r.ok && r.modelo ? r.texto : (cfgDraft.politicaModelo || '');
-      if (r && r.ok && r.modelo) cfgDraft.politicaModelo = r.texto;
+      if (r && r.ok && typeof r.modelo === 'string' && r.modelo) {   // POLITICA_1: o editor mostra o modelo com os marcadores {{...}}; quem lê vê o texto preenchido
+        cfgDraft.politica = r.modelo;
+      } else {
+        cfgDraft.politica = r && r.ok ? r.texto : ''; cfgDraft.politicaModelo = r && r.ok && r.modelo ? r.texto : (cfgDraft.politicaModelo || '');
+        if (r && r.ok && r.modelo) cfgDraft.politicaModelo = r.texto;
+      }
       if (cfg.aba === 'config') render();
     }).catch(function () { if (cfgDraft) cfgDraft.politica = ''; });
   }
@@ -3655,6 +3659,7 @@ function rConfig() {
     (c.politica === undefined ? '<div class="empty" style="padding:10px">Carregando...</div>'
       : '<textarea id="cf-politica" rows="12" style="font-size:13px;line-height:1.5">' + esc(c.politica) + '</textarea>') +
     '<div style="font-size:11px;color:#999;margin-top:6px;line-height:1.5">É um <b>modelo</b> — revise com um advogado antes de divulgar. Ao alterar o texto, todos os usuários precisarão aceitar a nova versão no próximo acesso.</div>' +
+    (cfg.token === 'supabase-v39' ? '<div style="font-size:11px;color:#999;margin-top:4px;line-height:1.5">Marcadores preenchidos com o cadastro da igreja (Financeiro › Entidades): <code>{{IGREJA_NOME}}</code> <code>{{IGREJA_CNPJ}}</code> <code>{{IGREJA_ENDERECO}}</code> <code>{{ENCARREGADO_NOME}}</code> <code>{{ENCARREGADO_EMAIL}}</code> <code>{{ENCARREGADO_TELEFONE}}</code>. Atualizar o cadastro muda o texto exibido sem nova versão.</div>' : '') +
     (c.politicaModelo ? '<div style="text-align:right;margin-top:6px"><span class="pill p-cinza" data-a="cfModeloPolitica" style="cursor:pointer">restaurar modelo</span></div>' : '') +
     blocoPublicarPolitica(c) + blocoRestringidas() + '</div>' +
     blocoJornadaCfg() +

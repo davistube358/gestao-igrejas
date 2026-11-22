@@ -1,10 +1,10 @@
 POLÍTICA DE PRIVACIDADE DO 2GATHER
-Viver Church Matão · Versão 1
+{{IGREJA_NOME}} · Versão 1
 
 1. QUEM SOMOS
-Esta política explica como a Viver Church Matão ("Igreja") trata os dados pessoais de quem usa o 2Gather, o aplicativo de gestão da Igreja, e de quem é cadastrado nele (membros, visitantes, participantes de grupos, alunos, voluntários e pessoas atendidas pelo Instituto, pelo Mercado Solidário e pela Farmácia Solidária).
-Controladora dos dados: Viver Church Matão, CNPJ [PREENCHER], endereço [PREENCHER].
-Encarregado pelo tratamento de dados (LGPD, art. 41): [PREENCHER NOME], e-mail [PREENCHER E-MAIL].
+Esta política explica como a {{IGREJA_NOME}} ("Igreja") trata os dados pessoais de quem usa o 2Gather, o aplicativo de gestão da Igreja, e de quem é cadastrado nele (membros, visitantes, participantes de grupos, alunos, voluntários e pessoas atendidas pelo Instituto, pelo Mercado Solidário e pela Farmácia Solidária).
+Controladora dos dados: {{IGREJA_NOME}}, CNPJ {{IGREJA_CNPJ}}, endereço {{IGREJA_ENDERECO}}.
+Encarregado pelo tratamento de dados (LGPD, art. 41): {{ENCARREGADO_NOME}}, e-mail {{ENCARREGADO_EMAIL}}, telefone {{ENCARREGADO_TELEFONE}}.
 
 2. QUAIS DADOS TRATAMOS
 - Cadastro: nome, apelido, data de nascimento, sexo, CPF, telefone/WhatsApp, e-mail, endereço e foto.
@@ -47,7 +47,7 @@ Você pode, a qualquer momento (LGPD, art. 18):
 - ser informado sobre com quem compartilhamos seus dados;
 - revogar o consentimento, sabendo das consequências;
 - pedir a revisão de decisões tomadas só por meios automatizados.
-Para exercer seus direitos, fale com o Encarregado pelo e-mail [PREENCHER E-MAIL] ou com a liderança da Igreja. Vamos confirmar a sua identidade antes de atender o pedido. Você também pode reclamar à Autoridade Nacional de Proteção de Dados (ANPD).
+Para exercer seus direitos, fale com o Encarregado pelo e-mail {{ENCARREGADO_EMAIL}} ou com a liderança da Igreja. Vamos confirmar a sua identidade antes de atender o pedido. Você também pode reclamar à Autoridade Nacional de Proteção de Dados (ANPD).
 Alguns dados não podem ser apagados enquanto a lei exigir a guarda, como os registros financeiros e o prontuário. Nesses casos, explicaremos o motivo e restringiremos o uso.
 
 8. CRIANÇAS E ADOLESCENTES
@@ -60,4 +60,4 @@ Usamos acesso por usuário e senha, perfis de acesso com o mínimo necessário, 
 Ao aceitar esta política no 2Gather, você declara que a leu e concorda com o tratamento dos seus dados como descrito aqui. Se você não aceitar, não poderá usar o aplicativo, mas isso não muda o seu cadastro nem o seu vínculo com a Igreja.
 Quando esta política mudar, publicaremos uma nova versão no aplicativo e pediremos um novo aceite.
 
-Dúvidas: [PREENCHER E-MAIL].
+Dúvidas: {{ENCARREGADO_EMAIL}}.
