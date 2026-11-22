@@ -32,7 +32,8 @@ Projeto: plataforma de gestão para igrejas e GCs (PWA + Supabase/PostgreSQL). D
 - Respostas objetivas; detalhe só quando o assunto for complexo.
 
 ## Publicação do front
-A cada release: troque o `?v=` no `index.html` e a `VERSAO` no `sw.js`; confirme a versão no Console (ex.: `[2Gather] financeiro FIN-ALL-21`).
+- **Proibido commitar ou fazer push direto no `main`.** Toda mudança (código, SQL, documentação) vai num branch novo, com pull request para aprovação do Diogo. **O merge no `main` é feito só pelo Diogo**; nenhum agente faz merge, nem com `--admin`, nem com auto-merge.
+- A cada release: troque o `?v=` no `index.html` e a `VERSAO` no `sw.js`; confirme a versão no Console (ex.: `[2Gather] financeiro FIN-ALL-21`).
 
 ## Estado em 21/11/2026
 - **FIN-ALL-21 já está publicado** (`v39/index.html` carrega `app_v39_financeiro.js?v=FIN-ALL-21`). Falta validar no navegador: cartão sem fatura no mês; fatura anterior em aberto (linha vermelha); mais de 4 meses futuros ("+N mês(es)").
