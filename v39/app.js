@@ -1959,6 +1959,12 @@ function rChamada() {
       '<input type="hidden" id="ch-data" value="' + d + '"></div>';
   }
   topo += cartaoEncontro(e);
+  if (e.id) {   // TRAVA-1
+    carregarTravas('gc', [e.id]);
+    var bt = blocoTrava('gc', e.id);
+    if (bt) topo += '<div class="card" style="padding:10px 14px">' + bt + '</div>';
+    if (travado('gc', e.id)) return topo + '<div class="trv-ro">' + corpoChamada(id, d, e) + '</div>';
+  }
   if (!podeChamada(e)) {
     return topo + '<div class="card" style="border-left:5px solid var(--vermelho)"><h3>Chamada fechada</h3><div style="font-size:13px;color:#666;line-height:1.55">' +
       (e.data > hoje() ? 'Este encontro ainda não aconteceu. A chamada abre ' + textoJanelaGC(e) + '.'
@@ -2407,7 +2413,11 @@ async function v39EnviarPendentes() {
   var encs = (db.encontros || []).filter(function (e) { return e._pend; });
   for (var j = 0; j < encs.length; j++) {
     try { await v39PersistirEncontro(encs[j]); res.enviados++; }
-    catch (err2) { res.falhas.push('Encontro ' + br(encs[j].data) + ': ' + (err2 && err2.message || err2)); }
+    catch (err2) {
+      if (String((err2 && (err2.message || err2.code)) || '') === 'REGISTRO_TRAVADO') {   // TRAVA-1: encontro travado no servidor; descarta a alteração local (não reenvia para sempre)
+        encs[j]._pend = false; res.falhas.push('Encontro ' + br(encs[j].data) + ': encerrado há mais de 24h; a alteração feita sem sinal não foi gravada.');
+      } else res.falhas.push('Encontro ' + br(encs[j].data) + ': ' + (err2 && err2.message || err2));
+    }
   }
   salvarDB();
   if (res.recusados.length) toast('Sem permissão para alterar o cadastro de ' + res.recusados.join(', ') + '. A alteração foi descartada. Somente secretaria, pastor ou master alteram cadastros.', 8000);
@@ -3309,8 +3319,9 @@ function rCultos() {
     ? evs.filter(function (e) { return !terminou(e); }).sort(function (a, b) { return (a.data + a.inicio) < (b.data + b.inicio) ? -1 : 1; })
     : evs.filter(function (e) { return terminou(e); }).sort(function (a, b) { return (a.data + a.inicio) < (b.data + b.inicio) ? 1 : -1; }).slice(0, 40);
   if (!l.length) return h + '<div class="card"><div class="empty">' + (filtroCulto === 'prox' ? 'Nenhum culto ou evento agendado.' : 'Nenhum culto ou evento realizado ainda.') + '</div></div>';
+  carregarTravas('evento', l.map(function (e) { return e.id; }));   // TRAVA-1
   l.forEach(function (e) {
-    var d = parseData(e.data), aberto = ab && ab.id === e.id;
+    var d = parseData(e.data), aberto = ab && ab.id === e.id, trv = travado('evento', e.id);
     var st = aberto ? ['p-verde', 'cadastro aberto agora'] : e.liberado ? ['p-dour', 'liberado'] : ['p-cinza', 'cadastro fechado'];
     h += '<div class="card"' + (aberto ? ' style="border-left:5px solid var(--verde)"' : '') + '>' +
       '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div style="min-width:0">' +
@@ -3326,12 +3337,13 @@ function rCultos() {
       (verValor && totalEvento(e) ? ' · <b>Arrecadado:</b> ' + moeda(totalEvento(e)) : '') +
       (e.liberado ? '<br><span style="color:#888">' + textoJanela(e) + '</span>' : '') + linhaMensagem(e) + '</div>' +
       (e.recados ? '<div style="background:var(--cc);border-radius:10px;padding:9px 10px;font-size:12.5px;margin-top:8px;white-space:pre-line">' + esc(e.recados) + '</div>' : '') +
+      blocoTrava('evento', e.id) +
       '<div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px">' +
       '<button class="btn gh sm" data-a="evFicha" data-v="' + esc(e.id) + '">Ficha</button>' +
-      (pode('eventos') ? '<button class="btn gh sm" data-a="evEditar" data-v="' + esc(e.id) + '">Editar</button>' +
+      (pode('eventos') && !trv ? '<button class="btn gh sm" data-a="evEditar" data-v="' + esc(e.id) + '">Editar</button>' +
         '<button class="btn ' + (e.liberado ? 'dg' : 'vd') + ' sm" data-a="evLiberar" data-v="' + esc(e.id) + '">' + (e.liberado ? 'Fechar cadastro' : 'Liberar cadastro') + '</button>' : '') +
-      (pode('financeiro') ? '<button class="btn gh sm" data-a="evValores" data-v="' + esc(e.id) + '">Valores e presença</button>' : '') +
-      (pode('recados') ? '<button class="btn gh sm" data-a="evRecados" data-v="' + esc(e.id) + '">Recados e tema</button>' : '') +
+      (pode('financeiro') && !trv ? '<button class="btn gh sm" data-a="evValores" data-v="' + esc(e.id) + '">Valores e presença</button>' : '') +
+      (pode('recados') && !trv ? '<button class="btn gh sm" data-a="evRecados" data-v="' + esc(e.id) + '">Recados e tema</button>' : '') +
     (pode('eventos') && (e.msgTexto || e.temImg) ? '<button class="btn pr sm" data-a="evMensagem" data-v="' + esc(e.id) + '">Mensagem WhatsApp</button>' : '') +
       '</div></div>';
   });
@@ -4982,6 +4994,62 @@ function podeChamada(e) {
   if (pode('gcEvento')) return e.data <= hoje();
   return encAbertoGC(e);
 }
+/* ── TRAVA-1: encerrar encontro do GC / culto e travar a edição 24h depois (v39_registro_travas/encerrar/reabrir).
+   O banco é quem trava (gatilhos); aqui só mostra o estado, os botões e deixa a tela em leitura. ── */
+var TRAVAS = { gc: {}, evento: {} }, travasBusca = { gc: {}, evento: {} };
+function trvAtivo() { return cfg.token === 'supabase-v39' && !!(cfg.usuario && cfg.usuario.igrejaId); }
+function carregarTravas(tipo, ids) {
+  if (!trvAtivo()) return;
+  var agoraT = Date.now(), falta = (ids || []).filter(function (id) { return v39Uuid(id) && !(travasBusca[tipo][id] && agoraT - travasBusca[tipo][id] < 60000); });
+  if (!falta.length) return;
+  falta.forEach(function (id) { travasBusca[tipo][id] = agoraT; });
+  v39RpcApp('v39_registro_travas', { p_church_id: cfg.usuario.igrejaId, p_tipo: tipo, p_ids: falta }).then(function (m) {
+    var mudou = false;
+    Object.keys(m || {}).forEach(function (id) { TRAVAS[tipo][id] = m[id]; mudou = true; });
+    if (mudou) render();
+  }).catch(function (e) {
+    if (/PGRST202|does not exist|schema cache/i.test(String((e && (e.message || e.code)) || ''))) return;   // banco ainda sem a TRAVA24_1: segue como antes
+    console.warn('[2Gather][trava]', e);
+  });
+}
+function travaDe(tipo, id) { return (TRAVAS[tipo] || {})[id] || null; }
+function travado(tipo, id) { var t = travaDe(tipo, id); return !!(t && t.travado); }
+function dataHoraTrv(s) { var d = new Date(s); return !s || isNaN(d) ? '' : pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + ' às ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+function podeEncerrar(tipo) { return tipo === 'gc' ? (pode('gc') || pode('gcEvento') || ehDecisor()) : (pode('eventos') || pode('financeiro') || ehDecisor()); }
+function msgErroTrv(e) { var c = String((e && (e.message || e.code)) || ''); return ({ REGISTRO_TRAVADO: 'Encerrado há mais de 24 horas: a edição está travada. Peça ao pastor para reabrir.', REGISTRO_CANCELADO: 'Registro cancelado não pode ser encerrado nem reaberto.', PERMISSION_DENIED: 'Você não tem permissão para esta ação.', REASON_REQUIRED: 'Informe o motivo (mínimo de 10 caracteres).' })[c] || (e && e.message) || 'Não foi possível concluir.'; }
+/** Linha de estado + botões (Encerrar / Reabrir). Vazio se o banco ainda não respondeu ou o registro está cancelado. */
+function blocoTrava(tipo, id) {
+  var t = travaDe(tipo, id), nome = tipo === 'gc' ? 'encontro' : (((eventoPor(id) || {}).tipo || 'culto').toLowerCase());
+  if (!t || t.status === 'cancelled') return '';
+  if (t.travado) return '<div class="trv trv-on">🔒 <b>Encerrado</b> · edição travada desde ' + dataHoraTrv(t.travaEm) + '.' +
+    (ehDecisor() ? ' <button class="btn gh sm" data-a="trvReabrir" data-v="' + tipo + '|' + esc(id) + '">Reabrir</button>' : ' Para corrigir, peça ao pastor para reabrir.') + '</div>';
+  if (t.status === 'completed') return '<div class="trv">✓ Encerrado em ' + dataHoraTrv(t.encerradoEm) + ' · ajustes até ' + dataHoraTrv(t.travaEm) + '</div>';
+  return '<div class="trv">' + (podeEncerrar(tipo) ? '<button class="btn vd sm" data-a="trvEncerrar" data-v="' + tipo + '|' + esc(id) + '">Encerrar ' + esc(nome) + '</button> ' : '') +
+    '<span>' + (t.reabertoEm ? 'Reaberto · ' : '') + 'trava automática em ' + dataHoraTrv(t.travaEm) + '</span></div>';
+}
+function trvEncerrar(v) {
+  var p = String(v).split('|'), tipo = p[0], id = p[1];
+  if (!confirm('Encerrar ' + (tipo === 'gc' ? 'o encontro' : 'o culto/evento') + '?\n\nDepois de 24 horas ninguém mais consegue editar (só o pastor reabre).')) return;
+  carregando(true, 'Encerrando...');
+  v39RpcApp('v39_registro_encerrar', { p_church_id: cfg.usuario.igrejaId, p_tipo: tipo, p_id: id }).then(function (r) {
+    TRAVAS[tipo][id] = Object.assign({}, TRAVAS[tipo][id] || {}, { status: r.status, encerradoEm: r.encerradoEm, travaEm: r.travaEm, travado: false });
+    toast('Encerrado ✓ · ajustes até ' + dataHoraTrv(r.travaEm), 4000); render();
+  }).catch(function (e) { toast(msgErroTrv(e), 5000); }).then(function () { carregando(false); });
+}
+function trvReabrir(v) {
+  abrirModal('<h2>Reabrir para correção</h2><div style="font-size:12.5px;color:var(--tx2);line-height:1.5;margin:4px 0 8px">A edição fica liberada por 24 horas. O motivo fica registrado na auditoria.</div>' +
+    '<label>Motivo (mínimo de 10 caracteres)</label><textarea id="trv-mot" rows="3" placeholder="Ex.: faltou lançar a presença de um visitante"></textarea>' +
+    '<div style="height:14px"></div><button class="btn pr" data-a="trvReabrirOk" data-v="' + esc(v) + '">Reabrir</button><div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>');
+}
+function trvReabrirOk(v) {
+  var p = String(v).split('|'), tipo = p[0], id = p[1], motivo = ($('trv-mot') ? $('trv-mot').value : '').trim();
+  if (motivo.length < 10) return toast('Informe o motivo com pelo menos 10 caracteres.', 4000);
+  carregando(true, 'Reabrindo...');
+  v39RpcApp('v39_registro_reabrir', { p_church_id: cfg.usuario.igrejaId, p_tipo: tipo, p_id: id, p_motivo: motivo }).then(function (r) {
+    TRAVAS[tipo][id] = Object.assign({}, TRAVAS[tipo][id] || {}, { status: r.status, encerradoEm: null, travaEm: r.travaEm, travado: false, reabertoEm: new Date().toISOString() });
+    fechar(); toast('Reaberto ✓ · edição liberada até ' + dataHoraTrv(r.travaEm), 4500); render();
+  }).catch(function (e) { toast(msgErroTrv(e), 5000); }).then(function () { carregando(false); });
+}
 /* ── equipe do GC (líder + discípulos) para a escala ── */
 function equipeDoGC(gcId) {
   var l = (db.equipeGC || []).filter(function (x) { return x.gcId === gcId; });
@@ -5071,7 +5139,7 @@ function cartaoEncontro(e) {
       return '<span style="background:' + (meu ? '#fff1c7' : 'var(--cc)') + ';border-radius:8px;padding:4px 8px;font-size:11.5px"><b>' + f[1] + ':</b> ' + esc(nomeEquipe(e.gcId, es[f[0]]) || '—') + '</span>';
     }).join('') + '</div>' : '<div style="font-size:11.5px;color:#999;margin-top:6px">Escala ainda não definida.</div>') +
     (e.recados ? '<div style="background:var(--cc);border-radius:10px;padding:9px 10px;font-size:12.5px;margin-top:8px;white-space:pre-line"><b>Recados:</b> ' + esc(e.recados) + '</div>' : '') +
-    (pode('gcEvento') ? '<div style="display:flex;gap:7px;margin-top:10px;flex-wrap:wrap"><button class="btn pr sm" data-a="encEditar" data-v="' + esc(e.data) + '">Editar encontro e escala</button>' +
+    (pode('gcEvento') && !travado('gc', e.id) ? '<div style="display:flex;gap:7px;margin-top:10px;flex-wrap:wrap"><button class="btn pr sm" data-a="encEditar" data-v="' + esc(e.data) + '">Editar encontro e escala</button>' +
       (temEsc ? '<button class="btn gh sm" data-a="avisarEscala" data-v="' + esc(e.data) + '">Avisar escala no WhatsApp</button>' : '') + '</div>' : '') + '</div>';
 }
 function blocoMinhasEscalas() {
@@ -7078,6 +7146,7 @@ var ACOES = {
     evEscolherImg: function () { $('msg-input').click(); }, evRemImg: function () { msgImgNova = '__remover__'; pintarImgMsg(''); },
     evMensagem: evMensagem, msgApi: msgApi, msgCompartilhar: msgCompartilhar, msgIndividual: msgIndividual, msgFeito: msgFeito, excluirPessoa: excluirPessoa,
   salvarChamada: salvarChamada, remChamada: remChamada, addChamada: abrirAddChamada,
+  trvEncerrar: trvEncerrar, trvReabrir: trvReabrir, trvReabrirOk: trvReabrirOk,
   incluirChamada: function (v) { incluirNaChamada(v, false); fechar(); render(); var p = db.pessoas.filter(function (x) { return x.id === v; })[0]; toast((p ? nomeChamado(p) : 'Pessoa') + ' incluído(a) na chamada'); },
   novoVisitanteChamada: function () { fechar(); abrirPessoa(null, { addChamada: true, tipo: 'Visitante', prim: ($('ch-data') && $('ch-data').value) || dataChamada() }); }, trocarGC: function (v) { cfg.gcAtual = v; cfg.aba = 'painel'; salvarCfg(); window.scrollTo(0, 0); render(); }, csv: exportarCSV, fechar: fechar,
     lvSalvarNovo: function () { lvSalvarForm(null); }, lvEditar: function (v) { lvAbrirForm(v); }, lvSalvarEd: function (v) { lvSalvarForm(v); },
@@ -7963,7 +8032,7 @@ window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'SYNC-V39-25';   // SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
+  var BUILD = 'SYNC-V39-26';   // SYNC-V39-26: TRAVA-1 (encerrar encontro do GC/culto; edição travada 24h depois; pastor reabre). SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 
@@ -8144,6 +8213,8 @@ window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }
     GC_MEETING_TIME_INVALID: 'O horário de término precisa ser depois do início.',
     GC_MEETING_NOT_FOUND: 'Encontro não encontrado. Atualize a página e tente de novo.',
     GC_MEETING_CLOSED: 'Este encontro foi cancelado e não pode ser reaberto.',
+    REGISTRO_TRAVADO: 'Encerrado há mais de 24 horas: a edição está travada. Peça ao pastor para reabrir.',
+    REGISTRO_CANCELADO: 'Registro cancelado não pode ser encerrado nem reaberto.',
     GC_MEETING_INVALID: 'Algum dado do encontro está em formato inválido. Confira data e horários.',
     GC_MEETING_STATUS_INVALID: 'Situação do encontro inválida.',
     GC_NOT_FOUND: 'GC não encontrado. Atualize a página.',
