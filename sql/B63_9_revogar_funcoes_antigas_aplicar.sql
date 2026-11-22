@@ -2,7 +2,10 @@
 -- B63_9 · LGPD · Revogar EXECUTE das 2 funcoes antigas e inseguras · APLICAR
 -- Build 63 · DATA-63b · decisao do PO D4 (22/11/2026)
 --
--- >>> APLICAR SO DEPOIS QUE O FRONT V39 PARAR DE CHAMA-LAS (e depois de B63_1 e B63_2 publicados). <<<
+-- >>> APLICAR LOGO APOS O B63_1 (ajuste de plano aprovado pelo PO em 22/11/2026). <<<
+--     O front v39 e as funcoes do banco NAO chamam estas funcoes (conferencias abaixo),
+--     entao nao ha motivo para mante-las abertas ate o front novo. Nao depende do B63_2.
+--     Rode as duas conferencias abaixo imediatamente antes de aplicar.
 --
 -- VALIDACAO (22/11/2026, MCP execute_sql, aplicar + reverter dentro de do $t$):
 --   ERROR P0001: TESTE APLICAR B63_9 OK (nada foi gravado): aplicar ok (authenticated sem EXECUTE;
@@ -20,7 +23,7 @@
 --   select p.oid::regprocedure from pg_proc p
 --    where p.prosrc ~ '(v39_accept_privacy_policy|v39_request_person_anonymization)'
 --      and p.proname not in ('v39_accept_privacy_policy','v39_request_person_anonymization');
--- Pode aplicar antes do front? NAO.
+-- Pode aplicar antes do front? SIM (desde que as duas conferencias voltem vazias).
 -- Reverter: B63_9_revogar_funcoes_antigas_reverter.sql (devolve o EXECUTE a authenticated).
 -- =====================================================================
 begin;

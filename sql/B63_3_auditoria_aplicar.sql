@@ -12,7 +12,7 @@
 -- Objetivo: gravar acessos a dados sensiveis e eventos administrativos e oferecer a consulta
 --   app.v39_audit_list (substitui chamar('auditoria',{filtro}); so master: audit.view; fontes de
 --   saude/sensiveis exigem sensitive_access.audit).
--- Ordem de aplicacao do Build 63: B63_1 -> B63_3 -> B63_2. (Este arquivo recria os gates
+-- Ordem de aplicacao do Build 63: B63_1 -> B63_9 -> B63_3 -> B63_2. (Este arquivo recria os gates
 --   private.v39_lgpd_me/need identicos aos do B63_1, entao nao quebra se aplicado sozinho.)
 -- Pre-requisitos: audit.events, app.sensitive_data_access_log, app.data_sensitivity_levels,
 --   app.v39_inst_record_log, app.file_access_log, app.access_history, private.auth_login_events,

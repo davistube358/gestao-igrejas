@@ -12,7 +12,7 @@
 --   e-mail/notas do pedido de acesso e username; revoga conta e acessos; PRESERVA ids, financeiro,
 --   presencas, consentimentos e historicos. Pessoa com prontuario/receita: bloqueia, com opcao
 --   'restrict' (D7). Pessoa em outra igreja: bloqueia (D8). Irreversivel; exige digitar ANONIMIZAR.
--- Ordem de aplicacao do Build 63: B63_1 -> B63_3 -> B63_2. (Recria os gates private.v39_lgpd_me/need
+-- Ordem de aplicacao do Build 63: B63_1 -> B63_9 -> B63_3 -> B63_2. (Recria os gates private.v39_lgpd_me/need
 --   identicos aos do B63_1.)
 -- Pre-requisitos: app.data_subject_requests, app.data_subject_request_history, app.people,
 --   app.church_people, app.person_contacts, app.person_addresses, app.files, app.user_accounts,
