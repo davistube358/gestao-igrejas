@@ -16,8 +16,12 @@
 --   e-mail/notas do pedido de acesso e username; revoga conta e acessos; PRESERVA ids, financeiro,
 --   presencas, consentimentos e historicos. Pessoa com prontuario/receita: bloqueia, com opcao
 --   'restrict' (D7). Pessoa em outra igreja: bloqueia (D8). Irreversivel; exige digitar ANONIMIZAR.
--- Ordem de aplicacao do Build 63: B63_1 -> B63_9 -> B63_3 -> B63_2. (Recria os gates private.v39_lgpd_me/need
+-- Ordem de aplicacao do Build 63: B63_1 -> B63_9 -> B63_3 -> B63_2 -> B63_5. (Recria os gates private.v39_lgpd_me/need
 --   identicos aos do B63_1.)
+-- D4 (22/11/2026): o modo restrict guarda o status anterior da pessoa (statusAnterior/desativadoEmAnterior) na
+--   metadata do historico do pedido e no audit; o B63_5 usa isso em app.v39_privacy_restriction_lift. Sem coluna nova.
+-- Ordem de reversao do Build 63: B63_9 -> B63_5 -> B63_2 -> B63_3 -> B63_1 (o reverter do B63_2 aborta se o
+--   B63_5 ainda estiver aplicado).
 -- Pre-requisitos: app.data_subject_requests, app.data_subject_request_history, app.people,
 --   app.church_people, app.person_contacts, app.person_addresses, app.files, app.user_accounts,
 --   app.church_user_access, app.access_requests, tabelas de saude (v39_inst_records,
@@ -142,7 +146,7 @@ language plpgsql security definer set search_path = pg_catalog, app, private as 
 declare
   v_me uuid := private.v39_lgpd_need(p_church_id, 'privacy.requests.manage');
   d app.data_subject_requests; v_person uuid; v_code text; v_health boolean; v_name text; v_auth uuid[];
-  v_n_contacts int := 0; v_n_addr int := 0; v_n_acc int := 0;
+  v_n_contacts int := 0; v_n_addr int := 0; v_n_acc int := 0; v_prev_status text; v_prev_deact timestamptz;
 begin
   select * into d from app.data_subject_requests where id = p_request_id and church_id = p_church_id for update;
   if d.id is null then perform app.raise_domain_error('REQUEST_NOT_FOUND', 'Pedido nao encontrado'); end if;
@@ -169,11 +173,13 @@ begin
     if p_health_mode = 'block' then
       perform app.raise_domain_error('ANONYMIZATION_BLOCKED_HEALTH_RETENTION', 'Pessoa com prontuario ou receita: guarda legal impede anonimizar. Use o modo restringir.');
     end if;
+    -- D4 (B63_5): guarda status anterior no historico imutavel do pedido, para desfazer restricao feita por engano
+    select status, deactivated_at into v_prev_status, v_prev_deact from app.people where id = v_person;
     update app.people set status = 'restricted', deactivated_at = coalesce(deactivated_at, now()), updated_by = v_me where id = v_person;
     update app.data_subject_requests set status = 'completed', completed_at = now(), response_reference = 'restricted_health_retention', updated_by = v_me where id = d.id;
-    perform private.v39_dsr_move(d.id, 'approved', 'completed', 'restricted_health_retention', v_me, null, jsonb_build_object('contas', v_n_acc));
+    perform private.v39_dsr_move(d.id, 'approved', 'completed', 'restricted_health_retention', v_me, null, jsonb_build_object('contas', v_n_acc, 'statusAnterior', v_prev_status, 'desativadoEmAnterior', v_prev_deact));
     insert into audit.events (church_id, actor_user_account_id, action, entity_schema, entity_name, entity_id, event_category, sensitivity, outcome, source, metadata)
-    values (p_church_id, v_me, 'person_restricted_health_retention', 'app', 'people', v_person::text, 'privacy', 'health', 'partial', 'rpc', jsonb_build_object('request_id', d.id));
+    values (p_church_id, v_me, 'person_restricted_health_retention', 'app', 'people', v_person::text, 'privacy', 'health', 'partial', 'rpc', jsonb_build_object('request_id', d.id, 'statusAnterior', v_prev_status));
     return jsonb_build_object('ok', true, 'resultado', 'restringido', 'pessoa', jsonb_build_object('id', v_person), 'authUsersParaDesativar', to_jsonb(coalesce(v_auth, '{}')));
   end if;
 

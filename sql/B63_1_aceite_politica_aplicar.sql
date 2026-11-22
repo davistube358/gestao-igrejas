@@ -10,7 +10,8 @@
 -- Objetivo: texto da politica no Supabase (versoes imutaveis, hash), aceite do usuario logado
 --   (so a propria pessoa), situacao do aceite para o login e aceite do cadastro publico gravado
 --   na pessoa criada pelo cadastro, de forma atomica (edge_create_access_request_with_consent).
--- Ordem de aplicacao do Build 63: B63_1 -> B63_9 -> B63_3 -> B63_2  (B63_4 nao aplicar)
+-- Ordem de aplicacao do Build 63: B63_1 -> B63_9 -> B63_3 -> B63_2 -> B63_5  (B63_4 nao aplicar)
+-- Ordem de reversao do Build 63: B63_9 -> B63_5 -> B63_2 -> B63_3 -> B63_1.
 -- Pre-requisitos: app.person_consents, app.person_consent_history, app.processing_purposes,
 --   app.access_requests, app.edge_create_access_request, private.v39_fin_me, app.has_permission,
 --   app.current_church_user_access_id, app.raise_domain_error, extensions.digest, audit.events.

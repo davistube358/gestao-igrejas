@@ -24,6 +24,7 @@
 --   para o teste ser independente (no _aplicar, vem do B63_1).
 -- NAO GRAVA NADA: estruturas, funcoes e dados ficticios sao desfeitos pelo raise final.
 -- =====================================================================
+-- D4 (22/11/2026): modo restrict guarda o status anterior na metadata do historico (caso T9e).
 do $t$
 declare
   v_ch1 uuid := gen_random_uuid();  v_ch2 uuid := gen_random_uuid();
@@ -149,7 +150,7 @@ begin
   declare
     v_me uuid := private.v39_lgpd_need(p_church_id, 'privacy.requests.manage');
     d app.data_subject_requests; v_person uuid; v_code text; v_health boolean; v_name text; v_auth uuid[];
-    v_n_contacts int := 0; v_n_addr int := 0; v_n_acc int := 0;
+    v_n_contacts int := 0; v_n_addr int := 0; v_n_acc int := 0; v_prev_status text; v_prev_deact timestamptz;
   begin
     select * into d from app.data_subject_requests where id = p_request_id and church_id = p_church_id for update;
     if d.id is null then perform app.raise_domain_error('REQUEST_NOT_FOUND', 'Pedido nao encontrado'); end if;
@@ -177,11 +178,13 @@ begin
       if p_health_mode = 'block' then
         perform app.raise_domain_error('ANONYMIZATION_BLOCKED_HEALTH_RETENTION', 'Pessoa com prontuario ou receita: guarda legal impede anonimizar. Use o modo restringir.');
       end if;
+      -- D4 (B63_5): guarda status anterior no historico imutavel do pedido, para desfazer restricao feita por engano
+      select status, deactivated_at into v_prev_status, v_prev_deact from app.people where id = v_person;
       update app.people set status = 'restricted', deactivated_at = coalesce(deactivated_at, now()), updated_by = v_me where id = v_person;
       update app.data_subject_requests set status = 'completed', completed_at = now(), response_reference = 'restricted_health_retention', updated_by = v_me where id = d.id;
-      perform private.v39_dsr_move(d.id, 'approved', 'completed', 'restricted_health_retention', v_me, null, jsonb_build_object('contas', v_n_acc));
+      perform private.v39_dsr_move(d.id, 'approved', 'completed', 'restricted_health_retention', v_me, null, jsonb_build_object('contas', v_n_acc, 'statusAnterior', v_prev_status, 'desativadoEmAnterior', v_prev_deact));
       insert into audit.events (church_id, actor_user_account_id, action, entity_schema, entity_name, entity_id, event_category, sensitivity, outcome, source, metadata)
-      values (p_church_id, v_me, 'person_restricted_health_retention', 'app', 'people', v_person::text, 'privacy', 'health', 'partial', 'rpc', jsonb_build_object('request_id', d.id));
+      values (p_church_id, v_me, 'person_restricted_health_retention', 'app', 'people', v_person::text, 'privacy', 'health', 'partial', 'rpc', jsonb_build_object('request_id', d.id, 'statusAnterior', v_prev_status));
       return jsonb_build_object('ok', true, 'resultado', 'restringido', 'pessoa', jsonb_build_object('id', v_person), 'authUsersParaDesativar', to_jsonb(coalesce(v_auth, '{}')));
     end if;
 
@@ -449,6 +452,9 @@ begin
   if v_n <> 1 or r->>'resultado' <> 'restringido' then raise exception 'FALHOU T9c: %', r; end if;
   select count(*) into v_n from app.v39_inst_records where patient_person_id = v_p_h;
   if v_n <> 1 then raise exception 'FALHOU T9d: prontuario alterado'; end if;
+  select count(*) into v_n from app.data_subject_request_history where request_id = v_req_h and action = 'restricted_health_retention'
+     and metadata->>'statusAnterior' = 'active';
+  if v_n <> 1 then raise exception 'FALHOU T9e: status anterior nao guardado'; end if;
   v_res := v_res || 'T9 ok; ';
 
   -- T10 pedido recusado nao executa
