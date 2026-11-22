@@ -6,6 +6,8 @@
    - DEGRADACAO: o banco pode ainda nao ter as RPCs novas (ordem: banco -> Edge -> front). Se a RPC nao existe
      (PGRST202 / 42883 / 404), devolve null para o app.js manter o comportamento antigo e registra um aviso no
      Console. Nunca trava o login nem quebra a tela.
+   - Correcoes do QA-63 (ainda LGPD-1, nao publicado): QA63-04 (V39_LGPD_SEM_VERSAO), QA63-05 (pedido recusado
+     quando a regra impede aprovar) e QA63-07 (texto do 400). Pessoa anonimizada/restringida: sql/B63_5_*.
    Nao guarda dados pessoais: so versao da politica e situacao do aceite do proprio usuario (em memoria). */
 (function () {
   'use strict';
@@ -55,6 +57,9 @@
     PERSON_NOT_LINKED: 'Seu usuário não está ligado a um cadastro de pessoa. Fale com a liderança.',
     PRIVACY_POLICY_MISSING: 'Ainda não há política de privacidade publicada.',
     PRIVACY_VERSION_NOT_CURRENT: 'A política foi atualizada. Leia a versão atual e aceite de novo.',
+    V39_LGPD_SEM_VERSAO: 'Não foi possível confirmar a versão da política agora. Tente de novo mais tarde.',
+    PERSON_ANONYMIZED: 'Esta pessoa foi anonimizada (LGPD): o cadastro não pode ser alterado.',
+    PERSON_RESTRICTED: 'Esta pessoa tem o tratamento restrito (LGPD): o cadastro não pode ser alterado.',
     PRIVACY_VERSION_EXISTS: 'Esta versão da política já foi publicada. Use outro número de versão.',
     PRIVACY_TEXT_REQUIRED: 'Informe a versão e o texto da política.',
     PRIVACY_VERSION_IMMUTABLE: 'Uma versão publicada não pode ser alterada.',
@@ -145,7 +150,8 @@
   /* ---------- mutacoes ---------- */
   function aceitar(d) {
     var ver = (d && d.versao) || ultimaVersao;
-    if (!ver) return Promise.reject(Object.assign(new Error(MSG.PRIVACY_VERSION_NOT_CURRENT), { code: 'PRIVACY_VERSION_NOT_CURRENT' }));
+    // QA63-04: texto exibido sem versão (veio da fonte antiga): código próprio; o app.js fecha o modal em vez de reabrir em laço
+    if (!ver) return Promise.reject(Object.assign(new Error(MSG.V39_LGPD_SEM_VERSAO), { code: 'V39_LGPD_SEM_VERSAO' }));
     return rpc('v39_privacy_accept', { p_church_id: igrejaId(), p_version: ver }).then(function (r) {
       return { ok: true, consentEm: r.consentEm, politicaV: r.politicaV };
     }, function (e) { throw erro(e, 'O aceite da política', 'v39_privacy_accept'); });
@@ -158,6 +164,7 @@
   }
 
   /* anonimizacao: pedido -> decisao -> execucao (D5: o master faz os 3 passos num clique, cada um registrado) */
+  var REGRA_BLOQUEIA = ['ANONYMIZATION_SELF_DENIED', 'ANONYMIZATION_MULTI_CHURCH'];
   var ABERTOS = ['received', 'identity_validation', 'under_review', 'waiting_information', 'approved', 'partially_approved'];
   function pedidoAberto(c, pid) {
     return rpc('v39_privacy_requests_list', { p_church_id: c, p_status: null }).then(function (l) {
@@ -175,7 +182,13 @@
     }).then(function (p) {
       if (p.status === 'approved') return p;
       return rpc('v39_privacy_request_decide', { p_church_id: c, p_request_id: p.id, p_decision: 'approved',
-        p_reason: 'Aprovado pelo master no app (anonimização em um clique)' }).then(function () { return { id: p.id, status: 'approved' }; });
+        p_reason: 'Aprovado pelo master no app (anonimização em um clique)' }).then(function () { return { id: p.id, status: 'approved' }; }, function (e) {
+        // QA63-05: o banco (B63_2) recusa aprovar quando a regra impede executar; o pedido é recusado com o motivo e não fica aberto
+        var cod = codigo(e);
+        if (REGRA_BLOQUEIA.indexOf(cod) < 0) throw e;
+        return rpc('v39_privacy_request_decide', { p_church_id: c, p_request_id: p.id, p_decision: 'rejected', p_reason: 'Bloqueado pela regra: ' + cod })
+          .then(function () { throw e; }, function (e2) { console.warn('[2Gather][lgpd] pedido ' + p.id + ' não pôde ser recusado', e2); throw e; });
+      });
     });
   }
   function pessoaLegada(id, r) {
@@ -192,8 +205,10 @@
     return edge('anonimizarConta', { igrejaId: igrejaId(), pedidoId: pedidoId }, true).then(function (j) {
       if (j.__status === 200 && j.ok) return { ok: true, conta: j };
       console.warn('[2Gather][lgpd] anonimizarConta não concluída (pedido ' + pedidoId + ')', j.__status, j.erro || '');
-      return { ok: false, aviso: j.__status === 400 ? 'A Edge "auth" ainda não tem a ação anonimizarConta: o acesso ao app e a foto ainda não foram desligados.'
-        : (j.erro || 'O acesso ao app e a foto não foram desligados por completo.') };
+      // QA63-07: a Edge nova também responde 400 (igreja/pedido inválido) com "erro"; 400 sem texto = Edge antiga, sem a ação
+      return { ok: false, aviso: j.erro ? j.erro + ' O acesso ao app e a foto não foram desligados por completo.'
+        : j.__status === 400 ? 'A Edge "auth" ainda não tem a ação anonimizarConta: o acesso ao app e a foto ainda não foram desligados.'
+        : 'O acesso ao app e a foto não foram desligados por completo.' };
     }, function (e) {
       console.warn('[2Gather][lgpd] anonimizarConta falhou (pedido ' + pedidoId + ')', e);
       return { ok: false, aviso: 'Os dados no banco já foram tratados, mas não foi possível desligar o acesso ao app e a foto agora.' };

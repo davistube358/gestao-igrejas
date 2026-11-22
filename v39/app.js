@@ -4146,7 +4146,7 @@ function fichaPessoa(id) {
   var end = separarBairroCidade(p.bairro, p.cidade), f = fone(p.fone), idade = idadeDe(p), g = gcPor(p.gcId);
   var rua = [p.endereco, p.numero].filter(Boolean).join(', ') + (p.complemento ? ' - ' + p.complemento : '');
   var mapaUrl = rua || end.bairro ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent([rua, end.bairro, end.cidade || cidadeIgreja()].filter(Boolean).join(', ')) : '';
-  var podeEditar = podeAlterarPessoa(p) && (!p.gcId || !!gcPor(p.gcId)) && !p.anonimizadoEm;
+  var podeEditar = podeAlterarPessoa(p) && (!p.gcId || !!gcPor(p.gcId)) && !p.anonimizadoEm && !p.restritoLgpd;   // QA63-01: restrito (LGPD) também trava
   var kv = function (r, v) { return v ? '<div class="kv"><span>' + r + '</span><b>' + v + '</b></div>' : ''; };
   var at = function (ic, rot, href, acao, val) {
     var dis = !href && !acao;
@@ -4185,10 +4185,11 @@ function fichaPessoa(id) {
       kv('Observações', esc(p.obs)) +
       kv('Cadastrado por', esc((p.criadoPorNome || (p.criadoPor === eu().id ? eu().nome : '') || '—') + (p.criadoEm ? ' em ' + brCompleto(String(p.criadoEm).slice(0, 10)) : (p.prim ? ' · 1ª participação ' + brCompleto(p.prim) : '')))) +
       (p.usuarioId ? kv('Acesso ao app', 'usuário vinculado') : '') +
-      kv('Uso dos dados', p.anonimizadoEm ? 'anonimizado em ' + br(String(p.anonimizadoEm).slice(0, 10)) : textoConsent(p)) + '</div>' +
+      kv('Uso dos dados', p.anonimizadoEm ? 'anonimizado em ' + br(String(p.anonimizadoEm).slice(0, 10))
+        : p.restritoLgpd ? 'restrito a pedido do titular (prontuário/receita sob guarda legal)' : textoConsent(p)) + '</div>' +
     (tl.length ? '<div class="sec">Jornada</div><div class="card"><div class="tl">' + tl.map(function (x) {
       return '<div class="' + x[0] + '"><b>' + x[1] + '</b><small>' + x[2] + '</small></div>'; }).join('') + '</div></div>' : '') +
-    (papel() === 'master' && !p.anonimizadoEm ? '<button class="btn dg" data-a="anonimizar" data-v="' + esc(p.id) + '">Anonimizar dados (pedido do titular)</button><div class="gap"></div>' : '') +
+    (papel() === 'master' && !p.anonimizadoEm && !p.restritoLgpd ? '<button class="btn dg" data-a="anonimizar" data-v="' + esc(p.id) + '">Anonimizar dados (pedido do titular)</button><div class="gap"></div>' : '') +
     '<button class="btn gh" data-a="fechar">Fechar</button>');
 }
 function csvConsulta() {
@@ -6634,6 +6635,7 @@ function aceitarPolitica() {
   }).catch(function (e) {
     toast(e.message, 4500);
     if (e && e.code === 'PRIVACY_VERSION_NOT_CURRENT') { fechar(); consentAberto = true; setTimeout(function () { verPolitica(true); }, 300); }   // LGPD-1: texto mudou: recarrega
+    else if (e && e.code === 'V39_LGPD_SEM_VERSAO') { fechar(); consentAberto = false; }   // QA63-04: sem versão no cliente: não reabre em laço
   }).then(function () { carregando(false); });
 }
 function sairTodos() {
@@ -6661,7 +6663,7 @@ function anonimizar(id) {
   if (prompt('Para confirmar, digite ANONIMIZAR') !== 'ANONIMIZAR') return toast('Anonimização cancelada.');
   carregando(true, 'Anonimizando...');
   var fim = function (r) {
-    if (r && r.resultado === 'restringido') { fechar(); render(); toast('Cadastro restringido ✓ — prontuário/receita ficam sob guarda legal; o acesso ao app foi desligado.', 6000); }
+    if (r && r.resultado === 'restringido') { p.restritoLgpd = true; salvarDB(); fechar(); render(); toast('Cadastro restringido ✓ — prontuário/receita ficam sob guarda legal; o acesso ao app foi desligado.', 6000); }
     else { db.pessoas = db.pessoas.filter(function (x) { return x.id !== id; }).concat([r.pessoa]); salvarDB(); fechar(); render(); toast('Dados anonimizados ✓'); }
     if (r && r.avisoConta) lgpdRepetirConta(r.pedidoId, r.avisoConta);
   };

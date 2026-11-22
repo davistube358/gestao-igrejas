@@ -1,7 +1,9 @@
 /* 2Gather v39 · Cadastro de acesso (autocadastro antes do login) · ACESSO-3
    ACESSO-3 (LGPD-1, Build 63): o cadastro envia politicaV (versão da Política de Privacidade exibida/vigente,
-     via G2_LGPD.versaoPublica). A Edge "auth" grava pedido + aceite numa transação. Sem a Edge nova ou sem
-     política publicada, o cadastro segue como antes (sem politicaV) e a Edge antiga continua aceitando.
+     via G2_LGPD.versaoPublica). A Edge "auth" grava pedido + aceite numa transação. Com a Edge ANTIGA, o
+     cadastro segue como antes (sem politicaV). Com a Edge NOVA e sem política publicada, a Edge responde 503
+     (por isso a ordem de publicação: master publica a v1 ANTES do deploy da Edge auth).
+     QA63-03: se a política mudou (409), o aceite é desmarcado: a pessoa precisa abrir a versão nova e aceitar de novo.
    ACESSO-2: quem escolhe uma função que NÃO é de GC (Secretaria, Tesouraria, Voluntário Lar de Vida, Voluntário Instituto, Profissional de saúde) não escolhe mais GC:
      o campo "De qual GC você participa?" fica desligado ("Esta função não participa de GC") e o GC não é enviado. Evita que o profissional entre num GC na aprovação.
    ACESSO-1 (base)
@@ -47,7 +49,7 @@
     }).then(function (r) {
       return r.text().then(function (t) {
         var j = {}; try { j = t ? JSON.parse(t) : {}; } catch (e) {}
-        if (!r.ok || j.ok === false) throw new Error(traduz(j.erro || j.message || j.mensagem || j.code || ('Erro ' + r.status)));
+        if (!r.ok || j.ok === false) throw Object.assign(new Error(traduz(j.erro || j.message || j.mensagem || j.code || ('Erro ' + r.status))), { status: r.status, codigo: j.codigo || '' });
         return j;
       });
     }, function () { throw new Error('Sem conexão com o servidor. Verifique a internet.'); });
@@ -120,7 +122,9 @@
       if ($('l-usuario')) $('l-usuario').value = u;
     }).catch(function (e) {
       if (L && typeof L.esquecerVersaoPublica === 'function') L.esquecerVersaoPublica();   // política pode ter mudado: busca de novo no próximo envio
-      erroEm('c-erro', (e && e.message) || 'Não foi possível enviar o cadastro.');
+      var mudou = !!(e && e.codigo === 'PRIVACY_VERSION_NOT_CURRENT');
+      if (mudou && $('c-aceite')) $('c-aceite').checked = false;   // QA63-03: não reenvia aceite de versão que a pessoa não viu
+      erroEm('c-erro', ((e && e.message) || 'Não foi possível enviar o cadastro.') + (mudou ? ' Abra a Política de Privacidade, leia a versão atual e marque o aceite de novo.' : ''));
     })
       .then(function () { if (b) b.disabled = false; carregando(false); });
   }
