@@ -1,6 +1,10 @@
 -- =====================================================================
 -- B63_2 · LGPD · Anonimizacao (pedido -> aprovacao -> execucao) · APLICAR
 -- Build 63 · DATA-63b · decisoes do PO D5, D6, D7, D8, D9, D10, D11 (22/11/2026)
+-- REVISAO 22/11/2026 (QA63-05/06): private.v39_dsr_anon_precheck (proprio cadastro; outra igreja por
+--   church_people OU church_user_access ativo/pendente/suspenso) usada na APROVACAO e na EXECUCAO.
+--   A VALIDACAO abaixo e da versao anterior; a revisao e validada por sql/B63_5_*_teste_rollback.sql
+--   (T12, T13): PASS em 22/11/2026 (TESTE B63_5 CONCLUIDO ... T1-T19 ok; REVERTER ok).
 -- VALIDACAO (22/11/2026, MCP execute_sql, conteudo deste arquivo dentro de do $t$, sem begin/commit):
 --   ERROR P0001: TESTE APLICAR B63_2 OK (nada foi gravado): V0 ok; casos C1-C7 ok (discipulo negado,
 --   nao aprovado, mascara mantendo cidade/UF, financeiro 123.45 e presenca intactos, saude bloqueada,
@@ -59,6 +63,22 @@ language sql security definer set search_path = pg_catalog, app, private as $f$
   values (p_req, p_old, p_new, p_action, p_actor, p_reason, coalesce(p_meta, '{}'::jsonb))
 $f$;
 
+-- QA63-05/06: guardas da anonimizacao num lugar so; usada na APROVACAO (pedido nao fica aprovado
+--   sem poder executar) e na EXECUCAO. Outra igreja = vinculo (church_people) aberto OU acesso
+--   (church_user_access) nao encerrado de qualquer conta da pessoa: a execucao revoga todas as contas.
+create or replace function private.v39_dsr_anon_precheck(p_church_id uuid, p_person uuid, p_me uuid) returns void
+language plpgsql stable security definer set search_path = pg_catalog, app, private as $f$
+begin
+  if exists (select 1 from app.user_accounts where id = p_me and person_id = p_person) then
+    perform app.raise_domain_error('ANONYMIZATION_SELF_DENIED', 'Nao e possivel anonimizar o proprio cadastro');
+  end if;
+  if exists (select 1 from app.church_people where person_id = p_person and church_id <> p_church_id and ended_at is null)
+     or exists (select 1 from app.church_user_access a join app.user_accounts u on u.id = a.user_account_id
+                 where u.person_id = p_person and a.church_id <> p_church_id and a.status in ('active','pending','suspended')) then
+    perform app.raise_domain_error('ANONYMIZATION_MULTI_CHURCH', 'Pessoa ligada a outra igreja: decisao conjunta necessaria');
+  end if;
+end $f$;
+
 create or replace function app.v39_privacy_request_create(p_church_id uuid, p_person_id uuid, p_type text, p_reason text) returns jsonb
 language plpgsql security definer set search_path = pg_catalog, app, private as $f$
 declare v_me uuid := private.v39_lgpd_me(p_church_id); v_id uuid;
@@ -107,6 +127,7 @@ begin
   end if;
   if p_decision not in ('approved','rejected') then perform app.raise_domain_error('DSR_DECISION_INVALID', 'Decisao invalida'); end if;
   if nullif(btrim(p_reason), '') is null then perform app.raise_domain_error('REASON_REQUIRED', 'Informe o motivo'); end if;
+  if d.request_type = 'anonymization' and p_decision = 'approved' then perform private.v39_dsr_anon_precheck(p_church_id, d.person_id, v_me); end if;
   update app.data_subject_requests set status = p_decision, decision_at = now(), decision_reason = left(btrim(p_reason), 500),
          assigned_to_user_account_id = v_me, identity_validated_at = coalesce(identity_validated_at, now()), updated_by = v_me
    where id = d.id;
@@ -131,12 +152,7 @@ begin
   if p_confirm is distinct from 'ANONIMIZAR' then perform app.raise_domain_error('CONFIRMATION_REQUIRED', 'Digite ANONIMIZAR para confirmar'); end if;
   if p_health_mode not in ('block','restrict') then perform app.raise_domain_error('HEALTH_MODE_INVALID', 'Modo invalido'); end if;
   v_person := d.person_id;
-  if exists (select 1 from app.user_accounts where id = v_me and person_id = v_person) then
-    perform app.raise_domain_error('ANONYMIZATION_SELF_DENIED', 'Nao e possivel anonimizar o proprio cadastro');
-  end if;
-  if exists (select 1 from app.church_people where person_id = v_person and church_id <> p_church_id and ended_at is null) then
-    perform app.raise_domain_error('ANONYMIZATION_MULTI_CHURCH', 'Pessoa ligada a outra igreja: decisao conjunta necessaria');
-  end if;
+  perform private.v39_dsr_anon_precheck(p_church_id, v_person, v_me);
   v_health := exists (select 1 from app.v39_inst_records where patient_person_id = v_person)
            or exists (select 1 from app.institute_clinical_records where patient_person_id = v_person)
            or exists (select 1 from app.institute_health_records where person_id = v_person)
@@ -192,7 +208,7 @@ begin
     'authUsersParaDesativar', to_jsonb(coalesce(v_auth, '{}')));
 end $f$;
 
-revoke all on function private.v39_lgpd_me(uuid), private.v39_lgpd_need(uuid,text), private.v39_dsr_move(uuid,text,text,text,uuid,text,jsonb) from public, anon, authenticated;
+revoke all on function private.v39_lgpd_me(uuid), private.v39_lgpd_need(uuid,text), private.v39_dsr_move(uuid,text,text,text,uuid,text,jsonb), private.v39_dsr_anon_precheck(uuid,uuid,uuid) from public, anon, authenticated;
 revoke all on function app.v39_privacy_request_create(uuid,uuid,text,text), app.v39_privacy_requests_list(uuid,text),
   app.v39_privacy_request_decide(uuid,uuid,text,text), app.v39_privacy_anonymize_execute(uuid,uuid,text,text) from public, anon;
 grant execute on function app.v39_privacy_request_create(uuid,uuid,text,text), app.v39_privacy_requests_list(uuid,text),
