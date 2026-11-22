@@ -1,6 +1,8 @@
 // 2Gather - Edge Function "auth": login por usuario, cadastro, senha e sessoes.
 // Implantar com "Verify JWT" DESLIGADO. As acoes publicas nao trazem JWT e as protegidas sao conferidas aqui.
 // Nunca registre em log o corpo da requisicao nem a resposta: ha senhas.
+// B63 (LGPD-1): acao publica "politica"; cadastro grava o aceite na mesma transacao
+//   (edge_create_access_request_with_consent, D1b); acao protegida "anonimizarConta" (D9/D10).
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 type Json = Record<string, unknown>;
@@ -43,11 +45,18 @@ const M = {
   identificador: "Informe o e-mail ou o usuário.",
   erroGeral: "Não foi possível concluir agora. Tente novamente.",
   config: "Serviço indisponível no momento.",
+  politicaAtualizada: "A Política de Privacidade foi atualizada. Abra a política, leia a versão atual e aceite de novo para concluir o cadastro.",
+  politicaAusente: "O cadastro está temporariamente indisponível: a Política de Privacidade ainda não foi publicada. Tente mais tarde.",
+  anonNaoAtivo: "A anonimização da conta ainda não está ativada no servidor.",
+  pedidoNaoEncontrado: "Pedido de anonimização concluído não encontrado.",
 };
 
 const RE_USER = /^[a-z0-9._-]{3,30}$/;
 const RE_MAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const RE_VERSAO = /^\S[\s\S]{0,39}$/; // mesma faixa da coluna version (1 a 40 caracteres)
+const BUCKET_FOTOS = "person-photos";
+const BAN_DURACAO = "876000h"; // ~100 anos: a conta Auth fica banida, nao e apagada (D10)
 
 // ---------- utilitarios ----------
 function allowedOrigin(origin: string | null): string {
@@ -104,7 +113,9 @@ function makeClients() {
   const opt = { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } };
   const admin = dep.createClient(url, secret, { ...opt, db: { schema: "app" } });
   const anon = () => dep.createClient(url, pub, opt);
-  return { admin, anon };
+  // cliente com o JWT de quem chamou: as RPCs app.v39_* conferem permissao e igreja como esse usuario
+  const asUser = (jwt: string) => dep.createClient(url, pub, { ...opt, db: { schema: "app" }, global: { headers: { Authorization: `Bearer ${jwt}` } } });
+  return { admin, anon, asUser };
 }
 type Clients = ReturnType<typeof makeClients>;
 
@@ -121,7 +132,7 @@ async function callerOf(admin: any, req: Request) {
   if (!m) return null;
   const { data, error } = await admin.auth.getUser(m[1]);
   if (error || !data?.user) return null;
-  return data.user as { id: string; email?: string };
+  return { ...(data.user as { id: string; email?: string }), jwt: m[1] };
 }
 
 // ---------- acoes ----------
@@ -162,7 +173,7 @@ async function aLogin(c: Clients, b: Json, req: Request, origin: string | null) 
   }, origin);
 }
 
-async function aRegister(c: Clients, b: Json, origin: string | null) {
+async function aRegister(c: Clients, b: Json, req: Request, origin: string | null) {
   const usuario = norm(b.usuario), nome = String(b.nome ?? "").trim().slice(0, 80);
   const senha = String(b.senha ?? ""), email = norm(b.email);
   if (!RE_USER.test(usuario)) return fail(400, M.usuarioFormato, origin);
@@ -174,6 +185,16 @@ async function aRegister(c: Clients, b: Json, origin: string | null) {
   if (!RE_UUID.test(church)) return fail(503, M.config, origin);
   const gc = b.gcId && RE_UUID.test(String(b.gcId)) ? String(b.gcId) : null;
 
+  // B63/D1b: o aceite precisa citar a versao exibida. Sem versao (front antigo em cache), nada e criado.
+  const politicaV = String(b.politicaV ?? "").trim();
+  if (!RE_VERSAO.test(politicaV)) {
+    const pol = await rpc(c.admin, "edge_privacy_policy_public", { p_church_id: church });
+    if (pol.code === "RPC_MISSING") return fail(503, M.config, origin);
+    if (pol.code) return fail(500, M.erroGeral, origin);
+    if (!pol.data?.versao) return fail(503, M.politicaAusente, origin, { codigo: "PRIVACY_POLICY_MISSING" });
+    return fail(409, M.politicaAtualizada, origin, { codigo: "PRIVACY_VERSION_NOT_CURRENT" });
+  }
+
   const av = await rpc(c.admin, "edge_username_available", { p_username: usuario });
   if (av.code) return fail(500, M.erroGeral, origin);
   if (av.data !== true) return fail(409, M.usuarioExiste, origin);
@@ -182,10 +203,13 @@ async function aRegister(c: Clients, b: Json, origin: string | null) {
   if (created.error || !created.data?.user) return fail(409, M.cadastroGenerico, origin);
   const uid = created.data.user.id;
 
-  const r = await rpc(c.admin, "edge_create_access_request", {
+  // pedido de acesso + aceite da politica numa transacao so (se o aceite falhar, o pedido e desfeito no banco)
+  const r = await rpc(c.admin, "edge_create_access_request_with_consent", {
     p_auth_user_id: uid, p_username: usuario, p_email: email, p_church_id: church, p_full_name: nome,
+    p_term_version: politicaV,
     p_whatsapp: String(b.fone ?? "").slice(0, 20) || null, p_preferred_name: null,
     p_requested_profile_code: String(b.perfil ?? "") || null, p_requested_gc_id: gc, p_notes: String(b.obs ?? "").slice(0, 300) || null,
+    p_fingerprint: await fingerprint(req),
   });
   if (r.code) {
     await c.admin.auth.admin.deleteUser(uid).catch(() => {}); // nao deixa conta Auth orfa
@@ -194,6 +218,9 @@ async function aRegister(c: Clients, b: Json, origin: string | null) {
     if (r.code === "USERNAME_INVALID") return fail(400, M.usuarioFormato, origin);
     if (r.code === "PERSON_NAME_REQUIRED") return fail(400, M.nome, origin);
     if (r.code === "GC_SCOPE_INVALID") return fail(400, "GC inválido.", origin);
+    if (r.code === "PRIVACY_VERSION_NOT_CURRENT") return fail(409, M.politicaAtualizada, origin, { codigo: r.code });
+    if (r.code === "PRIVACY_POLICY_MISSING") return fail(503, M.politicaAusente, origin, { codigo: r.code });
+    if (r.code === "RPC_MISSING") return fail(503, M.config, origin); // banco sem B63_1: nao cria conta sem aceite
     return fail(500, M.cadastroGenerico, origin);
   }
   return out(200, { ok: true }, origin);
@@ -216,6 +243,69 @@ async function aGcs(c: Clients, origin: string | null) {
   if (r.code) return fail(500, M.erroGeral, origin);
   const lista = (Array.isArray(r.data) ? r.data : []).map((g: any) => ({ id: g.id, nome: g.name }));
   return out(200, { ok: true, gcs: lista }, origin);
+}
+
+// B63: texto vigente da politica para quem ainda nao entrou (tela de login e cadastro). Sempre da igreja configurada.
+async function aPolicy(c: Clients, origin: string | null) {
+  const church = first("DEFAULT_CHURCH_ID");
+  if (!RE_UUID.test(church)) return out(200, { ok: true, texto: "", versao: null, em_preparacao: true }, origin);
+  const r = await rpc(c.admin, "edge_privacy_policy_public", { p_church_id: church });
+  if (r.code === "RPC_MISSING") return out(200, { ok: true, texto: "", versao: null, em_preparacao: true }, origin);
+  if (r.code) return fail(500, M.erroGeral, origin);
+  return out(200, { ok: true, texto: String(r.data?.texto ?? ""), versao: r.data?.versao ?? null }, origin);
+}
+
+// B63 (D9/D10): chamada pelo front logo depois de app.v39_privacy_anonymize_execute.
+// O navegador manda so a igreja e o pedido. A autorizacao e a pessoa vem do banco, consultado COM O JWT
+// de quem chamou (v39_privacy_requests_list exige privacy.requests.manage e acesso ativo a igreja).
+// Para cada conta Auth da pessoa: bane (nao apaga), revoga sessoes e, se anonimizada, troca o e-mail.
+// Se anonimizada: apaga do bucket privado as fotos da pessoa (app.files ja ficou "archived" no banco).
+// Restringida (prontuario/receita, D7): so bane e revoga; dados e foto ficam sob guarda legal.
+// Repetir a chamada e seguro (idempotente).
+async function aAnonymizeAccount(c: Clients, b: Json, user: { id: string; jwt: string }, origin: string | null) {
+  const church = String(b.igrejaId ?? ""), pedido = String(b.pedidoId ?? "");
+  if (!RE_UUID.test(church) || !RE_UUID.test(pedido)) return fail(400, M.pedidoNaoEncontrado, origin);
+
+  const lst = await rpc(c.asUser(user.jwt), "v39_privacy_requests_list", { p_church_id: church, p_status: "completed" });
+  if (lst.code === "RPC_MISSING") return fail(503, M.anonNaoAtivo, origin, { codigo: "RPC_MISSING" });
+  if (lst.code === "PERMISSION_DENIED" || lst.code === "ACCESS_DENIED") return fail(403, M.semPermissao, origin);
+  if (lst.code) return fail(500, M.erroGeral, origin);
+  const d = (Array.isArray(lst.data) ? lst.data : []).find((x: any) => x && x.id === pedido && x.tipo === "anonymization");
+  if (!d || !RE_UUID.test(String(d.pessoaId ?? ""))) return fail(404, M.pedidoNaoEncontrado, origin);
+  const anonimizado = d.resultado === "anonymized";
+  if (!anonimizado && d.resultado !== "restricted_health_retention") return fail(404, M.pedidoNaoEncontrado, origin);
+  const pessoa = String(d.pessoaId);
+
+  const contas = await c.admin.from("user_accounts").select("auth_user_id").eq("person_id", pessoa);
+  if (contas.error) return fail(500, M.erroGeral, origin);
+  const ids = [...new Set<string>((contas.data || []).map((x: any) => String(x.auth_user_id ?? "")))]
+    .filter((x) => RE_UUID.test(x) && x !== user.id);
+
+  let contasOk = 0, contasFalha = 0;
+  for (const uid of ids) {
+    const patch: Record<string, unknown> = { ban_duration: BAN_DURACAO };
+    if (anonimizado) { patch.email = `anon-${uid}@anonimizado.invalid`; patch.email_confirm = true; }
+    const up = await c.admin.auth.admin.updateUserById(uid, patch);
+    const rv = await rpc(c.admin, "edge_revoke_sessions", { p_auth_user_id: uid });
+    if (up.error || rv.code) contasFalha++; else contasOk++;
+  }
+
+  let fotos = 0, fotosFalha = 0;
+  if (anonimizado) {
+    // caminhos usados pelo front v39: <igreja>/people/<pessoa>/<arquivo> e <igreja>/<pessoa>/<arquivo>
+    for (const pasta of [`${church}/people/${pessoa}`, `${church}/${pessoa}`]) {
+      const ls = await c.admin.storage.from(BUCKET_FOTOS).list(pasta, { limit: 1000 });
+      if (ls.error) { fotosFalha++; continue; }
+      const nomes = (ls.data || []).filter((o: any) => o && o.name && o.id).map((o: any) => `${pasta}/${o.name}`);
+      if (!nomes.length) continue;
+      const rm = await c.admin.storage.from(BUCKET_FOTOS).remove(nomes);
+      if (rm.error) fotosFalha += nomes.length; else fotos += nomes.length;
+    }
+  }
+  const ok = contasFalha === 0 && fotosFalha === 0;
+  const resumo: Json = { ok, resultado: anonimizado ? "anonimizado" : "restringido", contas: contasOk, contasFalha, fotos, fotosFalha };
+  if (!ok) resumo.erro = "Parte da desativação da conta não foi concluída. Tente de novo pelo mesmo botão.";
+  return out(ok ? 200 : 207, resumo, origin);
 }
 
 async function authorize(c: Clients, actorId: string, target: string, perm: string) {
@@ -327,16 +417,18 @@ export async function handle(req: Request): Promise<Response> {
     const acao = String(b.acao ?? "");
     switch (acao) {
       case "login": return await aLogin(c, b, req, origin);
-      case "cadastro": return await aRegister(c, b, origin);
+      case "cadastro": return await aRegister(c, b, req, origin);
       case "recuperar": return await aForgot(c, b, req, origin);
       case "gcsPublico": return await aGcs(c, origin);
+      case "politica": return await aPolicy(c, origin);
     }
-    if (["trocarSenha", "redefinirSenha", "encerrarSessoes", "corrigirUsuario"].includes(acao)) {
+    if (["trocarSenha", "redefinirSenha", "encerrarSessoes", "corrigirUsuario", "anonimizarConta"].includes(acao)) {
       const user = await callerOf(c.admin, req);
       if (!user) return fail(401, "Sessão expirada. Entre novamente.", origin, { sessao: false });
       if (acao === "trocarSenha") return await aChangePassword(c, b, user, origin);
       if (acao === "redefinirSenha") return await aAdminReset(c, b, user, origin);
       if (acao === "encerrarSessoes") return await aAdminRevoke(c, b, user, origin);
+      if (acao === "anonimizarConta") return await aAnonymizeAccount(c, b, user, origin);
       return await aAdminCorrect(c, b, user, origin);
     }
     return fail(400, "Ação desconhecida.", origin);
