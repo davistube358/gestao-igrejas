@@ -870,7 +870,7 @@ function v39LegacyUsuario(login, auth) {
     churchUserAccessId: primary.id || accessId || '',
     gcId: c.growthGroupId || c.gcId || a.gcId || '',
     trocarSenha: !!(d.must_change_password || d.mustChangePassword || a.must_change_password),
-    consent: person.consent !== undefined ? person.consent : true,
+    consent: person.consent !== undefined ? person.consent : true,   // LGPD-1: provisório; lgpdAtualizarConsent() troca pelo v39_privacy_my_status (RPC ausente: fica como antes)
     _v39Assignments: activeAssignments, _v39ProfileCodes: codes
   });
 }
@@ -912,7 +912,7 @@ function entrar() {
         v39AplicarContextoIgreja(usuario, auth.context || null);
       }
       setTimeout(verificarSenhaTemp, 250);
-      setTimeout(verificarConsentimento, 300);
+      setTimeout(function () { lgpdAtualizarConsent().then(verificarConsentimento); }, 300);
       cfg.modo = ['master','pastor','supervisor'].indexOf(usuario.papel) >= 0 || ehGestor() ? 'ger' : 'gc'; cfg.gcAtual = ''; cfg.aba = '';
       salvarCfg(); $('l-senha').value = '';
       iniciarApp();
@@ -3518,7 +3518,9 @@ function lerCfgForm() {
     cor: $('cf-cor') ? $('cf-cor').value : ((cfgDraft && cfgDraft.cor) || ''),
     encarregado: $('cf-encarregado') ? $('cf-encarregado').value.trim() : ((cfgDraft && cfgDraft.encarregado) || ''),
     politica: $('cf-politica') ? $('cf-politica').value : (cfgDraft ? cfgDraft.politica : undefined),
-    politicaModelo: cfgDraft ? cfgDraft.politicaModelo : '' };
+    politicaModelo: cfgDraft ? cfgDraft.politicaModelo : '',
+    politicaVersao: cfgDraft ? cfgDraft.politicaVersao : '', politicaPublicadaEm: cfgDraft ? cfgDraft.politicaPublicadaEm : '', politicaFonte: cfgDraft ? cfgDraft.politicaFonte : '',
+    politicaNovaV: $('cf-politica-versao') ? $('cf-politica-versao').value.trim() : (cfgDraft ? cfgDraft.politicaNovaV : '') };
   var rows = document.querySelectorAll('.cf-culto');
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
@@ -3532,8 +3534,9 @@ function rConfig() {
     endereco: JSON.parse(JSON.stringify(b.endereco || {})), bairros: (b.bairros || []).slice(), encarregado: b.encarregado || '', cor: b.cor || '' }; }
   if (cfgDraft.politica === undefined && !cfgDraft._polCarregando) {
     cfgDraft._polCarregando = true;
-    chamarBruto({ acao: 'politica' }).then(function (r) {
+    politicaTexto().then(function (r) {
       if (!cfgDraft) return;
+      cfgDraft.politicaVersao = (r && r.versao) || ''; cfgDraft.politicaPublicadaEm = (r && r.publicadaEm) || ''; cfgDraft.politicaFonte = (r && r.fonte) || 'legado';
       cfgDraft.politica = r && r.ok ? r.texto : ''; cfgDraft.politicaModelo = r && r.ok && r.modelo ? r.texto : (cfgDraft.politicaModelo || '');
       if (r && r.ok && r.modelo) cfgDraft.politicaModelo = r.texto;
       if (cfg.aba === 'config') render();
@@ -3575,7 +3578,8 @@ function rConfig() {
     (c.politica === undefined ? '<div class="empty" style="padding:10px">Carregando...</div>'
       : '<textarea id="cf-politica" rows="12" style="font-size:13px;line-height:1.5">' + esc(c.politica) + '</textarea>') +
     '<div style="font-size:11px;color:#999;margin-top:6px;line-height:1.5">É um <b>modelo</b> — revise com um advogado antes de divulgar. Ao alterar o texto, todos os usuários precisarão aceitar a nova versão no próximo acesso.</div>' +
-    (c.politicaModelo ? '<div style="text-align:right;margin-top:6px"><span class="pill p-cinza" data-a="cfModeloPolitica" style="cursor:pointer">restaurar modelo</span></div>' : '') + '</div>' +
+    (c.politicaModelo ? '<div style="text-align:right;margin-top:6px"><span class="pill p-cinza" data-a="cfModeloPolitica" style="cursor:pointer">restaurar modelo</span></div>' : '') +
+    blocoPublicarPolitica(c) + '</div>' +
     blocoJornadaCfg() +
     '<button class="btn pr" data-a="cfSalvar">Salvar configurações</button>';
 }
@@ -3657,6 +3661,7 @@ function cfSalvar() {
   if (logoNovo) c.logo = logoNovo;
   if (iconeNovo) c.icone = iconeNovo;
   delete c.politicaModelo; delete c._polCarregando;
+  delete c.politicaVersao; delete c.politicaPublicadaEm; delete c.politicaFonte; delete c.politicaNovaV;   // LGPD-1: a política v39 é publicada em separado (lgpdPublicar)
   var icF = iconeNovo === '__remover__' ? '' : (iconeNovo || igr.icone), lgF = logoNovo === '__remover__' ? '' : (logoNovo || igr.logo);
   var srcFav = (iconeNovo || logoNovo) ? (icF || lgF) : '';      // ícone da aba só é regerado quando alguma imagem muda
   if (srcFav && !c._favOk) {
@@ -3688,6 +3693,35 @@ function enviarCfg(c) {
     salvarIgr(); aplicarLogo(); logoNovo = null; iconeNovo = null; cfgDraft = null;
     toast(r.config.politicaV !== verAntes ? 'Configurações salvas ✓ — nova versão da política: todos aceitarão no próximo acesso' : 'Configurações salvas ✓', 4500); render();
     if (r.config.politicaV !== verAntes) { cfg.usuario.consent = false; salvarCfg(); setTimeout(verificarConsentimento, 600); }
+  }).catch(function (e) { toast(e.message, 4500); }).then(function () { carregando(false); });
+}
+
+/* LGPD-1: publicar versão da política (v39_privacy_policy_publish). O banco exige privacy.manage (master). */
+function podePublicarPolitica() {
+  return cfg.token === 'supabase-v39' && (papel() === 'master' || (eu().permissoes || []).indexOf('privacy.manage') >= 0);
+}
+function proximaVersaoPolitica(v) { var n = parseInt(v, 10); return !v ? '1' : (String(n) === String(v).trim() ? String(n + 1) : ''); }
+function blocoPublicarPolitica(c) {
+  if (!podePublicarPolitica() || c.politica === undefined) return '';
+  var novaV = c.politicaNovaV !== undefined && c.politicaNovaV !== '' ? c.politicaNovaV : proximaVersaoPolitica(c.politicaVersao);
+  return '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--cc)">' +
+    '<div style="font-size:12px;color:#555;line-height:1.5">' + (c.politicaVersao && c.politicaFonte === 'supabase'
+      ? 'Versão vigente: <b>' + esc(c.politicaVersao) + '</b>' + (c.politicaPublicadaEm ? ' · publicada em ' + dataHoraLocal(c.politicaPublicadaEm) : '')
+      : 'Nenhuma versão publicada no Supabase ainda (o texto acima é o anterior/modelo).') + '</div>' +
+    '<label>Nova versão</label><input id="cf-politica-versao" value="' + esc(novaV) + '" placeholder="Ex.: 2" maxlength="40">' +
+    '<div style="font-size:11px;color:#999;margin:6px 0 8px;line-height:1.5">Publica o texto acima como nova versão. A versão publicada não pode ser alterada depois, e todos os usuários aceitarão no próximo acesso. "Salvar configurações" não publica a política.</div>' +
+    '<button class="btn gh" data-a="lgpdPublicar">Publicar nova versão da política</button></div>';
+}
+function lgpdPublicar() {
+  var txt = $('cf-politica') ? $('cf-politica').value : '', ver = $('cf-politica-versao') ? $('cf-politica-versao').value.trim() : '';
+  if (!txt.trim()) return toast('Escreva o texto da política.', 4000);
+  if (!ver) return toast('Informe o número da nova versão (ex.: 2).', 4000);
+  if (!confirm('Publicar a versão ' + ver + ' da política de privacidade?\n\nEla não poderá ser alterada depois, e todos os usuários precisarão aceitá-la no próximo acesso.')) return;
+  carregando(true, 'Publicando...');
+  chamar('publicarPolitica', { versao: ver, texto: txt }).then(function (r) {
+    if (cfgDraft) { cfgDraft.politica = txt; cfgDraft.politicaVersao = r.versao || ver; cfgDraft.politicaFonte = 'supabase'; cfgDraft.politicaPublicadaEm = agora(); cfgDraft.politicaNovaV = ''; }
+    toast('Política publicada ✓ — versão ' + (r.versao || ver) + ': todos aceitarão no próximo acesso', 4500); render();
+    cfg.usuario.consent = false; salvarCfg(); setTimeout(verificarConsentimento, 600);
   }).catch(function (e) { toast(e.message, 4500); }).then(function () { carregando(false); });
 }
 
@@ -4112,7 +4146,7 @@ function fichaPessoa(id) {
   var end = separarBairroCidade(p.bairro, p.cidade), f = fone(p.fone), idade = idadeDe(p), g = gcPor(p.gcId);
   var rua = [p.endereco, p.numero].filter(Boolean).join(', ') + (p.complemento ? ' - ' + p.complemento : '');
   var mapaUrl = rua || end.bairro ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent([rua, end.bairro, end.cidade || cidadeIgreja()].filter(Boolean).join(', ')) : '';
-  var podeEditar = podeAlterarPessoa(p) && (!p.gcId || !!gcPor(p.gcId)) && !p.anonimizadoEm;
+  var podeEditar = podeAlterarPessoa(p) && (!p.gcId || !!gcPor(p.gcId)) && !p.anonimizadoEm && !p.restritoLgpd;   // QA63-01: restrito (LGPD) também trava
   var kv = function (r, v) { return v ? '<div class="kv"><span>' + r + '</span><b>' + v + '</b></div>' : ''; };
   var at = function (ic, rot, href, acao, val) {
     var dis = !href && !acao;
@@ -4151,10 +4185,11 @@ function fichaPessoa(id) {
       kv('Observações', esc(p.obs)) +
       kv('Cadastrado por', esc((p.criadoPorNome || (p.criadoPor === eu().id ? eu().nome : '') || '—') + (p.criadoEm ? ' em ' + brCompleto(String(p.criadoEm).slice(0, 10)) : (p.prim ? ' · 1ª participação ' + brCompleto(p.prim) : '')))) +
       (p.usuarioId ? kv('Acesso ao app', 'usuário vinculado') : '') +
-      kv('Uso dos dados', p.anonimizadoEm ? 'anonimizado em ' + br(String(p.anonimizadoEm).slice(0, 10)) : textoConsent(p)) + '</div>' +
+      kv('Uso dos dados', p.anonimizadoEm ? 'anonimizado em ' + br(String(p.anonimizadoEm).slice(0, 10))
+        : p.restritoLgpd ? 'restrito a pedido do titular (prontuário/receita sob guarda legal)' : textoConsent(p)) + '</div>' +
     (tl.length ? '<div class="sec">Jornada</div><div class="card"><div class="tl">' + tl.map(function (x) {
       return '<div class="' + x[0] + '"><b>' + x[1] + '</b><small>' + x[2] + '</small></div>'; }).join('') + '</div></div>' : '') +
-    (papel() === 'master' && !p.anonimizadoEm ? '<button class="btn dg" data-a="anonimizar" data-v="' + esc(p.id) + '">Anonimizar dados (pedido do titular)</button><div class="gap"></div>' : '') +
+    (papel() === 'master' && !p.anonimizadoEm && !p.restritoLgpd ? '<button class="btn dg" data-a="anonimizar" data-v="' + esc(p.id) + '">Anonimizar dados (pedido do titular)</button><div class="gap"></div>' : '') +
     '<button class="btn gh" data-a="fechar">Fechar</button>');
 }
 function csvConsulta() {
@@ -6552,11 +6587,31 @@ function lerAcessos() {
 }
 
 /* ═══════════════════ SEGURANÇA E LGPD ═══════════════════ */
-var consentAberto = false;
+var consentAberto = false, politicaLida = '';
+/* LGPD-1: texto da política. v39: logado -> v39_privacy_policy_current; deslogado -> Edge auth {acao:'politica'}
+   (app_v39_lgpd.js). Sem a fonte nova (RPC/Edge ainda não publicadas ou nenhuma versão publicada): Apps Script, como antes. */
+function politicaTexto() {
+  var L = window.G2_LGPD;
+  var nova = (L && typeof L.politica === 'function') ? L.politica().catch(function (e) { console.warn('[2Gather][lgpd] política', e); return null; }) : Promise.resolve(null);
+  return nova.then(function (r) { return r || chamarBruto({ acao: 'politica' }); });
+}
+/* LGPD-1: situação do aceite do usuário logado (v39_privacy_my_status). null = manter o valor atual. */
+function lgpdAtualizarConsent() {
+  var L = window.G2_LGPD;
+  if (cfg.token !== 'supabase-v39' || !cfg.usuario || !L || typeof L.status !== 'function') return Promise.resolve();
+  return L.status().then(function (s) {
+    if (!s || !cfg.usuario) return;
+    cfg.usuario.consent = s.consent === null || s.consent === undefined ? null : !!s.consent;
+    if (s.consentEm) cfg.usuario.consentEm = s.consentEm;
+    if (s.politicaV) cfg.usuario.politicaV = s.politicaV;
+    salvarCfg();
+  }).catch(function (e) { console.warn('[2Gather][lgpd] situação do aceite', e); });
+}
 function verPolitica(paraAceite) {
   carregando(true, 'Carregando...');
-  chamarBruto({ acao: 'politica' }).then(function (r) {
+  politicaTexto().then(function (r) {
     carregando(false);
+    politicaLida = (r && r.versao) || '';
     if (!r || !r.ok) throw new Error((r && r.erro) || 'Não foi possível carregar a política.');
     abrirModal('<h2>Política de privacidade</h2>' +
       (paraAceite ? '<div class="aviso" style="margin-top:8px"><b>' + esc(eu().nome || '') + '</b>, para continuar usando o app, leia e aceite a política de privacidade' + (eu().consentEm ? ' (o texto foi atualizado)' : '') + '. O aceite vale só para o seu usuário.</div>' : '') +
@@ -6574,10 +6629,14 @@ function verificarConsentimento() {
 }
 function aceitarPolitica() {
   carregando(true, 'Registrando...');
-  chamar('aceitarPolitica', {}).then(function (r) {
+  chamar('aceitarPolitica', { versao: politicaLida }).then(function (r) {
     consentAberto = false; cfg.usuario.consent = true; cfg.usuario.consentEm = r.consentEm || agora(); cfg.usuario.politicaV = r.politicaV;
     salvarCfg(); fechar(); toast('Obrigado! Seu aceite foi registrado ✓');
-  }).catch(function (e) { toast(e.message, 4500); }).then(function () { carregando(false); });
+  }).catch(function (e) {
+    toast(e.message, 4500);
+    if (e && e.code === 'PRIVACY_VERSION_NOT_CURRENT') { fechar(); consentAberto = true; setTimeout(function () { verPolitica(true); }, 300); }   // LGPD-1: texto mudou: recarrega
+    else if (e && e.code === 'V39_LGPD_SEM_VERSAO') { fechar(); consentAberto = false; }   // QA63-04: sem versão no cliente: não reabre em laço
+  }).then(function () { carregando(false); });
 }
 function sairTodos() {
   if (!confirm('Sair de TODOS os aparelhos onde você entrou (inclusive este)?')) return;
@@ -6595,14 +6654,38 @@ function encerrarSessoes(id) {
 }
 function anonimizar(id) {
   var p = pessoaPor(id); if (!p) return;
+  var v39a = cfg.token === 'supabase-v39';
   if (!confirm('Anonimizar os dados de ' + p.nome + '?\n\nNome, telefone, endereço, nascimento e observações serão apagados de forma definitiva. ' +
-    'Ficam só os números (presenças e totais). Use apenas quando a pessoa pedir a exclusão dos dados.')) return;
+    (v39a ? 'Também saem apelido, CPF, sexo e foto; do endereço ficam só cidade e UF. O acesso dela ao app é desligado. ' : '') +
+    'Ficam só os números (presenças e totais' + (v39a ? ', lançamentos financeiros' : '') + '). ' +
+    (v39a ? 'Prontuário e receitas não são apagados: se existirem, o app oferece restringir o cadastro. ' : '') +
+    'Use apenas quando a pessoa pedir a exclusão dos dados.')) return;
   if (prompt('Para confirmar, digite ANONIMIZAR') !== 'ANONIMIZAR') return toast('Anonimização cancelada.');
   carregando(true, 'Anonimizando...');
-  chamar('anonimizarPessoa', { id: id }).then(function (r) {
-    db.pessoas = db.pessoas.filter(function (x) { return x.id !== id; }).concat([r.pessoa]); salvarDB();
-    fechar(); render(); toast('Dados anonimizados ✓');
-  }).catch(function (e) { toast(e.message, 4500); }).then(function () { carregando(false); });
+  var fim = function (r) {
+    if (r && r.resultado === 'restringido') { p.restritoLgpd = true; salvarDB(); fechar(); render(); toast('Cadastro restringido ✓ — prontuário/receita ficam sob guarda legal; o acesso ao app foi desligado.', 6000); }
+    else { db.pessoas = db.pessoas.filter(function (x) { return x.id !== id; }).concat([r.pessoa]); salvarDB(); fechar(); render(); toast('Dados anonimizados ✓'); }
+    if (r && r.avisoConta) lgpdRepetirConta(r.pedidoId, r.avisoConta);
+  };
+  chamar('anonimizarPessoa', { id: id, confirmacao: 'ANONIMIZAR' }).then(fim).catch(function (e) {
+    if (!(e && e.code === 'ANONYMIZATION_BLOCKED_HEALTH_RETENTION')) throw e;
+    carregando(false);
+    if (!confirm(p.nome + ' tem prontuário ou receita: a guarda legal (20 anos) impede anonimizar.\n\nRestringir em vez de anonimizar? ' +
+      'O cadastro some das listas, o acesso ao app é desligado e o pedido fica concluído como "restringido". Nenhum dado é apagado.')) { toast('Nada foi alterado.'); return; }
+    carregando(true, 'Restringindo...');
+    return chamar('anonimizarPessoa', { id: id, confirmacao: 'ANONIMIZAR', modoSaude: 'restrict', pedidoId: e.pedidoId }).then(fim);
+  }).catch(function (e) { toast(e.message, 5000); }).then(function () { carregando(false); });
+}
+/* LGPD-1: a parte da conta (Edge auth anonimizarConta) é idempotente; se falhou, oferece repetir só ela. */
+function lgpdRepetirConta(pedidoId, aviso) {
+  setTimeout(function () {
+    if (!pedidoId || !window.G2_LGPD || !confirm(aviso + '\n\nTentar desligar o acesso e a foto de novo agora?')) { toast(aviso, 8000); return; }
+    carregando(true, 'Desligando acesso...');
+    G2_LGPD.desligarConta(pedidoId).then(function (z) {
+      carregando(false);
+      if (z.ok) toast('Acesso ao app e foto desligados ✓'); else lgpdRepetirConta(pedidoId, z.aviso);
+    });
+  }, 400);
 }
 function abrirAuditoria(filtro) {
   carregando(true, 'Carregando auditoria...');
@@ -6926,6 +7009,7 @@ var ACOES = {
     sairTodos: sairTodos, encerrarSessoes: encerrarSessoes, auditoria: function () { abrirAuditoria(''); }, audBuscar: function () { abrirAuditoria($('aud-q').value); },
     anonimizar: anonimizar, verPolitica: function () { verPolitica(false); }, aceitarPolitica: aceitarPolitica, recusarPolitica: function () { consentAberto = false; sair(false); },
     cfModeloPolitica: function () { cfgDraft = lerCfgForm(); cfgDraft.politica = cfgDraft.politicaModelo || ''; render(); },
+    lgpdPublicar: lgpdPublicar,
     perModo: function (v) { perBI.modo = v; if (v === 'per' && !perBI.de) { var P0 = periodoBI(); perBI.de = hoje().slice(0, 7) + '-01'; perBI.ate = hoje(); } render(); }, lvModo: function (v) { lvModoCad = v; lvGCManual = false; render(); }, encAgendar: encAgendar, encSalvarAgenda: encSalvarAgenda, encCancelar: encCancelar,
     togFiltrosM: function () { fMAberto = !fMAberto; render(); },
     limparFiltrosM: function () { for (var k in fM) fM[k] = k === 'ordem' ? 'nome' : ''; render(); },
@@ -7735,6 +7819,7 @@ if (!(window.APP_CONFIG && APP_CONFIG.build === 'P1.2')) {
 if (cfg.token && cfg.usuario) {
   if (cfg.token === 'supabase-v39') v39AplicarContextoIgreja(cfg.usuario, window.G2_V39 && G2_V39.runtime && G2_V39.runtime.state ? G2_V39.runtime.state.context : null);
   iniciarApp(); sincronizar(false); setTimeout(verificarSenhaTemp, 400);
+  if (cfg.token === 'supabase-v39') setTimeout(function () { lgpdAtualizarConsent().then(verificarConsentimento); }, 900);
 }
 else mostrarTela('s-login');
 
@@ -7757,7 +7842,7 @@ window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'SYNC-V39-22';
+  var BUILD = 'SYNC-V39-23';   // SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 

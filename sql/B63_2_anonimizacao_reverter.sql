@@ -30,6 +30,7 @@ begin
   drop function if exists app.v39_privacy_request_decide(uuid,uuid,text,text);
   drop function if exists app.v39_privacy_requests_list(uuid,text);
   drop function if exists app.v39_privacy_request_create(uuid,uuid,text,text);
+  drop function if exists private.v39_dsr_anon_precheck(uuid,uuid,uuid);
   drop function if exists private.v39_dsr_move(uuid,text,text,text,uuid,text,jsonb);
   alter table app.people drop column if exists anonymized_by_user_account_id;
   alter table app.people drop column if exists anonymized_at;
@@ -47,4 +48,4 @@ select
   (select count(*) = 0 from information_schema.columns where table_schema = 'app' and table_name = 'people'
      and column_name in ('anonymized_at', 'anonymized_by_user_account_id')) as colunas_removidas,
   (select count(*) = 0 from pg_proc where proname in ('v39_privacy_request_create','v39_privacy_requests_list','v39_privacy_request_decide',
-     'v39_privacy_anonymize_execute','v39_dsr_move')) as funcoes_removidas;
+     'v39_privacy_anonymize_execute','v39_dsr_move','v39_dsr_anon_precheck')) as funcoes_removidas;

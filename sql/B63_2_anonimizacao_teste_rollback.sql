@@ -66,6 +66,22 @@ begin
     values (p_req, p_old, p_new, p_action, p_actor, p_reason, coalesce(p_meta, '{}'::jsonb))
   $f$;
 
+  -- QA63-05/06: guardas da anonimizacao num lugar so; usada na APROVACAO (pedido nao fica aprovado
+  --   sem poder executar) e na EXECUCAO. Outra igreja = vinculo (church_people) aberto OU acesso
+  --   (church_user_access) nao encerrado de qualquer conta da pessoa: a execucao revoga todas as contas.
+  create function private.v39_dsr_anon_precheck(p_church_id uuid, p_person uuid, p_me uuid) returns void
+  language plpgsql stable security definer set search_path = pg_catalog, app, private as $f$
+  begin
+    if exists (select 1 from app.user_accounts where id = p_me and person_id = p_person) then
+      perform app.raise_domain_error('ANONYMIZATION_SELF_DENIED', 'Nao e possivel anonimizar o proprio cadastro');
+    end if;
+    if exists (select 1 from app.church_people where person_id = p_person and church_id <> p_church_id and ended_at is null)
+       or exists (select 1 from app.church_user_access a join app.user_accounts u on u.id = a.user_account_id
+                   where u.person_id = p_person and a.church_id <> p_church_id and a.status in ('active','pending','suspended')) then
+      perform app.raise_domain_error('ANONYMIZATION_MULTI_CHURCH', 'Pessoa ligada a outra igreja: decisao conjunta necessaria');
+    end if;
+  end $f$;
+
   -- (a) pedido do titular (registrado por quem atende a pessoa)
   create function app.v39_privacy_request_create(p_church_id uuid, p_person_id uuid, p_type text, p_reason text) returns jsonb
   language plpgsql security definer set search_path = pg_catalog, app, private as $f$
@@ -117,6 +133,7 @@ begin
     end if;
     if p_decision not in ('approved','rejected') then perform app.raise_domain_error('DSR_DECISION_INVALID', 'Decisao invalida'); end if;
     if nullif(btrim(p_reason), '') is null then perform app.raise_domain_error('REASON_REQUIRED', 'Informe o motivo'); end if;
+    if d.request_type = 'anonymization' and p_decision = 'approved' then perform private.v39_dsr_anon_precheck(p_church_id, d.person_id, v_me); end if;
     update app.data_subject_requests set status = p_decision, decision_at = now(), decision_reason = left(btrim(p_reason), 500),
            assigned_to_user_account_id = v_me, identity_validated_at = coalesce(identity_validated_at, now()), updated_by = v_me
      where id = d.id;
@@ -142,12 +159,7 @@ begin
     if p_confirm is distinct from 'ANONIMIZAR' then perform app.raise_domain_error('CONFIRMATION_REQUIRED', 'Digite ANONIMIZAR para confirmar'); end if;
     if p_health_mode not in ('block','restrict') then perform app.raise_domain_error('HEALTH_MODE_INVALID', 'Modo invalido'); end if;
     v_person := d.person_id;
-    if exists (select 1 from app.user_accounts where id = v_me and person_id = v_person) then
-      perform app.raise_domain_error('ANONYMIZATION_SELF_DENIED', 'Nao e possivel anonimizar o proprio cadastro');
-    end if;
-    if exists (select 1 from app.church_people where person_id = v_person and church_id <> p_church_id and ended_at is null) then
-      perform app.raise_domain_error('ANONYMIZATION_MULTI_CHURCH', 'Pessoa ligada a outra igreja: decisao conjunta necessaria');
-    end if;
+    perform private.v39_dsr_anon_precheck(p_church_id, v_person, v_me);
     v_health := exists (select 1 from app.v39_inst_records where patient_person_id = v_person)
              or exists (select 1 from app.institute_clinical_records where patient_person_id = v_person)
              or exists (select 1 from app.institute_health_records where person_id = v_person)
@@ -205,7 +217,7 @@ begin
       'authUsersParaDesativar', to_jsonb(coalesce(v_auth, '{}')));
   end $f$;
 
-  revoke all on function private.v39_lgpd_me(uuid), private.v39_lgpd_need(uuid,text), private.v39_dsr_move(uuid,text,text,text,uuid,text,jsonb) from public, anon, authenticated;
+  revoke all on function private.v39_lgpd_me(uuid), private.v39_lgpd_need(uuid,text), private.v39_dsr_move(uuid,text,text,text,uuid,text,jsonb), private.v39_dsr_anon_precheck(uuid,uuid,uuid) from public, anon, authenticated;
   revoke all on function app.v39_privacy_request_create(uuid,uuid,text,text), app.v39_privacy_requests_list(uuid,text),
     app.v39_privacy_request_decide(uuid,uuid,text,text), app.v39_privacy_anonymize_execute(uuid,uuid,text,text) from public, anon;
   grant execute on function app.v39_privacy_request_create(uuid,uuid,text,text), app.v39_privacy_requests_list(uuid,text),
@@ -471,7 +483,39 @@ begin
     if sqlerrm like 'FALHOU%' then raise; end if;
     if sqlstate <> '42501' then raise exception 'FALHOU T11c: erro inesperado % %', sqlstate, sqlerrm; end if;
   end;
-  v_res := v_res || 'T11 ok';
+  v_res := v_res || 'T11 ok; ';
+
+  -- T12 (QA63-06) acesso ativo/pendente em OUTRA igreja (sem church_people la) bloqueia ja na APROVACAO
+  insert into app.church_user_access (church_id, user_account_id, status) values (v_ch2, v_ua_d, 'pending');
+  r := app.v39_privacy_request_create(v_ch1, v_p_d, 'anonymization', 'teste multi-igreja por acesso');
+  v_req_r := (r->>'pedidoId')::uuid;
+  begin
+    perform app.v39_privacy_request_decide(v_ch1, v_req_r, 'approved', 'Identidade conferida');
+    raise exception 'FALHOU T12a';
+  exception when others then
+    if sqlerrm like 'FALHOU%' then raise; end if;
+    if sqlerrm <> 'ANONYMIZATION_MULTI_CHURCH' then raise exception 'FALHOU T12a: erro inesperado %', sqlerrm; end if;
+  end;
+  select count(*) into v_n from app.data_subject_requests where id = v_req_r and status = 'received';
+  if v_n <> 1 then raise exception 'FALHOU T12b: pedido nao ficou em received'; end if;
+  perform app.v39_privacy_request_decide(v_ch1, v_req_r, 'rejected', 'Bloqueado: ANONYMIZATION_MULTI_CHURCH');
+  select count(*) into v_n from app.user_accounts where id = v_ua_d and status = 'active';
+  if v_n <> 1 then raise exception 'FALHOU T12c: conta alterada'; end if;
+  v_res := v_res || 'T12 ok; ';
+
+  -- T13 (QA63-05) proprio cadastro: recusado na APROVACAO (antes: so na execucao, com pedido ja aprovado)
+  insert into app.church_people (church_id, person_id, status) values (v_ch1, v_p_m, 'active');
+  r := app.v39_privacy_request_create(v_ch1, v_p_m, 'anonymization', 'teste proprio cadastro');
+  begin
+    perform app.v39_privacy_request_decide(v_ch1, (r->>'pedidoId')::uuid, 'approved', 'Identidade conferida');
+    raise exception 'FALHOU T13a';
+  exception when others then
+    if sqlerrm like 'FALHOU%' then raise; end if;
+    if sqlerrm <> 'ANONYMIZATION_SELF_DENIED' then raise exception 'FALHOU T13a: erro inesperado %', sqlerrm; end if;
+  end;
+  select count(*) into v_n from app.data_subject_requests where id = (r->>'pedidoId')::uuid and status = 'received';
+  if v_n <> 1 then raise exception 'FALHOU T13b'; end if;
+  v_res := v_res || 'T13 ok';
 
   raise exception 'TESTE B63_2 CONCLUIDO (nada foi gravado): %', v_res;
 end

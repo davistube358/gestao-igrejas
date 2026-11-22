@@ -1,4 +1,9 @@
-/* 2Gather v39 · Cadastro de acesso (autocadastro antes do login) · ACESSO-2
+/* 2Gather v39 · Cadastro de acesso (autocadastro antes do login) · ACESSO-3
+   ACESSO-3 (LGPD-1, Build 63): o cadastro envia politicaV (versão da Política de Privacidade exibida/vigente,
+     via G2_LGPD.versaoPublica). A Edge "auth" grava pedido + aceite numa transação. Com a Edge ANTIGA, o
+     cadastro segue como antes (sem politicaV). Com a Edge NOVA e sem política publicada, a Edge responde 503
+     (por isso a ordem de publicação: master publica a v1 ANTES do deploy da Edge auth).
+     QA63-03: se a política mudou (409), o aceite é desmarcado: a pessoa precisa abrir a versão nova e aceitar de novo.
    ACESSO-2: quem escolhe uma função que NÃO é de GC (Secretaria, Tesouraria, Voluntário Lar de Vida, Voluntário Instituto, Profissional de saúde) não escolhe mais GC:
      o campo "De qual GC você participa?" fica desligado ("Esta função não participa de GC") e o GC não é enviado. Evita que o profissional entre num GC na aprovação.
    ACESSO-1 (base)
@@ -44,7 +49,7 @@
     }).then(function (r) {
       return r.text().then(function (t) {
         var j = {}; try { j = t ? JSON.parse(t) : {}; } catch (e) {}
-        if (!r.ok || j.ok === false) throw new Error(traduz(j.erro || j.message || j.mensagem || j.code || ('Erro ' + r.status)));
+        if (!r.ok || j.ok === false) throw Object.assign(new Error(traduz(j.erro || j.message || j.mensagem || j.code || ('Erro ' + r.status))), { status: r.status, codigo: j.codigo || '' });
         return j;
       });
     }, function () { throw new Error('Sem conexão com o servidor. Verifique a internet.'); });
@@ -105,13 +110,22 @@
     if (v('c-gc') && SEM_GC_FUNCAO.indexOf(d.perfil) < 0) d.gcId = v('c-gc');
     erroEm('c-erro', ''); var b = $('b-cadastrar'); if (b) b.disabled = true;
     carregando(true, 'Enviando cadastro...');
-    edge('cadastro', d).then(function () {
+    var L = window.G2_LGPD;
+    (L && typeof L.versaoPublica === 'function' ? L.versaoPublica().catch(function () { return null; }) : Promise.resolve(null)).then(function (ver) {
+      if (ver) d.politicaV = ver;
+      return edge('cadastro', d);
+    }).then(function () {
       if ($('cad-form')) $('cad-form').classList.add('hide');
       if ($('cad-ok')) $('cad-ok').classList.remove('hide');
       if ($('c-aceite')) $('c-aceite').checked = false;
       ['c-nome', 'c-usuario', 'c-fone', 'c-email', 'c-senha', 'c-senha2', 'c-obs'].forEach(function (id) { if ($(id)) $(id).value = ''; });
       if ($('l-usuario')) $('l-usuario').value = u;
-    }).catch(function (e) { erroEm('c-erro', (e && e.message) || 'Não foi possível enviar o cadastro.'); })
+    }).catch(function (e) {
+      if (L && typeof L.esquecerVersaoPublica === 'function') L.esquecerVersaoPublica();   // política pode ter mudado: busca de novo no próximo envio
+      var mudou = !!(e && e.codigo === 'PRIVACY_VERSION_NOT_CURRENT');
+      if (mudou && $('c-aceite')) $('c-aceite').checked = false;   // QA63-03: não reenvia aceite de versão que a pessoa não viu
+      erroEm('c-erro', ((e && e.message) || 'Não foi possível enviar o cadastro.') + (mudou ? ' Abra a Política de Privacidade, leia a versão atual e marque o aceite de novo.' : ''));
+    })
       .then(function () { if (b) b.disabled = false; carregando(false); });
   }
 
@@ -125,5 +139,5 @@
   }
   function instalar() { var a = religar('b-ir-cadastro', abrirCadastro), b = religar('b-cadastrar', cadastrar); return a && b; }
   if (!instalar()) { var n = 0, t = setInterval(function () { if (instalar() || ++n > 40) clearInterval(t); }, 250); }
-  window.G2_ACESSO = { versao: 'ACESSO-1', perfil: perfil };
+  window.G2_ACESSO = { versao: 'ACESSO-3', perfil: perfil };
 })();

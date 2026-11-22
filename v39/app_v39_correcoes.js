@@ -90,7 +90,7 @@
       return f >= agM;
     }).sort(ordena)[0] || null;
   }
-  function pessoasAtivas() { return (db().pessoas || []).filter(function (p) { return p && !p.deleted && !p.anonimizadoEm && p.status !== 'Inativo'; }); }
+  function pessoasAtivas() { return (db().pessoas || []).filter(function (p) { return p && !p.deleted && !p.anonimizadoEm && !p.restritoLgpd && p.status !== 'Inativo'; }); }
   function aniversarioEm(p) {
     if (!p.nasc || String(p.nasc).length < 10) return null;
     var base = parse(hoje());
