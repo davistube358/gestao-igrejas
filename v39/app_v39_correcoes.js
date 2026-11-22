@@ -1,4 +1,4 @@
-/* 2Gather v39 · Correções gerais · CORRECAO-8
+/* 2Gather v39 · Correções gerais · CORRECAO-9
    Carregar DEPOIS do app.js (SYNC-V39-15) e ANTES de app_v39_setores.js. Não altera o app.js.
    Substitui qualquer app_v39_correcoes*.js anterior: no index.html deixe só este.
    Requer (para o item 3): v39_campanhas_equipe_c2.sql no Supabase.
@@ -8,10 +8,11 @@
    3) Equipe fora de "Direcionar ao GC": Master, Pastor, Secretaria e Tesouraria recebem a marca "usuário do app".
       CORRECAO-8: o redesenho da tela só acontece quando a marca realmente MUDOU algum cadastro. Antes, a cada 5 minutos
       (quando a lista da equipe era relida) a tela era redesenhada mesmo sem nada novo — era uma das causas da tela
-      "atualizando sozinha". */
+      "atualizando sozinha".
+   CORRECAO-9 (Build 63, LGPD): aniversariantes e novos visitantes do carrossel ignoram pessoa anonimizada ou restrita. */
 (function () {
   'use strict';
-  var VERSAO = 'CORRECAO-8';
+  var VERSAO = 'CORRECAO-9';
   if (window.G2_CORRECOES) return;
   window.G2_CORRECOES = VERSAO;
   console.info('[2Gather] correções ' + VERSAO);

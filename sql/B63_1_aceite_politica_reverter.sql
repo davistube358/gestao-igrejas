@@ -12,7 +12,8 @@
 --   remover nada. Linhas gravadas em app.person_consents, person_consent_history, audit.events e
 --   a finalidade 'privacy_policy' em app.processing_purposes ficam (sao historico).
 -- Os gates private.v39_lgpd_me/need so sao removidos se B63_2 e B63_3 nao estiverem aplicados.
--- Ordem de reversao do Build 63: B63_9 -> B63_2 -> B63_3 -> B63_1.
+-- Ordem de aplicacao do Build 63: B63_1 -> B63_9 -> B63_3 -> B63_2 -> B63_5.
+-- Ordem de reversao do Build 63: B63_9 -> B63_5 -> B63_2 -> B63_3 -> B63_1.
 -- Antes de reverter: voltar a Edge "auth" e o front para nao chamarem as funcoes novas.
 -- =====================================================================
 begin;

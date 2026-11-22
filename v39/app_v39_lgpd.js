@@ -1,4 +1,4 @@
-/* 2Gather v39 · LGPD e Auditoria (Build 63) · LGPD-1
+/* 2Gather v39 · LGPD e Auditoria (Build 63) · LGPD-2
    Carregar DEPOIS do app.js. Contrato: sql/B63_1_aceite_politica_aplicar.sql, B63_2_anonimizacao_aplicar.sql,
    B63_3_auditoria_aplicar.sql e a Edge Function "auth" (acoes politica, cadastro com politicaV e anonimizarConta).
    - Mapeia em G2_V39.p1: aceitarPolitica, publicarPolitica, anonimizarPessoa (mutacoes) e auditoria (leitura).
@@ -6,12 +6,17 @@
    - DEGRADACAO: o banco pode ainda nao ter as RPCs novas (ordem: banco -> Edge -> front). Se a RPC nao existe
      (PGRST202 / 42883 / 404), devolve null para o app.js manter o comportamento antigo e registra um aviso no
      Console. Nunca trava o login nem quebra a tela.
-   - Correcoes do QA-63 (ainda LGPD-1, nao publicado): QA63-04 (V39_LGPD_SEM_VERSAO), QA63-05 (pedido recusado
+   - Correcoes do QA-63 (publicadas no LGPD-1): QA63-04 (V39_LGPD_SEM_VERSAO), QA63-05 (pedido recusado
      quando a regra impede aprovar) e QA63-07 (texto do 400). Pessoa anonimizada/restringida: sql/B63_5_*.
+   - LGPD-2 (re-teste QA-63R + D4): QA63R-03 (400 "Ação desconhecida." = Edge antiga); mensagem(cod) para o app.js
+     traduzir PERSON_ANONYMIZED / PERSON_RESTRICTED (QA63R-04); "Pessoas restringidas" (D4): restringidas() le
+     v39_privacy_restricted_list e retirarRestricao() chama v39_privacy_restriction_lift (motivo >= 10 caracteres).
+     Ambas exigem privacy.manage no banco. RPC ausente ou sem permissao: restringidas() devolve null e a area nao aparece.
+     Retirar a restricao NAO reativa o acesso ao app e nao mexe em prontuario/receitas.
    Nao guarda dados pessoais: so versao da politica e situacao do aceite do proprio usuario (em memoria). */
 (function () {
   'use strict';
-  var VERSAO = 'LGPD-1';
+  var VERSAO = 'LGPD-2';
   if (window.G2_LGPD) return;
   console.info('[2Gather] lgpd ' + VERSAO);
 
@@ -75,6 +80,9 @@
     DSR_TYPE_INVALID: 'Tipo de pedido inválido.',
     DSR_DECISION_INVALID: 'Decisão inválida.',
     PERSON_NOT_IN_CHURCH: 'Esta pessoa não pertence a esta igreja.',
+    RESTRICTION_LIFT_REASON_REQUIRED: 'Informe o motivo para retirar a restrição (mínimo de 10 caracteres).',
+    PERSON_NOT_RESTRICTED: 'Esta pessoa não está restringida (a restrição já foi retirada). Atualize a lista.',
+    RESTRICTION_NOT_FOUND: 'A restrição desta pessoa não foi feita por esta igreja (ou o vínculo com a igreja foi encerrado). Só quem restringiu pode retirar.',
     REASON_REQUIRED: 'Informe o motivo.'
   };
   function erro(e, padrao, chave) {
@@ -205,9 +213,11 @@
     return edge('anonimizarConta', { igrejaId: igrejaId(), pedidoId: pedidoId }, true).then(function (j) {
       if (j.__status === 200 && j.ok) return { ok: true, conta: j };
       console.warn('[2Gather][lgpd] anonimizarConta não concluída (pedido ' + pedidoId + ')', j.__status, j.erro || '');
-      // QA63-07: a Edge nova também responde 400 (igreja/pedido inválido) com "erro"; 400 sem texto = Edge antiga, sem a ação
-      return { ok: false, aviso: j.erro ? j.erro + ' O acesso ao app e a foto não foram desligados por completo.'
-        : j.__status === 400 ? 'A Edge "auth" ainda não tem a ação anonimizarConta: o acesso ao app e a foto ainda não foram desligados.'
+      // QA63-07: a Edge nova também responde 400 (igreja/pedido inválido) com "erro".
+      // QA63R-03: a Edge antiga (auth v3) responde 400 "Ação desconhecida." (ou 400 sem texto): é a Edge sem a ação.
+      var edgeAntiga = j.__status === 400 && !j.codigo && (!j.erro || /^a[çc][ãa]o desconhecida\.?$/i.test(String(j.erro).trim()));
+      return { ok: false, aviso: edgeAntiga ? 'A Edge "auth" ainda não tem a ação anonimizarConta: o acesso ao app e a foto ainda não foram desligados.'
+        : j.erro ? j.erro + ' O acesso ao app e a foto não foram desligados por completo.'
         : 'O acesso ao app e a foto não foram desligados por completo.' };
     }, function (e) {
       console.warn('[2Gather][lgpd] anonimizarConta falhou (pedido ' + pedidoId + ')', e);
@@ -230,6 +240,32 @@
     }, function (e) {
       var x = erro(e, 'A anonimização', 'v39_privacy_*'); if (pedido) x.pedidoId = pedido; throw x;
     });
+  }
+
+  /* ---------- D4: pessoas restringidas (retirar restricao) ---------- */
+  var MOTIVO_MIN = 10;
+  /** Lista das pessoas restringidas desta igreja; null = RPC ausente ou sem permissao (a area nao aparece). */
+  function restringidas() {
+    if (!logado()) return Promise.resolve(null);
+    return rpc('v39_privacy_restricted_list', { p_church_id: igrejaId() }).then(function (l) {
+      return (Array.isArray(l) ? l : []).filter(function (x) { return x && x.pessoaId; }).map(function (x) {
+        return { pessoaId: String(x.pessoaId), nome: x.nome || '', restritoEm: x.restritoEm || '', pedidoId: x.pedidoId || '',
+          statusAnterior: x.statusAnterior || '', motivo: x.motivo || '' };
+      });
+    }, function (e) {
+      if (ausente(e)) { avisar('v39_privacy_restricted_list', e); return null; }
+      var c = codigo(e);
+      if (c === 'PERMISSION_DENIED' || c === 'ACCESS_DENIED' || (e && e.code === '42501')) return null;
+      throw erro(e, 'A lista de pessoas restringidas', 'v39_privacy_restricted_list');
+    });
+  }
+  function retirarRestricao(pid, motivo) {
+    pid = String(pid || ''); motivo = String(motivo || '').trim();
+    if (!/^[0-9a-f-]{36}$/i.test(pid)) return Promise.reject(new Error('Cadastro inválido.'));
+    if (motivo.length < MOTIVO_MIN) return Promise.reject(Object.assign(new Error(MSG.RESTRICTION_LIFT_REASON_REQUIRED), { code: 'RESTRICTION_LIFT_REASON_REQUIRED' }));
+    return rpc('v39_privacy_restriction_lift', { p_church_id: igrejaId(), p_person_id: pid, p_reason: motivo }).then(function (r) {
+      return { ok: true, pessoaId: (r && r.pessoa && r.pessoa.id) || pid, statusNovo: (r && r.statusNovo) || '' };
+    }, function (e) { throw erro(e, 'Retirar a restrição', 'v39_privacy_restriction_lift'); });
   }
 
   /* ---------- leitura: auditoria ---------- */
@@ -261,6 +297,8 @@
   }
   if (!instalar()) { var n = 0, t = setInterval(function () { if (instalar() || ++n > 240) clearInterval(t); }, 250); }
 
+  /** Texto de um código de erro do banco (ex.: PERSON_RESTRICTED); '' se não conhecido. Usado pelo app.js (QA63R-04). */
+  function mensagem(cod) { return MSG[String(cod || '')] || ''; }
   window.G2_LGPD = { versao: VERSAO, politica: politica, status: status, versaoPublica: versaoPublica, esquecerVersaoPublica: esquecerVersaoPublica, desligarConta: desligarConta,
-    _ausente: ausente };
+    mensagem: mensagem, restringidas: restringidas, retirarRestricao: retirarRestricao, motivoMinimo: MOTIVO_MIN, _ausente: ausente };
 })();

@@ -1,4 +1,4 @@
-/* 2Gather v39 · Treinamentos/Reuniões e Cursos do Instituto · TRN-3
+/* 2Gather v39 · Treinamentos/Reuniões e Cursos do Instituto · TRN-4
    SUBSTITUI o app_v39_treinamentos.js (TRN-2): no index.html deixe só este arquivo.
    Carregar DEPOIS do app.js e dos demais módulos v39. Não altera o app.js.
    Requer, no Supabase: v39_treinamentos_completo.sql (TRN-1) e v39_treinamentos_avisos_t2.sql (TRN-2). NÃO exige SQL novo.
@@ -10,6 +10,8 @@
       Lembretes "Hoje" e "Amanhã" aparecem do mesmo jeito.
    3) LEMBRETES PELO WHATSAPP para quem gerencia: na tela de Treinamentos/Cursos aparece a fila das datas de hoje até
       daqui a 2 dias; cada participante tem o botão "Enviar" (abre o WhatsApp com a mensagem pronta e marca como enviado).
+   TRN-4
+   - LGPD (B63): participante com cadastro restringido ou anonimizado não fornece telefone para lembrete (nem pelo aparelho, nem pelo servidor).
    TRN-3
    - TELEFONE: a fila vinha do servidor com o telefone que estava gravado na lista de participantes no dia em que a pessoa
      foi escolhida (quase sempre vazio). Agora o telefone é completado na hora: 1º pelo cadastro que o app já carregou
@@ -18,7 +20,7 @@
      "Enviar" marca como enviadas as duas chaves. */
 (function () {
   'use strict';
-  var VERSAO = 'TRN-3';
+  var VERSAO = 'TRN-4';
   if (window.G2_TRN) return;
   window.G2_TRN = { versao: VERSAO };
   console.info('[2Gather] treinamentos ' + VERSAO);
@@ -208,10 +210,17 @@
     if (tipoChave(ch) === 'p:') return idChave(ch);
     var u = usuarioDe(ch); return u && u.pessoaId ? String(u.pessoaId) : '';
   }
+  // LGPD (B63): cadastro restringido ou anonimizado não fornece telefone para lembrete
+  function travadaLgpd(pe) { return !!(pe && (pe.restritoLgpd || pe.anonimizadoEm)); }
+  function pessoaTravadaId(pid) {
+    var l = (db() || {}).pessoas || [];
+    for (var i = 0; i < l.length; i++) if (pid && String(l[i].id) === String(pid)) return travadaLgpd(l[i]);
+    return false;
+  }
   function pessoaLocal(pid, nome) {
     var d = db() || {}, l = d.pessoas || [], i, alvo = norm(nome), achou = [];
-    for (i = 0; i < l.length; i++) if (!l[i].deleted && pid && String(l[i].id) === String(pid)) return l[i];
-    for (i = 0; i < l.length; i++) if (!l[i].deleted && norm(l[i].nome) === alvo) achou.push(l[i]);
+    for (i = 0; i < l.length; i++) if (!l[i].deleted && pid && String(l[i].id) === String(pid)) return travadaLgpd(l[i]) ? null : l[i];
+    for (i = 0; i < l.length; i++) if (!l[i].deleted && !travadaLgpd(l[i]) && norm(l[i].nome) === alvo) achou.push(l[i]);
     return achou.length === 1 ? achou[0] : null;
   }
   function foneLocal(p) {
@@ -247,7 +256,7 @@
     var fila = [];
     Q.lista.forEach(function (it) {
       ajustar(it.participantes).forEach(function (p) {
-        if (!foneDe(p) && !p.enviado && !TENTOU[p.chave] && String(p.nome || '').trim().length >= 3 && fila.every(function (x) { return x.chave !== p.chave; })) fila.push(p);
+        if (!foneDe(p) && !p.enviado && !TENTOU[p.chave] && !pessoaTravadaId(pessoaIdDe(p.chave)) && String(p.nome || '').trim().length >= 3 && fila.every(function (x) { return x.chave !== p.chave; })) fila.push(p);
       });
     });
     if (!fila.length) return;

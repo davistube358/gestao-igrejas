@@ -12,7 +12,12 @@
 --   data_subject_requests / data_subject_request_history / audit.events ficam.
 -- A anonimizacao ja executada NAO e desfeita (e irreversivel por desenho).
 -- Os gates private.v39_lgpd_me/need so saem se B63_1 e B63_3 nao estiverem aplicados.
--- Ordem de reversao do Build 63: B63_9 -> B63_2 -> B63_3 -> B63_1.
+-- Ordem de aplicacao do Build 63: B63_1 -> B63_9 -> B63_3 -> B63_2 -> B63_5.
+-- Ordem de reversao do Build 63: B63_9 -> B63_5 -> B63_2 -> B63_3 -> B63_1.
+-- QA63R-02 (22/11/2026): ABORTA se o B63_5 ainda estiver aplicado (gatilhos trg_v39_lgpd_guard_* ou
+--   funcoes private.v39_lgpd_guard_*). Sem isso a coluna anonymized_at sairia, o gatilho do B63_5
+--   continuaria preso em app.people e todo UPDATE de pessoa falharia ("record old has no field anonymized_at").
+-- D4: o status anterior guardado pelo modo restrict fica so na metadata do historico/audit (nada a remover aqui).
 -- Antes de reverter: o front deve parar de chamar as funcoes de anonimizacao.
 -- =====================================================================
 begin;
@@ -20,6 +25,13 @@ begin;
 do $r$
 declare v_n int;
 begin
+  select count(*) into v_n from pg_trigger where not tgisinternal and tgname like 'trg\_v39\_lgpd\_guard\_%';
+  if v_n > 0
+     or to_regprocedure('private.v39_lgpd_guard_people()') is not null
+     or to_regprocedure('private.v39_lgpd_guard_person_child()') is not null
+     or to_regprocedure('private.v39_lgpd_guard_church_people()') is not null then
+    raise exception 'B63_2 REVERTER ABORTADO: o B63_5 ainda esta aplicado (% gatilho(s) trg_v39_lgpd_guard_*). Rode antes o B63_5_trava_pessoa_anonimizada_reverter.sql (ordem: B63_9 -> B63_5 -> B63_2 -> B63_3 -> B63_1). Nada foi removido.', v_n;
+  end if;
   if exists (select 1 from information_schema.columns where table_schema = 'app' and table_name = 'people' and column_name = 'anonymized_at') then
     execute 'select count(*) from app.people where anonymized_at is not null' into v_n;
     if v_n > 0 then

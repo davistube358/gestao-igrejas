@@ -236,8 +236,22 @@ function editaPessoas() { return pode('gc') || pode('rede') || pode('lvDireciona
 /** Alterar dados pessoais de um cadastro existente: master, pastor e secretaria;
     quem criou o cadastro, nas primeiras 48 horas. (O banco aplica a mesma regra.) */
 var EDICAO_HORAS = 48;
+/* QA63R-01/04 (LGPD): pessoa anonimizada ou com tratamento restrito não entra nas listas gerais e não é alterada
+   por nenhuma entrada do app (o banco recusa com PERSON_ANONYMIZED / PERSON_RESTRICTED). A busca por id (pessoaPor)
+   continua achando o cadastro para a ficha e para o fluxo de anonimização do master. */
+function travaLgpd(p) { return !p ? '' : p.anonimizadoEm ? 'PERSON_ANONYMIZED' : p.restritoLgpd ? 'PERSON_RESTRICTED' : ''; }
+/** Texto do código PERSON_* (a tradução fica no módulo LGPD; aqui só o texto de reserva, se o módulo não carregou). */
+function msgTravaLgpd(cod) {
+  var L = window.G2_LGPD, m = L && typeof L.mensagem === 'function' ? L.mensagem(cod) : '';
+  return m || (cod === 'PERSON_ANONYMIZED' ? 'Esta pessoa foi anonimizada (LGPD): o cadastro não pode ser alterado.'
+    : 'Esta pessoa tem o tratamento restrito (LGPD): o cadastro não pode ser alterado.');
+}
+function avisoTravaLgpd(p) {
+  var c = travaLgpd(p); return c ? '<div class="aviso r" style="margin:8px 0;font-size:12.5px;line-height:1.5">' + esc(msgTravaLgpd(c)) + '</div>' : '';
+}
 function podeAlterarPessoa(p) {
   if (!p) return editaPessoas() || pode('visitantes');
+  if (travaLgpd(p)) return false;                                                           // QA63R-04
   var pp = papel();
   if (pp === 'master' || pp === 'pastor' || pp === 'secretaria') return true;
   if (p._pend && !/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(String(p.id || ''))) return true;        // criado neste aparelho, ainda não enviado
@@ -248,7 +262,7 @@ function podeAlterarPessoa(p) {
 }
 /** Trocar/remover a foto de um cadastro: quem pode alterar o cadastro, ou o próprio usuário na própria foto. */
 function podeFotoPessoa(p) {
-  if (!p) return false;
+  if (!p || travaLgpd(p)) return false;                                                     // QA63R-04: nem a própria foto
   if (eu().pessoaId && p.id === eu().pessoaId) return true;
   return podeAlterarPessoa(p);
 }
@@ -291,7 +305,9 @@ function GCS() { return db.gcs.filter(function (g) { return !g.deleted; }); }
 function GCSativos() { return GCS().filter(function (g) { return g.status !== 'Inativo'; }); }
 function gcPor(id) { for (var i = 0; i < db.gcs.length; i++) if (db.gcs[i].id === id) return db.gcs[i]; return null; }
 function gcNome(id) { var g = gcPor(id); return g ? g.nome : '—'; }
-function PES(gcId) { return db.pessoas.filter(function (p) { return !p.deleted && (!gcId || p.gcId === gcId); }); }
+function PES(gcId) { return db.pessoas.filter(function (p) { return !p.deleted && !travaLgpd(p) && (!gcId || p.gcId === gcId); }); }   // QA63R-01: sem anonimizada/restrita
+/** Todos os cadastros não excluídos, inclusive os travados pela LGPD (só para contagens estruturais, ex.: excluir GC). */
+function PEStodos(gcId) { return db.pessoas.filter(function (p) { return !p.deleted && (!gcId || p.gcId === gcId); }); }
 function ENC(gcId) { return db.encontros.filter(function (e) { return !e.deleted && (!gcId || e.gcId === gcId); }); }
 function encOrd(gcId) { return ENC(gcId).slice().sort(function (a, b) { return a.data < b.data ? -1 : 1; }); }
 function achaEnc(gcId, data) { var l = ENC(gcId); for (var i = 0; i < l.length; i++) if (l[i].data === data) return l[i]; return null; }
@@ -1466,7 +1482,7 @@ function editarGC(id) {
 }
 function excluirGC(id) {
   var g = gcPor(id); if (!g) return;
-  if (PES(id).length && !confirm('Este GC tem ' + PES(id).length + ' pessoa(s). Elas continuam na planilha, mas o GC sairá das telas. Excluir?')) return;
+  if (PEStodos(id).length && !confirm('Este GC tem ' + PEStodos(id).length + ' pessoa(s). Elas continuam na planilha, mas o GC sairá das telas. Excluir?')) return;
   if (!confirm('Excluir o GC "' + g.nome + '"? Prefira marcar como Inativo se quiser manter o histórico no Painel.')) return;
   gcForm = {}; for (var k in g) gcForm[k] = g[k];
   carregando(true, 'Excluindo...');
@@ -1830,7 +1846,7 @@ function abrirPessoa(id, ctx) {
   var end = separarBairroCidade(p ? p.bairro : '', p ? p.cidade : '');
   fotoNovaP = null; fpAlvo = { pid: id || '', direto: false };
   abrirModal('<h2>' + (p ? (ro ? esc(p.nome) : 'Editar pessoa') : (ctx.addChamada ? 'Visitante — 1ª visita' : 'Nova pessoa')) + '</h2>' +
-    (p && p.origem ? '<span class="pill p-dour">' + esc(p.origem) + '</span>' : '') + (p ? lvResumoPill(p) + pillIgreja(p) : '') + (p && ro && editaPessoas() ? avisoSoLeitura(p) : '') +
+    (p && p.origem ? '<span class="pill p-dour">' + esc(p.origem) + '</span>' : '') + (p ? lvResumoPill(p) + pillIgreja(p) : '') + (p && travaLgpd(p) ? avisoTravaLgpd(p) : p && ro && editaPessoas() ? avisoSoLeitura(p) : '') +
     (ro ? '' : campoFotoPessoa(id || '')) +
     '<label>Nome completo *</label><input id="f-nome" value="' + g('nome') + '"' + dis + '>' +
     '<label>Como gostaria de ser chamado(a) / apelido</label><input id="f-apelido" value="' + g('apelido') + '" placeholder="Ex.: Juninho, Dona Cida"' + dis + '>' +
@@ -1864,6 +1880,7 @@ function salvarPessoa(forcar) {
   var v = function (id) { var el = $(id); return el ? el.value.trim() : ''; };
   if (!v('f-nome')) return toast('Informe o nome.');
   var ant = editP ? db.pessoas.filter(function (x) { return x.id === editP; })[0] : null;
+  if (ant && travaLgpd(ant)) return toast(msgTravaLgpd(travaLgpd(ant)), 5500);                // QA63R-04: não grava nem enfileira
   if (ant && !podeAlterarPessoa(ant)) return toast('Somente secretaria, pastor ou master alteram este cadastro.', 4500);
   var errC = validarConsent('f', !ant); if (errC) return toast(errC, 4500);
   var o = {};
@@ -1894,6 +1911,7 @@ function gravarPessoaGC(o, ant) {
 }
 function excluirPessoa() {
   var pEx = editP ? pessoaPor(editP) : null;
+  if (pEx && travaLgpd(pEx)) return toast(msgTravaLgpd(travaLgpd(pEx)), 5500);                // QA63R-04
   if (pEx && !podeAlterarPessoa(pEx)) return toast('Somente secretaria, pastor ou master podem excluir este cadastro.', 4500);
   if (!confirm('Excluir esta pessoa?')) return;
   db.pessoas = db.pessoas.map(function (p) { if (p.id === editP) { p.deleted = true; p.updatedAt = agora(); p._pend = true; } return p; });
@@ -2320,7 +2338,7 @@ function v39BaixarFotos(ids) {
 }
 /* Envia ao Supabase tudo que ficou marcado como pendente no aparelho. */
 async function v39EnviarPendentes() {
-  var res = { enviados: 0, falhas: [], pessoasSemContrato: 0, duplicados: [], recusados: [] };
+  var res = { enviados: 0, falhas: [], pessoasSemContrato: 0, duplicados: [], recusados: [], travadosLgpd: [] };
   var H = window.G2_V39 && G2_V39.p1;
   var pessoas = (db.pessoas || []).filter(function (p) { return p._pend; });
   for (var i = 0; i < pessoas.length; i++) {
@@ -2361,6 +2379,16 @@ async function v39EnviarPendentes() {
       res.enviados++;
     } catch (err) {
       var tx = String((err && (err.code || '')) + ' ' + (err && (err.details || '')) + ' ' + (err && (err.message || err)));
+      var travaSrv = /PERSON_ANONYMIZED|PERSON_RESTRICTED/.exec(tx);
+      if (travaSrv) {
+        // QA63R-04: o banco recusou porque a pessoa está anonimizada/restrita (LGPD). Não adianta repetir: tira da fila,
+        // marca o cadastro como travado (a próxima leitura traz o estado do servidor) e avisa com o texto traduzido.
+        pe._pend = false;
+        if (travaSrv[0] === 'PERSON_RESTRICTED') pe.restritoLgpd = true; else pe.anonimizadoEm = pe.anonimizadoEm || agora();
+        if (fotoPend[pe.id]) { delete fotoPend[pe.id]; salvarFotosP(); }
+        res.travadosLgpd.push({ nome: pe.nome || 'Pessoa', codigo: travaSrv[0] });
+        continue;
+      }
       if (/PERMISSION_DENIED|PERSON_EDIT_DENIED/.test(tx)) {
         // O servidor recusou por falta de permissão: não adianta tentar de novo. Descarta do aparelho e avisa.
         if (v39Uuid(pe.id)) {
@@ -2383,6 +2411,7 @@ async function v39EnviarPendentes() {
   }
   salvarDB();
   if (res.recusados.length) toast('Sem permissão para alterar o cadastro de ' + res.recusados.join(', ') + '. A alteração foi descartada. Somente secretaria, pastor ou master alteram cadastros.', 8000);
+  if (res.travadosLgpd.length) toast(res.travadosLgpd.map(function (x) { return x.nome + ': ' + msgTravaLgpd(x.codigo); }).join(' ') + ' A alteração foi descartada.', 8000);
   if (res.duplicados.length) toast(res.duplicados.join(', ') + ' já estava(m) cadastrado(s) na igreja. O cadastro existente foi usado e nenhuma pessoa foi duplicada.', 7000);
   return res;
 }
@@ -2930,6 +2959,7 @@ return campoFotoPessoa(p ? p.id : '') + '<label>Nome completo *</label><input id
 }
 function lvAbrirForm(pid) {
 var p = pid ? pessoaPor(pid) : null;
+if (p && travaLgpd(p)) return toast(msgTravaLgpd(travaLgpd(p)), 5500);                        // QA63R-04
 if (p && !podeAlterarPessoa(p)) return toast('Somente secretaria, pastor ou master alteram este cadastro. Quem cadastrou pode corrigir nas primeiras ' + EDICAO_HORAS + ' horas.', 5500);
 lvModoCad = 'visitante';
 abrirModal('<h2>' + (p ? 'Editar visitante' : 'Visitante da igreja') + '</h2><span class="pill p-dour">visita igreja</span>' + lvForm(p) +
@@ -2986,6 +3016,7 @@ if (!v('v-sexo')) return toast('Informe o sexo — ele define o GC indicado (hom
 if (!v('v-bairro')) return toast('Informe o bairro — ele define o GC mais próximo.');
 var modo = forcar && lvPendente ? (lvPendente._modo || 'visitante') : (pid ? 'visitante' : lvModoCad);
 var ant = pid ? pessoaPor(pid) : null, o = {};
+if (ant && travaLgpd(ant)) { lvPendente = null; return toast(msgTravaLgpd(travaLgpd(ant)), 5500); }   // QA63R-04
 if (ant) for (var k in ant) o[k] = ant[k];
 else if (modo === 'membro') {
   if (!v('v-gc')) return toast('Escolha o GC para onde o membro será direcionado.');
@@ -3579,7 +3610,7 @@ function rConfig() {
       : '<textarea id="cf-politica" rows="12" style="font-size:13px;line-height:1.5">' + esc(c.politica) + '</textarea>') +
     '<div style="font-size:11px;color:#999;margin-top:6px;line-height:1.5">É um <b>modelo</b> — revise com um advogado antes de divulgar. Ao alterar o texto, todos os usuários precisarão aceitar a nova versão no próximo acesso.</div>' +
     (c.politicaModelo ? '<div style="text-align:right;margin-top:6px"><span class="pill p-cinza" data-a="cfModeloPolitica" style="cursor:pointer">restaurar modelo</span></div>' : '') +
-    blocoPublicarPolitica(c) + '</div>' +
+    blocoPublicarPolitica(c) + blocoRestringidas() + '</div>' +
     blocoJornadaCfg() +
     '<button class="btn pr" data-a="cfSalvar">Salvar configurações</button>';
 }
@@ -3723,6 +3754,62 @@ function lgpdPublicar() {
     toast('Política publicada ✓ — versão ' + (r.versao || ver) + ': todos aceitarão no próximo acesso', 4500); render();
     cfg.usuario.consent = false; salvarCfg(); setTimeout(verificarConsentimento, 600);
   }).catch(function (e) { toast(e.message, 4500); }).then(function () { carregando(false); });
+}
+
+/* LGPD-2 (D4): "Pessoas restringidas" — retirar a restrição (v39_privacy_restriction_lift, exige privacy.manage no banco).
+   Aparece no card "Privacidade e LGPD" para quem pode gerir a privacidade (mesmo critério de publicar a política) e
+   só se o banco devolver a lista: RPC ausente ou sem permissão -> a área fica vazia. Retirar NÃO reativa o acesso ao app. */
+var restrLgpd = { estado: '', itens: [] };   // '' = não carregado; 'carregando'; 'ok'; 'oculto'
+function lgpdStatusTxt(s) {
+  var m = { active: 'Ativo', visitor: 'Em visita', visiting: 'Em visita', inactive: 'Inativo', away: 'Afastado', moved: 'Mudou de GC', institute: 'Instituto', deceased: 'Falecido' };
+  return m[String(s || '').toLowerCase()] || s || 'anterior';
+}
+function blocoRestringidas() {
+  if (!podePublicarPolitica() || !window.G2_LGPD || typeof G2_LGPD.restringidas !== 'function') return '';
+  if (!restrLgpd.estado) setTimeout(function () { carregarRestringidas(false); }, 0);
+  return '<div id="lgpd-restr">' + htmlRestringidas() + '</div>';
+}
+function htmlRestringidas() {
+  if (restrLgpd.estado !== 'ok') return '';
+  var l = restrLgpd.itens;
+  return '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--cc)"><b style="font-size:13px">Pessoas restringidas</b>' +
+    '<div style="font-size:11px;color:#999;margin:4px 0 8px;line-height:1.5">Pessoas com o tratamento restrito a pedido do titular. Retirar a restrição traz a pessoa de volta às listas; prontuário e receitas não mudam e o acesso ao app não é reativado.</div>' +
+    (l.length ? l.map(function (x) {
+      return '<div class="row" style="padding:8px 0;align-items:flex-start"><div class="info"><div class="nm">' + esc(x.nome || 'Pessoa') + '</div>' +
+        '<div class="sb" style="margin:0">Restringida em ' + (dataHoraLocal(x.restritoEm) || '—') + ' · status anterior: ' + esc(lgpdStatusTxt(x.statusAnterior)) + '</div>' +
+        (x.motivo ? '<div class="sb" style="margin:0">Motivo do pedido: ' + esc(x.motivo) + '</div>' : '') + '</div>' +
+        '<button class="btn gh sm" data-a="lgpdRetirarRestricao" data-v="' + esc(x.pessoaId) + '">Retirar restrição</button></div>';
+    }).join('') : '<div class="empty" style="padding:10px">Nenhuma pessoa restringida.</div>') + '</div>';
+}
+function carregarRestringidas(forcar) {
+  if (!window.G2_LGPD || typeof G2_LGPD.restringidas !== 'function') return Promise.resolve();
+  if (restrLgpd.estado === 'carregando' && !forcar) return Promise.resolve();
+  restrLgpd.estado = 'carregando';
+  return G2_LGPD.restringidas().then(function (l) {
+    if (l === null) { restrLgpd = { estado: 'oculto', itens: [] }; } else restrLgpd = { estado: 'ok', itens: l };
+  }).catch(function (e) { console.warn('[2Gather][lgpd] pessoas restringidas', e); restrLgpd = { estado: 'oculto', itens: [] }; })
+    .then(function () { var el = $('lgpd-restr'); if (el) el.innerHTML = htmlRestringidas(); });
+}
+function lgpdRetirarRestricao(pid) {
+  var x = restrLgpd.itens.filter(function (i) { return i.pessoaId === pid; })[0]; if (!x) return;
+  var min = G2_LGPD.motivoMinimo || 10;
+  var motivo = prompt('Retirar a restrição de ' + (x.nome || 'esta pessoa') + '.\n\nInforme o motivo (mínimo de ' + min + ' caracteres). Não escreva dados de saúde: o motivo fica gravado na auditoria.', '');
+  if (motivo === null) return;
+  motivo = String(motivo).trim();
+  if (motivo.length < min) return toast(G2_LGPD.mensagem('RESTRICTION_LIFT_REASON_REQUIRED') || 'Informe o motivo (mínimo de ' + min + ' caracteres).', 5000);
+  if (!confirm('Retirar a restrição de ' + (x.nome || 'esta pessoa') + '?\n\nA pessoa volta às listas com o status ' + lgpdStatusTxt(x.statusAnterior) + '. ' +
+    'O acesso ao app NÃO é reativado. Prontuário e receitas não mudam.')) return;
+  carregando(true, 'Retirando restrição...');
+  G2_LGPD.retirarRestricao(pid, motivo).then(function () {
+    var p = pessoaPor(pid); if (p) { delete p.restritoLgpd; salvarDB(); }
+    restrLgpd.itens = restrLgpd.itens.filter(function (i) { return i.pessoaId !== pid; });
+    var el = $('lgpd-restr'); if (el) el.innerHTML = htmlRestringidas();
+    toast('Restrição retirada ✓ — ' + (x.nome || 'a pessoa') + ' volta às listas após a atualização. O acesso ao app continua desligado.', 6000);
+    sincronizar(false);
+  }).catch(function (e) {
+    toast(e.message, 5500);
+    if (e && e.code === 'PERSON_NOT_RESTRICTED') carregarRestringidas(true);
+  }).then(function () { carregando(false); });
 }
 
 /* ── encontro do GC (criado sozinho no dia; o líder completa os dados) ── */
@@ -5503,6 +5590,8 @@ function enviarFotosPend() {
   var ids = Object.keys(fotoPend), p = Promise.resolve(), falhas = 0;
   ids.forEach(function (id) {
     p = p.then(function () {
+      var trava = travaLgpd(pessoaPor(id));                                  // QA63R-04: cadastro travado (LGPD): não envia, tira da fila
+      if (trava) { delete fotoPend[id]; if (fotosP[id] && fotosP[id].v === 'local') delete fotosP[id]; salvarFotosP(); toast('A foto não foi salva: ' + msgTravaLgpd(trava), 6000); return; }
       return (cfg.token === 'supabase-v39' ? v39SalvarFoto(id, fotoPend[id]) : chamar('salvarFotoPessoa', { id: id, foto: fotoPend[id] })).then(function (r) {
         if (fotoPend[id] === '__remover__') delete fotosP[id]; else fotosP[id] = { v: r.fotoV, data: fotoPend[id] };
         delete fotoPend[id]; salvarFotosP();
@@ -5510,7 +5599,8 @@ function enviarFotosPend() {
         falhas++;
         if (/não encontrado/i.test(e.message)) return;                       // cadastro ainda não chegou ao servidor: tenta de novo depois
         delete fotoPend[id]; if (fotosP[id] && fotosP[id].v === 'local') delete fotosP[id];
-        salvarFotosP(); toast('A foto não foi salva: ' + (e && e.message || 'erro desconhecido'), 6000);
+        var codF = /PERSON_ANONYMIZED|PERSON_RESTRICTED/.exec(String((e && (e.code || '')) + ' ' + (e && (e.details || '')) + ' ' + (e && e.message || '')));
+        salvarFotosP(); toast('A foto não foi salva: ' + (codF ? msgTravaLgpd(codF[0]) : (e && e.message || 'erro desconhecido')), 6000);
       });
     });
   });
@@ -5561,6 +5651,7 @@ function aplicarFotoNova(pid) {
 /** Trocar a foto direto pela ficha / perfil. */
 function trocarFotoDireta(pid) {
   var pAlvo = pessoaPor(pid);
+  if (pAlvo && travaLgpd(pAlvo)) return toast(msgTravaLgpd(travaLgpd(pAlvo)), 5500);       // QA63R-04
   if (pAlvo && !podeFotoPessoa(pAlvo)) return toast('Somente secretaria, pastor ou master alteram a foto deste cadastro. Quem cadastrou pode corrigir nas primeiras ' + EDICAO_HORAS + ' horas.', 5500);
   fpAlvo = { pid: pid, direto: true };
   abrirModal('<h2>Foto</h2><div style="text-align:center;margin:10px 0">' + avatarP(pessoaPor(pid) || { id: pid, nome: eu().nome }, ' style="width:110px;height:110px;margin:0 auto;font-size:34px"') + '</div>' +
@@ -6663,7 +6754,7 @@ function anonimizar(id) {
   if (prompt('Para confirmar, digite ANONIMIZAR') !== 'ANONIMIZAR') return toast('Anonimização cancelada.');
   carregando(true, 'Anonimizando...');
   var fim = function (r) {
-    if (r && r.resultado === 'restringido') { p.restritoLgpd = true; salvarDB(); fechar(); render(); toast('Cadastro restringido ✓ — prontuário/receita ficam sob guarda legal; o acesso ao app foi desligado.', 6000); }
+    if (r && r.resultado === 'restringido') { p.restritoLgpd = true; restrLgpd.estado = ''; salvarDB(); fechar(); render(); toast('Cadastro restringido ✓ — prontuário/receita ficam sob guarda legal; o acesso ao app foi desligado.', 6000); }
     else { db.pessoas = db.pessoas.filter(function (x) { return x.id !== id; }).concat([r.pessoa]); salvarDB(); fechar(); render(); toast('Dados anonimizados ✓'); }
     if (r && r.avisoConta) lgpdRepetirConta(r.pedidoId, r.avisoConta);
   };
@@ -6671,7 +6762,8 @@ function anonimizar(id) {
     if (!(e && e.code === 'ANONYMIZATION_BLOCKED_HEALTH_RETENTION')) throw e;
     carregando(false);
     if (!confirm(p.nome + ' tem prontuário ou receita: a guarda legal (20 anos) impede anonimizar.\n\nRestringir em vez de anonimizar? ' +
-      'O cadastro some das listas, o acesso ao app é desligado e o pedido fica concluído como "restringido". Nenhum dado é apagado.')) { toast('Nada foi alterado.'); return; }
+      'O cadastro some das listas, o acesso ao app é desligado e o pedido fica concluído como "restringido". Nenhum dado é apagado. ' +
+      'Depois é possível retirar a restrição em Configurações > Privacidade e LGPD > Pessoas restringidas.')) { toast('Nada foi alterado.'); return; }
     carregando(true, 'Restringindo...');
     return chamar('anonimizarPessoa', { id: id, confirmacao: 'ANONIMIZAR', modoSaude: 'restrict', pedidoId: e.pedidoId }).then(fim);
   }).catch(function (e) { toast(e.message, 5000); }).then(function () { carregando(false); });
@@ -7009,7 +7101,7 @@ var ACOES = {
     sairTodos: sairTodos, encerrarSessoes: encerrarSessoes, auditoria: function () { abrirAuditoria(''); }, audBuscar: function () { abrirAuditoria($('aud-q').value); },
     anonimizar: anonimizar, verPolitica: function () { verPolitica(false); }, aceitarPolitica: aceitarPolitica, recusarPolitica: function () { consentAberto = false; sair(false); },
     cfModeloPolitica: function () { cfgDraft = lerCfgForm(); cfgDraft.politica = cfgDraft.politicaModelo || ''; render(); },
-    lgpdPublicar: lgpdPublicar,
+    lgpdPublicar: lgpdPublicar, lgpdRetirarRestricao: lgpdRetirarRestricao,
     perModo: function (v) { perBI.modo = v; if (v === 'per' && !perBI.de) { var P0 = periodoBI(); perBI.de = hoje().slice(0, 7) + '-01'; perBI.ate = hoje(); } render(); }, lvModo: function (v) { lvModoCad = v; lvGCManual = false; render(); }, encAgendar: encAgendar, encSalvarAgenda: encSalvarAgenda, encCancelar: encCancelar,
     togFiltrosM: function () { fMAberto = !fMAberto; render(); },
     limparFiltrosM: function () { for (var k in fM) fM[k] = k === 'ordem' ? 'nome' : ''; render(); },
@@ -7842,7 +7934,7 @@ window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'SYNC-V39-23';   // SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
+  var BUILD = 'SYNC-V39-24';   // SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 

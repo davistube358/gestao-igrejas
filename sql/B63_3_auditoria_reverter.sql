@@ -24,7 +24,8 @@
 --   2) Remove gatilho/funcao do prontuario, app.v39_audit_list e os helpers de log.
 --   NAO apaga dados: linhas de audit.events, sensitive_data_access_log e os backups ficam (historico).
 --   Os gates private.v39_lgpd_me/need so saem se B63_1 e B63_2 nao estiverem aplicados.
--- Ordem de reversao do Build 63: B63_9 -> B63_2 -> B63_3 -> B63_1.
+-- Ordem de aplicacao do Build 63: B63_1 -> B63_9 -> B63_3 -> B63_2 -> B63_5.
+-- Ordem de reversao do Build 63: B63_9 -> B63_5 -> B63_2 -> B63_3 -> B63_1.
 -- =====================================================================
 begin;
 
