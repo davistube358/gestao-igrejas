@@ -716,6 +716,7 @@ function sincronizar(avisar) {
     if (!P13 || typeof P13.hydrate !== 'function') { cfg.ultima = agora(); salvarCfg(); pintarStatus('Supabase conectado'); return Promise.resolve({ ok: true, semMudanca: true, v39: true }); }
     if (sincronizando) return Promise.resolve();
     sincronizando = true; pintarStatus('Enviando alterações ao Supabase...');
+    v39CarregarConfig();   // CONFIG-1: configurações da igreja pelo Supabase (sem configuração salva lá, segue a fonte antiga)
     var envio = null;
     return v39EnviarPendentes().then(function (x) { envio = x; pintarStatus('Atualizando do Supabase...'); return P13.hydrate(cfg.usuario && cfg.usuario.igrejaId); }).then(function (r) {
       r = r || {};
@@ -3266,6 +3267,7 @@ function aplicarLogo() {
 }
 function atualizarConfig(c) {
   if (!c) return Promise.resolve(false);
+  if (igr.config && igr.config.salvoSupabase) return Promise.resolve(false);   // CONFIG-1: já migrada; a fonte antiga não sobrescreve
   igr.config = c; salvarIgr();
   if ((c.logoV || '') === (igr.logoV || '') && (c.iconeV || '') === (igr.iconeV || '')) { aplicarLogo(); return Promise.resolve(false); }
   if (!c.logoV && !c.iconeV) { igr.logo = ''; igr.logoV = ''; igr.icone = ''; igr.iconeV = ''; salvarIgr(); aplicarLogo(); return Promise.resolve(true); }
@@ -3273,6 +3275,104 @@ function atualizarConfig(c) {
     if (r && r.ok) { igr.logo = r.logo || ''; igr.logoV = r.logoV || ''; igr.icone = r.icone || ''; igr.iconeV = r.iconeV || ''; salvarIgr(); aplicarLogo(); return true; }
     return false;
   }).catch(function () { return false; });
+}
+
+/* ── CONFIG-1: Configurações da igreja pelo Supabase (v39_config_get / v39_config_save; tela de login pela Edge auth
+   'configPublica'). Enquanto o banco não tiver configuração salva (salvoEm vazio), o app segue com a fonte antiga
+   (Apps Script) e o 1º "Salvar" do master migra tudo, inclusive logo e ícone (bucket 2gather-media, <igreja>/branding/). ── */
+var CFG_BUCKET = '2gather-media';
+function cfgV39Ativo() { return cfg.token === 'supabase-v39' && !!(cfg.usuario && cfg.usuario.igrejaId); }
+function cfgEncarregadoPartes(s) {   // texto livre antigo "nome · telefone · e-mail" -> 3 campos
+  var o = { nome: '', fone: '', email: '' };
+  String(s || '').split(/\s*[·|;]\s*|\s+-\s+/).forEach(function (x) {
+    x = x.trim(); if (!x) return;
+    if (!o.email && /@/.test(x)) o.email = x; else if (!o.fone && /\d{4}/.test(x) && x.replace(/\D/g, '').length >= 8) o.fone = x; else if (!o.nome) o.nome = x;
+  });
+  return o;
+}
+function cfgDoBanco(o) {
+  o = o || {};
+  return { nome: o.nome || '', cnpj: o.cnpj || '', fundacao: o.fundacao || '', pastorPresidente: o.pastorPresidente || '', endereco: o.endereco || {},
+    cultos: o.cultos || [], bairros: o.bairros || [], cor: o.cor || '',
+    encarregadoNome: o.encarregadoNome || '', encarregadoTelefone: o.encarregadoTelefone || '', encarregadoEmail: o.encarregadoEmail || '',
+    encarregado: [o.encarregadoNome, o.encarregadoTelefone, o.encarregadoEmail].filter(Boolean).join(' · '),
+    logoV: o.logoPath || '', iconeV: o.iconePath || '', faviconV: o.faviconPath || '',
+    politicaV: (igr.config || {}).politicaV, salvoSupabase: o.salvoEm || '' };
+}
+function blobParaDataUrl(b) { return new Promise(function (ok, er) { var fr = new FileReader(); fr.onload = function () { ok(fr.result); }; fr.onerror = er; fr.readAsDataURL(b); }); }
+function dataUrlParaBlob(u) {
+  var m = String(u || '').match(/^data:([^;,]+)?(;base64)?,(.*)$/); if (!m) return null;
+  var bin = m[2] ? atob(m[3]) : decodeURIComponent(m[3]), arr = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], { type: m[1] || 'image/png' });
+}
+function cfgClienteV39() { var V = window.G2_V39 || {}; return Promise.resolve(!V.client && typeof V.init === 'function' ? V.init() : null).then(function () { if (!V.client) throw new Error('Cliente Supabase indisponível.'); return V.client; }); }
+function cfgBaixarImg(path) {
+  if (!path) return Promise.resolve('');
+  return cfgClienteV39().then(function (c) { return c.storage.from(CFG_BUCKET).download(path); })
+    .then(function (r) { return r.error || !r.data ? '' : blobParaDataUrl(r.data); }).catch(function () { return ''; });
+}
+function cfgUrlParaDataUrl(u) { if (!u) return Promise.resolve(''); return fetch(u).then(function (r) { if (!r.ok) throw new Error(r.status); return r.blob(); }).then(blobParaDataUrl).catch(function () { return ''; }); }
+/** Aplica a configuração vinda do Supabase. imgs (opcional, Edge): links assinados de logo/ícone; sem eles baixa do Storage. */
+function aplicarConfigV39(c, imgs) {
+  igr.config = c; salvarIgr();
+  var mL = (c.logoV || '') !== (igr.logoV || ''), mI = (c.iconeV || '') !== (igr.iconeV || '');
+  if (!mL && !mI) { aplicarLogo(); return Promise.resolve(false); }
+  var pL = !mL ? Promise.resolve(igr.logo) : (imgs ? cfgUrlParaDataUrl(imgs.logo) : cfgBaixarImg(c.logoV));
+  var pI = !mI ? Promise.resolve(igr.icone) : (imgs ? cfgUrlParaDataUrl(imgs.icone) : cfgBaixarImg(c.iconeV));
+  return Promise.all([pL, pI]).then(function (x) {
+    igr.logo = c.logoV ? x[0] : ''; igr.logoV = c.logoV ? (x[0] ? c.logoV : '') : '';
+    igr.icone = c.iconeV ? x[1] : ''; igr.iconeV = c.iconeV ? (x[1] ? c.iconeV : '') : '';
+    salvarIgr(); aplicarLogo(); return true;
+  });
+}
+/** Depois de entrar: lê do banco. Sem configuração salva no Supabase, não mexe (segue a fonte antiga). */
+function v39CarregarConfig() {
+  if (!cfgV39Ativo()) return Promise.resolve(false);
+  return v39RpcApp('v39_config_get', { p_church_id: cfg.usuario.igrejaId }).then(function (r) {
+    var o = r && r.config; if (!o || !o.salvoEm) return false;
+    return aplicarConfigV39(cfgDoBanco(o));
+  }).then(function (m) { if (m) render(); return m; }).catch(function (e) {
+    if (!/PGRST202|does not exist|schema cache/i.test(String((e && (e.message || e.code)) || ''))) console.warn('[2Gather][config]', e);
+    return false;
+  });
+}
+/** Antes de entrar (tela de login): Edge auth 'configPublica'. Devolve true se aplicou; false = usar a fonte antiga. */
+function v39ConfigPublica() {
+  var C = window.V39_CONFIG || window.APP_CONFIG || {}, base = String(C.supabaseUrl || '').replace(/\/$/, ''), anon = C.supabaseAnonKey || '';
+  if (!base || !anon) return Promise.resolve(false);
+  return fetch(base + '/functions/v1/auth', { method: 'POST', mode: 'cors', cache: 'no-store', credentials: 'omit',
+    headers: { 'Content-Type': 'application/json', 'apikey': anon, 'Authorization': 'Bearer ' + anon }, body: JSON.stringify({ acao: 'configPublica' }) })
+    .then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+      if (!j || !j.ok || !j.config) return false;
+      var c = Object.assign({}, igr.config || {}, { nome: j.config.nome || '', cor: j.config.cor || '', logoV: j.config.logoV || '', iconeV: j.config.iconeV || '',
+        faviconV: j.config.faviconV || '', salvoSupabase: (igr.config && igr.config.salvoSupabase) || 'edge' });
+      return aplicarConfigV39(c, { logo: j.logo || '', icone: j.icone || '' }).then(function () { return true; });
+    }).catch(function () { return false; });
+}
+/** Salvar no Supabase: sobe as imagens novas (ou, na 1ª vez, as que vieram da v38) e grava pela RPC. */
+function salvarConfigV39(c) {
+  var ig = cfg.usuario.igrejaId, migra = !(igr.config && igr.config.salvoSupabase && igr.config.salvoSupabase !== 'edge');
+  var sobe = function (u, nome) {
+    if (u === '__remover__') return Promise.resolve('');
+    var b = u ? dataUrlParaBlob(u) : null; if (!b) return Promise.resolve(undefined);
+    var ext = b.type === 'image/jpeg' ? 'jpg' : b.type === 'image/webp' ? 'webp' : b.type === 'image/svg+xml' ? 'svg' : 'png';
+    var path = ig + '/branding/' + nome + '-' + Date.now() + '.' + ext;
+    return cfgClienteV39().then(function (cl) { return cl.storage.from(CFG_BUCKET).upload(path, b, { contentType: b.type || 'image/png', upsert: false }); })
+      .then(function (r) { if (r.error) throw new Error('Não foi possível enviar a imagem: ' + (r.error.message || r.error)); return path; });
+  };
+  var lg = c.logo !== undefined ? c.logo : (migra && igr.logo ? igr.logo : undefined);
+  var ic = c.icone !== undefined ? c.icone : (migra && igr.icone ? igr.icone : undefined);
+  return Promise.all([sobe(lg, 'logo'), sobe(ic, 'icone'), sobe(c.favicon, 'favicon')]).then(function (paths) {
+    var e = c.endereco || {}, p = { nome: c.nome, cnpj: c.cnpj, fundacao: c.fundacao, pastorPresidente: c.pastorPresidente,
+      endereco: { cep: e.cep || '', rua: e.rua || '', numero: e.numero || '', complemento: e.complemento || '', bairro: e.bairro || '', cidade: e.cidade || '' },
+      cultos: c.cultos || [], bairros: c.bairros || [], cor: c.cor || '',
+      encarregadoNome: c.encarregadoNome || '', encarregadoTelefone: c.encarregadoTelefone || '', encarregadoEmail: c.encarregadoEmail || '' };
+    if (paths[0] !== undefined) p.logoPath = paths[0];
+    if (paths[1] !== undefined) p.iconePath = paths[1];
+    if (paths[2] !== undefined) p.faviconPath = paths[2];
+    return v39RpcApp('v39_config_save', { p_church_id: ig, p: p });
+  }).then(function (r) { return { ok: true, config: cfgDoBanco(r && r.config) }; });
 }
 
 /* ── permissões ── */
@@ -3593,11 +3693,14 @@ function lerCfgForm() {
                 bairro: $('cf-bairro').value.trim(), cidade: $('cf-cidade').value.trim() },
     bairros: ((cfgDraft && cfgDraft.bairros) || (igr.config && igr.config.bairros) || []).slice(),
     cor: $('cf-cor') ? $('cf-cor').value : ((cfgDraft && cfgDraft.cor) || ''),
-    encarregado: $('cf-encarregado') ? $('cf-encarregado').value.trim() : ((cfgDraft && cfgDraft.encarregado) || ''),
+    encarregadoNome: $('cf-enc-nome') ? $('cf-enc-nome').value.trim() : ((cfgDraft && cfgDraft.encarregadoNome) || ''),   // CONFIG-1: encarregado em 3 campos
+    encarregadoTelefone: $('cf-enc-fone') ? $('cf-enc-fone').value.trim() : ((cfgDraft && cfgDraft.encarregadoTelefone) || ''),
+    encarregadoEmail: $('cf-enc-email') ? $('cf-enc-email').value.trim() : ((cfgDraft && cfgDraft.encarregadoEmail) || ''),
     politica: $('cf-politica') ? $('cf-politica').value : (cfgDraft ? cfgDraft.politica : undefined),
     politicaModelo: cfgDraft ? cfgDraft.politicaModelo : '',
     politicaVersao: cfgDraft ? cfgDraft.politicaVersao : '', politicaPublicadaEm: cfgDraft ? cfgDraft.politicaPublicadaEm : '', politicaFonte: cfgDraft ? cfgDraft.politicaFonte : '',
     politicaNovaV: $('cf-politica-versao') ? $('cf-politica-versao').value.trim() : (cfgDraft ? cfgDraft.politicaNovaV : '') };
+  c.encarregado = [c.encarregadoNome, c.encarregadoTelefone, c.encarregadoEmail].filter(Boolean).join(' · ');   // texto único para a fonte antiga
   var rows = document.querySelectorAll('.cf-culto');
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
@@ -3608,7 +3711,9 @@ function lerCfgForm() {
 function rConfig() {
   if (!pode('config')) return '<div class="empty">Sem permissão.</div>';
   if (!cfgDraft) { var b = igr.config || {}; cfgDraft = { nome: b.nome || '', cnpj: b.cnpj || '', fundacao: b.fundacao || '', pastorPresidente: b.pastorPresidente || '', cultos: (b.cultos || []).slice(),
-    endereco: JSON.parse(JSON.stringify(b.endereco || {})), bairros: (b.bairros || []).slice(), encarregado: b.encarregado || '', cor: b.cor || '' }; }
+    endereco: JSON.parse(JSON.stringify(b.endereco || {})), bairros: (b.bairros || []).slice(), cor: b.cor || '' };
+    var ep = (b.encarregadoNome || b.encarregadoTelefone || b.encarregadoEmail) ? { nome: b.encarregadoNome || '', fone: b.encarregadoTelefone || '', email: b.encarregadoEmail || '' } : cfgEncarregadoPartes(b.encarregado);   // CONFIG-1: texto antigo vira 3 campos
+    cfgDraft.encarregadoNome = ep.nome; cfgDraft.encarregadoTelefone = ep.fone; cfgDraft.encarregadoEmail = ep.email; }
   if (cfgDraft.politica === undefined && !cfgDraft._polCarregando) {
     cfgDraft._polCarregando = true;
     politicaTexto().then(function (r) {
@@ -3654,7 +3759,9 @@ function rConfig() {
     '<button class="btn gh sm" data-a="cfAddCulto">+ Adicionar horário</button>' +
     '<div style="font-size:11px;color:#999;margin-top:8px">Usados para criar os cultos da semana com um toque, na aba Cultos.</div></div>' +
     '<div class="card"><h3>Privacidade e LGPD</h3>' +
-    '<label>Responsável pelos dados (encarregado) — nome e contato</label><input id="cf-encarregado" value="' + esc(c.encarregado) + '" placeholder="Ex.: Maria Souza · (16) 99999-0000 · dados@igreja.org">' +
+    '<label>Responsável pelos dados (encarregado) — nome</label><input id="cf-enc-nome" value="' + esc(c.encarregadoNome) + '" placeholder="Ex.: Maria Souza">' +
+    '<div class="g2"><div><label>Telefone do encarregado</label><input id="cf-enc-fone" inputmode="tel" value="' + esc(c.encarregadoTelefone) + '" placeholder="(16) 99999-0000"></div>' +
+    '<div><label>E-mail do encarregado</label><input id="cf-enc-email" type="email" value="' + esc(c.encarregadoEmail) + '" placeholder="dados@igreja.org"></div></div>' +
     '<label>Política de privacidade</label>' +
     (c.politica === undefined ? '<div class="empty" style="padding:10px">Carregando...</div>'
       : '<textarea id="cf-politica" rows="12" style="font-size:13px;line-height:1.5">' + esc(c.politica) + '</textarea>') +
@@ -3768,10 +3875,13 @@ function enviarCfg(c) {
   if (c.politica === undefined) delete c.politica;
   var verAntes = (igr.config || {}).politicaV;
   carregando(true, 'Salvando...');
-  chamar('salvarConfig', { config: c }, function (i, n) { $('carregando-txt').textContent = 'Enviando logo ' + i + '/' + n + '...'; }).then(function (r) {
+  var envio = cfgV39Ativo() ? salvarConfigV39(c)   // CONFIG-1: v39 grava no Supabase (antes: 'salvarConfig' não mapeado)
+    : chamar('salvarConfig', { config: c }, function (i, n) { $('carregando-txt').textContent = 'Enviando logo ' + i + '/' + n + '...'; });
+  envio.then(function (r) {
     igr.config = r.config;
     if (logoNovo === '__remover__') { igr.logo = ''; igr.logoV = ''; } else if (logoNovo) { igr.logo = logoNovo; igr.logoV = r.config.logoV; }
     if (iconeNovo === '__remover__') { igr.icone = ''; igr.iconeV = ''; } else if (iconeNovo) { igr.icone = iconeNovo; igr.iconeV = r.config.iconeV; }
+    if (r.config.salvoSupabase) { if (igr.logo) igr.logoV = r.config.logoV; if (igr.icone) igr.iconeV = r.config.iconeV; }   // 1ª gravação: logo/ícone da v38 subiram
     salvarIgr(); aplicarLogo(); logoNovo = null; iconeNovo = null; cfgDraft = null;
     toast(r.config.politicaV !== verAntes ? 'Configurações salvas ✓ — nova versão da política: todos aceitarão no próximo acesso' : 'Configurações salvas ✓', 4500); render();
     if (r.config.politicaV !== verAntes) { cfg.usuario.consent = false; salvarCfg(); setTimeout(verificarConsentimento, 600); }
@@ -8043,7 +8153,10 @@ if (EXIGE_HOSPEDADO && !MODO_SCRIPT && !pwaOrigemOk()) {
 aplicarLogo();
 if (!(window.APP_CONFIG && APP_CONFIG.build === 'P1.2')) {
   chamarBruto({ acao: 'ping' }).then(function (r) { if (r && r.ok) { servidorV = +r.versao || 0; if (cfg.token && servidorV < SERVIDOR_ESPERADO) render(); } }).catch(function () {});
-  chamarBruto({ acao: 'configPublica' }).then(function (r) { if (r && r.ok) return atualizarConfig(r.config); }).then(function (m) { avisoNovoEndereco(); if (m && cfg.token) render(); }).catch(function () {});
+  v39ConfigPublica().then(function (aplicou) {   // CONFIG-1: Edge auth 'configPublica'; sem ela (ou sem configuração salva no Supabase), Apps Script como antes
+    if (aplicou) { avisoNovoEndereco(); if (cfg.token) render(); return; }
+    return chamarBruto({ acao: 'configPublica' }).then(function (r) { if (r && r.ok) return atualizarConfig(r.config); }).then(function (m) { avisoNovoEndereco(); if (m && cfg.token) render(); });
+  }).catch(function () {});
 }
 if (cfg.token && cfg.usuario) {
   if (cfg.token === 'supabase-v39') v39AplicarContextoIgreja(cfg.usuario, window.G2_V39 && G2_V39.runtime && G2_V39.runtime.state ? G2_V39.runtime.state.context : null);
@@ -8071,7 +8184,7 @@ window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'SYNC-V39-27';   // SYNC-V39-27: checagem de duplicado no cadastro na v39; perfil sem lista de pessoas/cultos não repete chamadas; foto nova avisa o Instituto; sem Encerrar antes do dia (TRAVA24_2). SYNC-V39-26: TRAVA-1 (encerrar encontro do GC/culto; edição travada 24h depois; pastor reabre). SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
+  var BUILD = 'CONFIG-1';   // CONFIG-1: Configurações da igreja gravadas no Supabase (logo/ícone no Storage; encarregado em 3 campos). Antes: SYNC-V39-27   // SYNC-V39-27: checagem de duplicado no cadastro na v39; perfil sem lista de pessoas/cultos não repete chamadas; foto nova avisa o Instituto; sem Encerrar antes do dia (TRAVA24_2). SYNC-V39-26: TRAVA-1 (encerrar encontro do GC/culto; edição travada 24h depois; pastor reabre). SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 
@@ -8253,6 +8366,12 @@ window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }
     GC_MEETING_NOT_FOUND: 'Encontro não encontrado. Atualize a página e tente de novo.',
     GC_MEETING_CLOSED: 'Este encontro foi cancelado e não pode ser reaberto.',
     REGISTRO_TRAVADO: 'Encerrado há mais de 24 horas: a edição está travada. Peça ao pastor para reabrir.',
+    CONFIG_NOME_INVALIDO: 'Informe o nome da igreja (até 120 caracteres).',   // CONFIG-1
+    CONFIG_COR_INVALIDA: 'Cor inválida: use o formato #RRGGBB.',
+    CONFIG_EMAIL_INVALIDO: 'E-mail do encarregado inválido.',
+    CONFIG_DATA_INVALIDA: 'Data de fundação inválida.',
+    CONFIG_ARQUIVO_INVALIDO: 'Arquivo de imagem inválido. Escolha a imagem de novo.',
+    CONFIG_INVALIDA: 'Configuração inválida: revise os campos.',
     REGISTRO_CANCELADO: 'Registro cancelado não pode ser encerrado nem reaberto.',
     REGISTRO_FUTURO: 'Ainda não aconteceu: só dá para encerrar a partir do dia (culto: depois do início).',
     GC_MEETING_INVALID: 'Algum dado do encontro está em formato inválido. Confira data e horários.',
