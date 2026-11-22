@@ -1,0 +1,11 @@
+# Documentos internos (handovers, docx, planilhas) — o repositório é público
+docs/privado/
+
+# Supabase CLI (contém dados do projeto vinculado)
+supabase/.temp/
+.env
+.env.*
+!.env.example
+
+# Configurações locais do Claude Code
+.claude/settings.local.json
