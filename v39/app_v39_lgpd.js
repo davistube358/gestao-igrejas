@@ -1,4 +1,5 @@
-/* 2Gather v39 · LGPD e Auditoria (Build 63) · LGPD-2
+/* 2Gather v39 · LGPD e Auditoria (Build 63) · LGPD-3
+   - LGPD-3: politica() devolve tambem o modelo com marcadores {{...}} (POLITICA_1); o editor de Configuracoes usa o modelo.
    Carregar DEPOIS do app.js. Contrato: sql/B63_1_aceite_politica_aplicar.sql, B63_2_anonimizacao_aplicar.sql,
    B63_3_auditoria_aplicar.sql e a Edge Function "auth" (acoes politica, cadastro com politicaV e anonimizarConta).
    - Mapeia em G2_V39.p1: aceitarPolitica, publicarPolitica, anonimizarPessoa (mutacoes) e auditoria (leitura).
@@ -16,7 +17,7 @@
    Nao guarda dados pessoais: so versao da politica e situacao do aceite do proprio usuario (em memoria). */
 (function () {
   'use strict';
-  var VERSAO = 'LGPD-2';
+  var VERSAO = 'LGPD-3';
   if (window.G2_LGPD) return;
   console.info('[2Gather] lgpd ' + VERSAO);
 
@@ -125,7 +126,7 @@
       return rpc('v39_privacy_policy_current', { p_church_id: igrejaId() }).then(function (r) {
         if (!r || !r.versao || !String(r.texto || '').trim()) { avisar('politica sem versão publicada', null); return null; }
         ultimaVersao = r.versao;
-        return { ok: true, texto: r.texto, versao: r.versao, publicadaEm: r.publicadaEm || '', fonte: 'supabase' };
+        return { ok: true, texto: r.texto, modelo: typeof r.modelo === 'string' ? r.modelo : undefined, versao: r.versao, publicadaEm: r.publicadaEm || '', fonte: 'supabase' };   // LGPD-3: modelo com marcadores (POLITICA_1)
       }, function (e) { if (ausente(e)) { avisar('v39_privacy_policy_current', e); return null; } throw erro(e, 'A política'); });
     }
     return edge('politica', {}).then(function (j) {

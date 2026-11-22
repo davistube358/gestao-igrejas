@@ -3,6 +3,7 @@
 // Nunca registre em log o corpo da requisicao nem a resposta: ha senhas.
 // B63 (LGPD-1): acao publica "politica"; cadastro grava o aceite na mesma transacao
 //   (edge_create_access_request_with_consent, D1b); acao protegida "anonimizarConta" (D9/D10).
+// CONFIG_1: acao publica "configPublica" (nome, cor e imagens da igreja para a tela de login).
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 type Json = Record<string, unknown>;
@@ -56,6 +57,7 @@ const RE_MAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const RE_VERSAO = /^\S[\s\S]{0,39}$/; // mesma faixa da coluna version (1 a 40 caracteres)
 const BUCKET_FOTOS = "person-photos";
+const BUCKET_MEDIA = "2gather-media"; // CONFIG_1: logo, ícone e favicon da igreja em <igreja>/branding/
 const BAN_DURACAO = "876000h"; // ~100 anos: a conta Auth fica banida, nao e apagada (D10)
 
 // ---------- utilitarios ----------
@@ -255,6 +257,31 @@ async function aPolicy(c: Clients, origin: string | null) {
   return out(200, { ok: true, texto: String(r.data?.texto ?? ""), versao: r.data?.versao ?? null }, origin);
 }
 
+// CONFIG_1: nome, cor e imagens da igreja para a tela de login (antes de entrar). Sempre da igreja configurada.
+//   Imagens saem como links assinados de 1 hora (o bucket é privado). Sem configuração salva pelo Supabase,
+//   devolve config null e o front segue com a fonte antiga.
+async function aConfigPublic(c: Clients, origin: string | null) {
+  const church = first("DEFAULT_CHURCH_ID");
+  if (!RE_UUID.test(church)) return out(200, { ok: true, config: null, em_preparacao: true }, origin);
+  const r = await rpc(c.admin, "edge_config_public", { p_church_id: church });
+  if (r.code === "RPC_MISSING") return out(200, { ok: true, config: null, em_preparacao: true }, origin);
+  if (r.code) return fail(500, M.erroGeral, origin);
+  const d = r.data ?? {};
+  if (!d.salvoEm) return out(200, { ok: true, config: null, semConfig: true }, origin);
+  const pref = church + "/branding/";
+  const assinar = async (p: unknown) => {
+    const s = String(p ?? "");
+    if (!s || !s.startsWith(pref) || s.includes("..")) return "";
+    const u = await c.admin.storage.from(BUCKET_MEDIA).createSignedUrl(s, 3600);
+    return u.error ? "" : String(u.data?.signedUrl ?? "");
+  };
+  return out(200, {
+    ok: true,
+    config: { nome: String(d.nome ?? ""), cor: String(d.cor ?? ""), logoV: String(d.logoPath ?? ""), iconeV: String(d.iconePath ?? ""), faviconV: String(d.faviconPath ?? "") },
+    logo: await assinar(d.logoPath), icone: await assinar(d.iconePath), favicon: await assinar(d.faviconPath),
+  }, origin);
+}
+
 // B63 (D9/D10): chamada pelo front logo depois de app.v39_privacy_anonymize_execute.
 // O navegador manda so a igreja e o pedido. A autorizacao e a pessoa vem do banco, consultado COM O JWT
 // de quem chamou (v39_privacy_requests_list exige privacy.requests.manage e acesso ativo a igreja).
@@ -421,6 +448,7 @@ export async function handle(req: Request): Promise<Response> {
       case "recuperar": return await aForgot(c, b, req, origin);
       case "gcsPublico": return await aGcs(c, origin);
       case "politica": return await aPolicy(c, origin);
+      case "configPublica": return await aConfigPublic(c, origin);
     }
     if (["trocarSenha", "redefinirSenha", "encerrarSessoes", "corrigirUsuario", "anonimizarConta"].includes(acao)) {
       const user = await callerOf(c.admin, req);

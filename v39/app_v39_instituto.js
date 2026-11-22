@@ -1,4 +1,5 @@
-/* 2Gather v39 · Instituto · INST-9
+/* 2Gather v39 · Instituto · INST-10
+   INST-10: esquecerFoto(pid) para a agenda buscar a foto nova trocada em Pessoas/Equipe.
    INST-9: instDados aceita período (de/ate) para a agenda navegar por semanas passadas e futuras.
    INST-8: FOTO DO ATENDIDO. O "Novo atendido" passa a guardar a foto (bucket privado person-photos, caminho <igreja>/people/<pessoa>/<uuid>.jpg, registro pela função v39_inst_register_photo)
      e a foto aparece na ficha do médico, em Pacientes e prontuários e na agenda; só para quem pode ver (equipe do Instituto ou o profissional que atende o paciente).
@@ -26,7 +27,7 @@
    Diagnóstico no Console: G2_INST.versao · G2_INST.acoes() */
 (function () {
   'use strict';
-  var VERSAO = 'INST-9';
+  var VERSAO = 'INST-10';
   if (window.G2_INST) return;
   var M = window.G2_INST = { versao: VERSAO, ultimo: {} };
   console.info('[2Gather] instituto ' + VERSAO);
@@ -208,6 +209,8 @@
       Promise.all([um(), um(), um()]).then(function () { if (achou) agendarRender(); });
     }
     M.fotoDe = function (pid) { return FOTOS[pid] || ''; };
+    /* INST-10: a foto mudou em outra tela (Pessoas/Equipe): esquece a foto e o "sem foto" guardados; a próxima carga da agenda busca de novo */
+    M.esquecerFoto = function (pid) { delete FOTOS[pid]; delete FOTO_TENT[pid]; };
     M.fotoCarregar = baixarFoto;
     M.fotoEnviar = enviarFotoPessoa;
   /* ───────────── ações que o app.js chama ───────────── */
