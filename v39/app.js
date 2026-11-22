@@ -206,7 +206,32 @@ function chamarBruto(req, progresso) {
   });
   return p.then(function () { return jsonp({ acao: 'commit', sid: sid }, 45000); });
 }
+/* SYNC-V39-27: checagem de duplicado no cadastro (chamar('checarPessoa')) na v39. Antes não estava mapeada: a chamada falhava
+   e o cadastro seguia sem checar. Usa a base de pessoas já sincronizada (v39_list_people), com as regras da v38:
+   forte = mesmo nome + (mesmo telefone ou mesma data de nascimento); mesmo telefone sozinho = pode ser da família. */
+function checarPessoaV39(d) {
+  var dig = function (x) { var s = String(x || '').replace(/\D/g, ''); return s.length >= 8 ? s.slice(-8) : ''; };
+  var tok = function (n) { return normalizar(n).split(' ').filter(Boolean); };
+  var qn = normalizar(d.nome), qt = tok(d.nome), qf = dig(d.fone), qb = String(d.nasc || '').slice(0, 10);
+  var mesmoNome = function (p) {
+    var pn = normalizar(p.nome); if (!qn || !pn) return false;
+    if (pn === qn) return true;
+    var pt = tok(p.nome);
+    return qt.length >= 2 && pt.length >= 2 && qt[0] === pt[0] && qt[qt.length - 1] === pt[pt.length - 1];
+  };
+  var itens = (db.pessoas || []).filter(function (p) { return p && p.id && !p.deleted; }).map(function (p) {
+    var nm = mesmoNome(p), mf = !!(qf && dig(p.fone) === qf), mn = !!(qb && String(p.nasc || '').slice(0, 10) === qb);
+    var primeiro = qt.length && tok(p.nome)[0] === qt[0];
+    if (!(nm || mf || (mn && primeiro))) return null;
+    var g = p.gcId ? gcPor(p.gcId) : null, f = String(p.fone || '').replace(/\D/g, '');
+    return { id: p.id, nome: p.nome, apelido: p.apelido || '', gcId: p.gcId || '', gc: g ? g.nome : 'sem GC', lider: g ? (g.liderNome || '') : '',
+      bairro: p.bairro || '', fone4: f.length >= 4 ? f.slice(-4) : '', tipo: p.tipo || '', status: p.status || '',
+      visitasIgreja: +p.visitasIgreja || 0, visitaIgrejaEm: p.visitaIgrejaEm || '', mesmoFone: mf, forte: nm && (mf || mn) };
+  }).filter(Boolean).sort(function (a, b) { return (b.forte - a.forte) || (b.mesmoFone - a.mesmoFone) || String(a.nome).localeCompare(String(b.nome), 'pt-BR'); });
+  return { ok: true, itens: itens.slice(0, 20) };
+}
 function chamar(acao, dados, progresso) {
+  if (cfg.token === 'supabase-v39' && acao === 'checarPessoa' && !(window.G2_V39 && G2_V39.p1 && G2_V39.p1.isRead && G2_V39.p1.isRead(acao))) return Promise.resolve(checarPessoaV39(dados || {}));
   if (cfg.token === 'supabase-v39' && window.G2_V39 && G2_V39.p1) {
     if (G2_V39.p1.isMutation(acao)) return G2_V39.p1.execute(acao,dados||{},progresso);
     if (G2_V39.p1.isRead(acao)) return G2_V39.p1.read(acao,dados||{});
@@ -696,6 +721,7 @@ function sincronizar(avisar) {
       r = r || {};
       if (r.gcs) db.gcs = r.gcs;
       if (r.eventos) db.eventos = r.eventos;
+      if (v39SemListaPessoas) return r;   // SYNC-V39-27: perfil sem a lista geral (ex.: profissional de saúde) não pede de novo; mesmo caminho de quando o banco recusava
       return v39RpcApp('v39_list_people', { p_church_id: cfg.usuario && cfg.usuario.igrejaId }).then(function (lista) {
         if (Array.isArray(lista)) r.pessoas = lista.map(function (x) {
           var loc = (db.pessoas || []).filter(function (l) { return l.id === x.id; })[0];
@@ -703,7 +729,10 @@ function sincronizar(avisar) {
         });
         v39RpcApp('v39_journey_stages', { p_church_id: cfg.usuario && cfg.usuario.igrejaId }).then(aplicarJornada).catch(function (eJ) { console.warn('[2Gather][jornada] usando etapas padrão', eJ); });
         return v39CarregarLarDeVida(r).then(v39CarregarEquipeFotos);
-      }).catch(function (err) { console.warn('[2Gather][pessoas] leitura falhou', err); r.errors = (r.errors || []).concat(['Pessoas: ' + (err && err.message)]); return r; });
+      }).catch(function (err) {
+        if (/PERMISSION_DENIED|Sem permiss/i.test(String((err && (err.message || err.details || err.code)) || ''))) { v39SemListaPessoas = true; return r; }   // SYNC-V39-27: recusa por perfil não é erro e não repete
+        console.warn('[2Gather][pessoas] leitura falhou', err); r.errors = (r.errors || []).concat(['Pessoas: ' + (err && err.message)]); return r;
+      });
     }).then(function (r) {
       if (Array.isArray(r.pessoas)) {                         // preserva cadastro local ainda não enviado
         var locaisP = (db.pessoas || []).filter(function (p) { return p._pend; });
@@ -1961,7 +1990,7 @@ function rChamada() {
   topo += cartaoEncontro(e);
   if (e.id) {   // TRAVA-1
     carregarTravas('gc', [e.id]);
-    var bt = blocoTrava('gc', e.id);
+    var bt = blocoTrava('gc', e.id, e.data > hoje());
     if (bt) topo += '<div class="card" style="padding:10px 14px">' + bt + '</div>';
     if (travado('gc', e.id)) return topo + '<div class="trv-ro">' + corpoChamada(id, d, e) + '</div>';
   }
@@ -2084,6 +2113,7 @@ function pintarAdd() {
   }).join('') : '<div class="empty">Todos já estão na chamada deste dia.</div>';
 }
 function v39Uuid(x) { return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(x || '')); }
+var v39SemListaPessoas = false;   // SYNC-V39-27: true depois que o banco recusa v39_list_people por perfil (vale até recarregar a página)
 function v39RpcApp(nome, args) {
   var V = window.G2_V39 || {};
   var pronto = (!V.client && typeof V.init === 'function') ? Promise.resolve(V.init()) : Promise.resolve();
@@ -2295,7 +2325,11 @@ function v39SalvarFoto(pid, foto) {
       return v39RpcApp('register_person_photo', { p_church_id: ig, p_person_id: pid, p_storage_path: caminho, p_original_file_name: 'foto.jpg', p_checksum_sha256: h })
         .catch(function (e) { console.warn('[2Gather][fotos] foto enviada, mas o registro oficial falhou', e); toast('A foto foi enviada, mas não ficou registrada no cadastro: ' + ((e && (e.message || e.details)) || 'erro desconhecido') + '. Avise o administrador.', 8000); });
     })
-    .then(function () { var p = pessoaPor(pid); if (p) { p.temFoto = true; p.fotoV = caminho; p.fotoPath = caminho; } return { fotoV: caminho }; });
+    .then(function () {
+      var p = pessoaPor(pid); if (p) { p.temFoto = true; p.fotoV = caminho; p.fotoPath = caminho; }
+      try { if (window.G2_INST && typeof G2_INST.esquecerFoto === 'function') G2_INST.esquecerFoto(pid); if (instD && instD.pac && instD.pac[pid]) delete instD.pac[pid].foto; instD.t = 0; } catch (eF) { /* segue */ }   // SYNC-V39-27: Instituto busca a foto nova
+      return { fotoV: caminho };
+    });
 }
 /* GC: envia foto/ícone ao bucket 2gather-media e baixa os que faltam no aparelho */
 function v39SalvarImagemGC(gcId, tipo, dado) {
@@ -3337,7 +3371,7 @@ function rCultos() {
       (verValor && totalEvento(e) ? ' · <b>Arrecadado:</b> ' + moeda(totalEvento(e)) : '') +
       (e.liberado ? '<br><span style="color:#888">' + textoJanela(e) + '</span>' : '') + linhaMensagem(e) + '</div>' +
       (e.recados ? '<div style="background:var(--cc);border-radius:10px;padding:9px 10px;font-size:12.5px;margin-top:8px;white-space:pre-line">' + esc(e.recados) + '</div>' : '') +
-      blocoTrava('evento', e.id) +
+      blocoTrava('evento', e.id, !terminou(e) && (e.data > hoje() || (e.data === hoje() && minStr(e.inicio) !== null && minStr(e.inicio) > agoraMin()))) +
       '<div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px">' +
       '<button class="btn gh sm" data-a="evFicha" data-v="' + esc(e.id) + '">Ficha</button>' +
       (pode('eventos') && !trv ? '<button class="btn gh sm" data-a="evEditar" data-v="' + esc(e.id) + '">Editar</button>' +
@@ -5016,15 +5050,15 @@ function travaDe(tipo, id) { return (TRAVAS[tipo] || {})[id] || null; }
 function travado(tipo, id) { var t = travaDe(tipo, id); return !!(t && t.travado); }
 function dataHoraTrv(s) { var d = new Date(s); return !s || isNaN(d) ? '' : pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + ' às ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
 function podeEncerrar(tipo) { return tipo === 'gc' ? (pode('gc') || pode('gcEvento') || ehDecisor()) : (pode('eventos') || pode('financeiro') || ehDecisor()); }
-function msgErroTrv(e) { var c = String((e && (e.message || e.code)) || ''); return ({ REGISTRO_TRAVADO: 'Encerrado há mais de 24 horas: a edição está travada. Peça ao pastor para reabrir.', REGISTRO_CANCELADO: 'Registro cancelado não pode ser encerrado nem reaberto.', PERMISSION_DENIED: 'Você não tem permissão para esta ação.', REASON_REQUIRED: 'Informe o motivo (mínimo de 10 caracteres).' })[c] || (e && e.message) || 'Não foi possível concluir.'; }
+function msgErroTrv(e) { var c = String((e && (e.message || e.code)) || ''); return ({ REGISTRO_TRAVADO: 'Encerrado há mais de 24 horas: a edição está travada. Peça ao pastor para reabrir.', REGISTRO_CANCELADO: 'Registro cancelado não pode ser encerrado nem reaberto.', REGISTRO_FUTURO: 'Ainda não aconteceu: só dá para encerrar a partir do dia (culto: depois do início).', PERMISSION_DENIED: 'Você não tem permissão para esta ação.', REASON_REQUIRED: 'Informe o motivo (mínimo de 10 caracteres).' })[c] || (e && e.message) || 'Não foi possível concluir.'; }
 /** Linha de estado + botões (Encerrar / Reabrir). Vazio se o banco ainda não respondeu ou o registro está cancelado. */
-function blocoTrava(tipo, id) {
+function blocoTrava(tipo, id, futuro) {   // futuro: ainda não aconteceu (sem botão Encerrar; o banco também recusa com REGISTRO_FUTURO)
   var t = travaDe(tipo, id), nome = tipo === 'gc' ? 'encontro' : (((eventoPor(id) || {}).tipo || 'culto').toLowerCase());
   if (!t || t.status === 'cancelled') return '';
   if (t.travado) return '<div class="trv trv-on">🔒 <b>Encerrado</b> · edição travada desde ' + dataHoraTrv(t.travaEm) + '.' +
     (ehDecisor() ? ' <button class="btn gh sm" data-a="trvReabrir" data-v="' + tipo + '|' + esc(id) + '">Reabrir</button>' : ' Para corrigir, peça ao pastor para reabrir.') + '</div>';
   if (t.status === 'completed') return '<div class="trv">✓ Encerrado em ' + dataHoraTrv(t.encerradoEm) + ' · ajustes até ' + dataHoraTrv(t.travaEm) + '</div>';
-  return '<div class="trv">' + (podeEncerrar(tipo) ? '<button class="btn vd sm" data-a="trvEncerrar" data-v="' + tipo + '|' + esc(id) + '">Encerrar ' + esc(nome) + '</button> ' : '') +
+  return '<div class="trv">' + (podeEncerrar(tipo) && !futuro ? '<button class="btn vd sm" data-a="trvEncerrar" data-v="' + tipo + '|' + esc(id) + '">Encerrar ' + esc(nome) + '</button> ' : '') +
     '<span>' + (t.reabertoEm ? 'Reaberto · ' : '') + 'trava automática em ' + dataHoraTrv(t.travaEm) + '</span></div>';
 }
 function trvEncerrar(v) {
@@ -8032,7 +8066,7 @@ window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'SYNC-V39-26';   // SYNC-V39-26: TRAVA-1 (encerrar encontro do GC/culto; edição travada 24h depois; pastor reabre). SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
+  var BUILD = 'SYNC-V39-27';   // SYNC-V39-27: checagem de duplicado no cadastro na v39; perfil sem lista de pessoas/cultos não repete chamadas; foto nova avisa o Instituto; sem Encerrar antes do dia (TRAVA24_2). SYNC-V39-26: TRAVA-1 (encerrar encontro do GC/culto; edição travada 24h depois; pastor reabre). SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 
@@ -8215,6 +8249,7 @@ window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }
     GC_MEETING_CLOSED: 'Este encontro foi cancelado e não pode ser reaberto.',
     REGISTRO_TRAVADO: 'Encerrado há mais de 24 horas: a edição está travada. Peça ao pastor para reabrir.',
     REGISTRO_CANCELADO: 'Registro cancelado não pode ser encerrado nem reaberto.',
+    REGISTRO_FUTURO: 'Ainda não aconteceu: só dá para encerrar a partir do dia (culto: depois do início).',
     GC_MEETING_INVALID: 'Algum dado do encontro está em formato inválido. Confira data e horários.',
     GC_MEETING_STATUS_INVALID: 'Situação do encontro inválida.',
     GC_NOT_FOUND: 'GC não encontrado. Atualize a página.',
