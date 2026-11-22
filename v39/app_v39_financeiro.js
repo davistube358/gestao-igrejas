@@ -1,4 +1,8 @@
-/* 2Gather v39 · Financeiro completo · FIN-ALL-20.2
+/* 2Gather v39 · Financeiro completo · FIN-ALL-21
+   FIN-ALL-21 (parte do FIN-ALL-20.2; não exige SQL novo). CARTÕES: cada cartão em Transf. e cartões passa a mostrar, além da fatura do mês e do total no cartão:
+     - SALDO ATUAL DA FATURA: o que falta pagar na fatura vigente (lançado + previsto) e, em vermelho, o que ficou em aberto de faturas anteriores.
+     - SALDO FUTURO: soma das faturas seguintes, com o valor de cada mês (jan/27 R$ ..., fev/27 R$ ...).
+     Mesma fonte e mesma regra da tela (mês da fatura = mês do vencimento); confere com a função v39_fin_card_balance testada em rollback (CARD-BAL-2).
    FIN-ALL-20.2 (substitui o 20.1; parte do FIN-ALL-20 publicado). CONVÊNIOS:
    - Códigos que o BANCO aceita (restrições da tabela v39_fin_grants): instrumento emenda_parlamentar, contrato_patrocinio, doacao_vinculada; origem international e other; situação reporting.
    - Campo SITUAÇÃO no cadastro (rascunho, em execução, em prestação de contas, encerrado, cancelado): a função v39_fin_grant_save aceita e grava. Para encerrar ou passar para prestação de contas, edite o convênio.
@@ -97,7 +101,7 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
    - Pop-up: não fecha mais ao clicar fora. Só pelo botão X no canto, por Cancelar ou por Esc. Botões do rodapé alinhados. */
 (function () {
   'use strict';
-  var VERSAO = 'FIN-ALL-20.2';
+  var VERSAO = 'FIN-ALL-21';
   if (window.G2_FIN) return;
   window.G2_FIN = { versao: VERSAO };
   console.info('[2Gather] financeiro ' + VERSAO);
@@ -1906,19 +1910,30 @@ function itensAbertos(f) {
     var fut = ks.filter(function (q) { return q > cur; }); if (fut.length) return fut[0];
     return ks.length ? ks[ks.length - 1] : cur;
   }
-  function linhaCartao(k) {
-    var m = mapaCartao(k), cur = ym(hoje()), ks = Object.keys(m).sort(), q = m[cur] ? cur : (ks.filter(function (z) { return z > cur; })[0] || ''), g = q ? m[q] : null, r = g ? resumoMes(g) : null;
-    var lanc = 0, prevT = 0;
-    ks.forEach(function (z) { var rr = resumoMes(m[z]); if (m[z].s && m[z].s.status !== 'paid') lanc += rr.aberto; prevT += rr.prev; });
-    lanc = arr2(lanc); prevT = arr2(prevT);
-    var venc = g ? (g.s ? g.s.vencimento : (g.pv[0] && g.pv[0].vencimento) || '') : '';
-    var l1 = g ? esc((q === cur ? 'Fatura de ' : 'Próxima fatura · ') + MESES[+q.slice(5, 7) - 1].toLowerCase()) + ': <b>' + brl(r.total) + '</b>' + (venc ? ' · vence ' + esc(dataBR(venc)) : '') + ' ' + pillFatura(g) + (r.prev > 0 ? ' <span class="g2f-mut">inclui ' + brl(r.prev) + ' previsto</span>' : '')
-      : esc('Sem fatura em ' + MESES[+cur.slice(5, 7) - 1].toLowerCase());
-    var l2 = 'Total no cartão: <b>' + brl(arr2(lanc + prevT)) + '</b> <span class="g2f-mut">(' + brl(lanc) + ' lançado' + (prevT > 0 ? ' + ' + brl(prevT) + ' previsto' : '') + ')</span>';
-    return '<div class="row g2f-mv"><span class="g2f-ri pri">' + ic('card') + '</span><div class="info"><div class="nm">' + esc(k.nome) + ' •' + esc(k.final) + (k.status !== 'active' ? ' ' + pill('inativo', 'cinza') : '') + '</div>' +
-      '<div class="sb">' + esc((k.banco || '') + ' · fecha dia ' + k.fechamento + ' · vence dia ' + k.vencimento) + '</div><div class="sb">' + l1 + '</div><div class="sb">' + l2 + '</div></div>' +
-      '<div class="g2f-acts">' + bt('detCartao', k.id, 'Detalhar fatura') + (pode('financial.cards.manage') ? bt('editCartao', k.id, 'Editar', 'sec') : '') + '</div></div>';
-  }
+    function linhaCartao(k) {
+      var m = mapaCartao(k), cur = ym(hoje()), ks = Object.keys(m).sort(), q = m[cur] ? cur : (ks.filter(function (z) { return z > cur; })[0] || ''), g = q ? m[q] : null, r = g ? resumoMes(g) : null;
+      /* FIN-ALL-21: saldo atual e futuro da fatura (mesmas fontes da tela: faturas lançadas + compras previstas; mês = mês do vencimento) */
+      var lanc = 0, prevT = 0, ant = 0, atual = 0, fut = 0, futMes = [];
+      ks.forEach(function (z) {
+        var rr = resumoMes(m[z]), s = m[z].s, ab = arr2((s && s.status !== 'paid' ? rr.aberto : 0) + rr.prev);
+        if (s && s.status !== 'paid') lanc += rr.aberto;
+        prevT += rr.prev;
+        if (z < cur) ant += ab;
+        else if (z === q) atual += ab;
+        else if (z > q && ab > 0.004) { fut += ab; futMes.push(MES3[+z.slice(5, 7) - 1] + '/' + z.slice(2, 4) + ' ' + brl(ab)); }
+      });
+      lanc = arr2(lanc); prevT = arr2(prevT); ant = arr2(ant); atual = arr2(atual); fut = arr2(fut);
+      var venc = g ? (g.s ? g.s.vencimento : (g.pv[0] && g.pv[0].vencimento) || '') : '';
+      var l1 = g ? esc((q === cur ? 'Fatura de ' : 'Próxima fatura · ') + MESES[+q.slice(5, 7) - 1].toLowerCase()) + ': <b>' + brl(r.total) + '</b>' + (venc ? ' · vence ' + esc(dataBR(venc)) : '') + ' ' + pillFatura(g) + (r.prev > 0 ? ' <span class="g2f-mut">inclui ' + brl(r.prev) + ' previsto</span>' : '')
+        : esc('Sem fatura em ' + MESES[+cur.slice(5, 7) - 1].toLowerCase());
+      var l2 = 'Saldo atual da fatura: <b>' + brl(atual) + '</b> <span class="g2f-mut">' + (atual > 0.004 ? 'a pagar' : 'nada em aberto') + '</span>' +
+        (ant > 0.004 ? ' · <span class="g2f-neg">anteriores em aberto: <b>' + brl(ant) + '</b></span>' : '');
+      var l3 = 'Saldo futuro: <b>' + brl(fut) + '</b>' + (futMes.length ? ' <span class="g2f-mut">(' + esc(futMes.slice(0, 4).join(' · ')) + (futMes.length > 4 ? ' · +' + (futMes.length - 4) + ' mês(es)' : '') + ')</span>' : ' <span class="g2f-mut">(nenhuma fatura futura)</span>');
+      var l4 = 'Total no cartão: <b>' + brl(arr2(lanc + prevT)) + '</b> <span class="g2f-mut">(' + brl(lanc) + ' lançado' + (prevT > 0 ? ' + ' + brl(prevT) + ' previsto' : '') + ')</span>';
+      return '<div class="row g2f-mv"><span class="g2f-ri pri">' + ic('card') + '</span><div class="info"><div class="nm">' + esc(k.nome) + ' •' + esc(k.final) + (k.status !== 'active' ? ' ' + pill('inativo', 'cinza') : '') + '</div>' +
+        '<div class="sb">' + esc((k.banco || '') + ' · fecha dia ' + k.fechamento + ' · vence dia ' + k.vencimento) + '</div><div class="sb">' + l1 + '</div><div class="sb">' + l2 + '</div><div class="sb">' + l3 + '</div><div class="sb">' + l4 + '</div></div>' +
+        '<div class="g2f-acts">' + bt('detCartao', k.id, 'Detalhar fatura') + (pode('financial.cards.manage') ? bt('editCartao', k.id, 'Editar', 'sec') : '') + '</div></div>';
+    }
   function htmlDetCartao(k) {
     var d = S.cartDet, g = mapaCartao(k)[d.ym] || { s: null, pv: [] }, st = g.s, r = resumoMes(g), cur = ym(hoje()), podeP = tes() && pode('financial.expenses.pay'), itens = [];
     if (st) (st.itens || []).forEach(function (i) { itens.push({ data: String(i.data || '').slice(0, 10), desc: i.descricao, parc: i.parcela && i.parcela !== '1/1' ? i.parcela : '', valor: num(i.valor), prev: false, tipo: i.tipo, pago: num(i.pago) }); });
