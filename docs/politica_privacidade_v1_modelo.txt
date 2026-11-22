@@ -1,0 +1,63 @@
+POLÍTICA DE PRIVACIDADE DO 2GATHER
+Viver Church Matão · Versão 1
+
+1. QUEM SOMOS
+Esta política explica como a Viver Church Matão ("Igreja") trata os dados pessoais de quem usa o 2Gather, o aplicativo de gestão da Igreja, e de quem é cadastrado nele (membros, visitantes, participantes de grupos, alunos, voluntários e pessoas atendidas pelo Instituto, pelo Mercado Solidário e pela Farmácia Solidária).
+Controladora dos dados: Viver Church Matão, CNPJ [PREENCHER], endereço [PREENCHER].
+Encarregado pelo tratamento de dados (LGPD, art. 41): [PREENCHER NOME], e-mail [PREENCHER E-MAIL].
+
+2. QUAIS DADOS TRATAMOS
+- Cadastro: nome, apelido, data de nascimento, sexo, CPF, telefone/WhatsApp, e-mail, endereço e foto.
+- Vida na Igreja: vínculo com a Igreja (membro, visitante etc.), etapa da jornada, grupo de crescimento (GC), presenças em cultos, encontros, eventos e treinamentos, funções e escalas.
+- Contribuições e finanças: dízimos, ofertas, compromissos, doações e demais lançamentos ligados à pessoa.
+- Instituto, Mercado Solidário e Farmácia Solidária: atendimentos, agendamentos, matrículas, entregas e, quando houver atendimento de saúde, prontuário e receitas.
+- Uso do aplicativo: nome de usuário, e-mail de acesso, perfil de acesso, registros de entrada e de ações no sistema (auditoria).
+Alguns desses dados são sensíveis pela LGPD (art. 5º, II): a filiação a organização religiosa e os dados de saúde (prontuário e receitas). Eles recebem proteção reforçada e acesso restrito.
+
+3. PARA QUE USAMOS OS DADOS E COM QUAL BASE LEGAL
+- Organizar a vida da Igreja (cadastro, grupos, cultos, eventos, escalas, cuidado pastoral e comunicação com a pessoa): consentimento (art. 7º, I e art. 11, I) e legítimo interesse da Igreja nas suas atividades (art. 7º, IX).
+- Registrar contribuições e prestar contas: cumprimento de obrigação legal e regulatória, fiscal e contábil (art. 7º, II).
+- Atendimentos de saúde do Instituto e entregas da Farmácia Solidária: tutela da saúde, em procedimento feito por profissionais de saúde (art. 11, II, "f"), e cumprimento de obrigação legal de guarda do prontuário (art. 11, II, "a").
+- Ações sociais (Mercado Solidário, cursos e demais atendimentos): consentimento e legítimo interesse.
+- Segurança do aplicativo, prevenção a fraudes e auditoria de acessos: legítimo interesse e cumprimento de obrigação legal (art. 7º, II e IX).
+Não vendemos dados pessoais e não os usamos para publicidade.
+
+4. QUEM PODE VER OS DADOS
+O acesso dentro do 2Gather depende do perfil de cada usuário (por exemplo: pastor, supervisor, líder de GC, discípulo, equipe do Instituto, tesouraria). Cada perfil vê só o necessário para a sua função. Dados de saúde só são vistos pela equipe autorizada do Instituto e da Farmácia. Acessos a dados sensíveis ficam registrados.
+
+5. COM QUEM COMPARTILHAMOS
+- Provedores de tecnologia que hospedam o aplicativo e o banco de dados: Supabase (banco de dados e autenticação) e Cloudflare (publicação do aplicativo). Eles tratam os dados apenas para prestar o serviço à Igreja.
+- WhatsApp: quando um usuário do app usa o atalho de enviar mensagem ou lembrete, o WhatsApp é aberto no aparelho dele, e o envio segue as regras do próprio WhatsApp.
+- Autoridades públicas, quando houver obrigação legal ou ordem judicial.
+Transferência internacional: o banco de dados do 2Gather fica em servidores nos Estados Unidos. A transferência é feita com provedores que adotam cláusulas contratuais e medidas de segurança compatíveis com a LGPD (art. 33).
+
+6. POR QUANTO TEMPO GUARDAMOS
+- Cadastro e vida na Igreja: enquanto houver vínculo com a Igreja e, depois, pelo tempo necessário para cumprir obrigações legais ou atender pedidos do titular.
+- Contribuições e registros financeiros: pelo prazo exigido pela legislação fiscal e contábil.
+- Prontuário e receitas: por no mínimo 20 anos, como exige a lei (Lei nº 13.787/2018). Nesse período, se a pessoa pedir a exclusão, o cadastro fica com tratamento restrito: sai das listas do aplicativo e só a equipe de saúde autorizada mantém acesso.
+- Registros de acesso ao aplicativo: pelo prazo legal aplicável.
+Terminado o prazo, os dados são anonimizados ou eliminados.
+
+7. SEUS DIREITOS
+Você pode, a qualquer momento (LGPD, art. 18):
+- confirmar se tratamos seus dados e ter acesso a eles;
+- corrigir dados incompletos, inexatos ou desatualizados;
+- pedir a anonimização, o bloqueio ou a eliminação de dados desnecessários ou tratados em desacordo com a lei;
+- pedir a portabilidade dos dados;
+- ser informado sobre com quem compartilhamos seus dados;
+- revogar o consentimento, sabendo das consequências;
+- pedir a revisão de decisões tomadas só por meios automatizados.
+Para exercer seus direitos, fale com o Encarregado pelo e-mail [PREENCHER E-MAIL] ou com a liderança da Igreja. Vamos confirmar a sua identidade antes de atender o pedido. Você também pode reclamar à Autoridade Nacional de Proteção de Dados (ANPD).
+Alguns dados não podem ser apagados enquanto a lei exigir a guarda, como os registros financeiros e o prontuário. Nesses casos, explicaremos o motivo e restringiremos o uso.
+
+8. CRIANÇAS E ADOLESCENTES
+Dados de crianças só são cadastrados com o consentimento de pelo menos um dos pais ou do responsável legal e são usados no melhor interesse da criança (LGPD, art. 14).
+
+9. SEGURANÇA
+Usamos acesso por usuário e senha, perfis de acesso com o mínimo necessário, conexão criptografada e registro de acessos a dados sensíveis. Nenhum sistema é totalmente imune a falhas; se acontecer um incidente de segurança que possa causar risco ou dano relevante, comunicaremos os titulares afetados e a ANPD.
+
+10. ACEITE E MUDANÇAS NESTA POLÍTICA
+Ao aceitar esta política no 2Gather, você declara que a leu e concorda com o tratamento dos seus dados como descrito aqui. Se você não aceitar, não poderá usar o aplicativo, mas isso não muda o seu cadastro nem o seu vínculo com a Igreja.
+Quando esta política mudar, publicaremos uma nova versão no aplicativo e pediremos um novo aceite.
+
+Dúvidas: [PREENCHER E-MAIL].
