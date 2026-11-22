@@ -1,4 +1,5 @@
-/* 2Gather v39 · Instituto · INST-8
+/* 2Gather v39 · Instituto · INST-9
+   INST-9: instDados aceita período (de/ate) para a agenda navegar por semanas passadas e futuras.
    INST-8: FOTO DO ATENDIDO. O "Novo atendido" passa a guardar a foto (bucket privado person-photos, caminho <igreja>/people/<pessoa>/<uuid>.jpg, registro pela função v39_inst_register_photo)
      e a foto aparece na ficha do médico, em Pacientes e prontuários e na agenda; só para quem pode ver (equipe do Instituto ou o profissional que atende o paciente).
      As fotos ficam só na memória da tela (nunca no aparelho). Requer INST_S20 (sem ele o cadastro é feito e o app avisa que a foto não foi salva).
@@ -25,7 +26,7 @@
    Diagnóstico no Console: G2_INST.versao · G2_INST.acoes() */
 (function () {
   'use strict';
-  var VERSAO = 'INST-8';
+  var VERSAO = 'INST-9';
   if (window.G2_INST) return;
   var M = window.G2_INST = { versao: VERSAO, ultimo: {} };
   console.info('[2Gather] instituto ' + VERSAO);
@@ -547,7 +548,9 @@
   }
   var okObj = function () { return { ok: true }; };
   LEITURA.instDados = 1; LEITURA.instProntuarioDe = 1;
-  ACOES.instDados = function () { return chamarRpc('v39_inst_dados', {}).then(mapDados).then(function (o) { carregarFotosAgenda(o); return o; }); };
+  ACOES.instDados = function (d) {   // INST-9: período opcional (de/ate) para a agenda navegar além do padrão do servidor (hoje-31 a hoje+120)
+    var a = {}; if (d && /^\d{4}-\d{2}-\d{2}$/.test(d.de || '')) a.p_de = d.de; if (d && /^\d{4}-\d{2}-\d{2}$/.test(d.ate || '')) a.p_ate = d.ate;
+    return chamarRpc('v39_inst_dados', a).then(mapDados).then(function (o) { carregarFotosAgenda(o); return o; }); };
   ACOES.instAgendar = function (d) {
     var p = { agendaId: d.agendaId, data: d.data, hora: d.hora, pessoaId: d.pessoaId, motivo: d.motivo || '', autorizou: !!d.autorizou };
     return chamarRpc('v39_inst_schedule', { p: p }).then(function (r) {

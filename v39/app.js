@@ -5695,8 +5695,8 @@ function rLVVol() {
 /* ═══════════════════ v36: MÓDULO INSTITUTO — agendas, atendimentos e prontuário ═══════════════════ */
 var IC_INST = '<path d="M12 21s-7-4.4-9-9.2C1.8 8.6 3.6 5 7 5c2 0 3.4 1.1 5 3 1.6-1.9 3-3 5-3 3.4 0 5.2 3.6 4 6.8C19 16.6 12 21 12 21z"/><path d="M12 9v6M9 12h6"/>';
 var instD = { t: 0, carregando: false, agendas: [], ags: [], pac: {}, profissionais: [], perm: {}, hoje: '' };
-var instSel = { agenda: '', data: '' }, instFl = null, instCd = null, instAgForm = null, instBuscaT = null;
-function instLimpar() { instCtxCache = null; instPac = { q: '', itens: null, carregando: false, erro: '', semSql: false }; instD = { t: 0, carregando: false, agendas: [], ags: [], pac: {}, profissionais: [], elegiveis: [], perm: {}, hoje: '' }; instSel = { agenda: '', data: '' }; instFl = null; instCd = null; instAgForm = null; estLimpar(); }
+var instSel = { agenda: '', data: '', ini: '' }, instFl = null, instCd = null, instAgForm = null, instBuscaT = null;
+function instLimpar() { instCtxCache = null; instPac = { q: '', itens: null, carregando: false, erro: '', semSql: false }; instD = { t: 0, carregando: false, agendas: [], ags: [], pac: {}, profissionais: [], elegiveis: [], perm: {}, hoje: '' }; instSel = { agenda: '', data: '', ini: '' }; instFl = null; instCd = null; instAgForm = null; estLimpar(); }
 function temInst() { return pode('instituto') || pode('agendaPastoral') || pode('prontuario') || temInstCursos() || temEstMercado() || temEstFarmacia(); }
 function agendaPor(id) { return instD.agendas.filter(function (a) { return a.id === id; })[0] || null; }
 function podeAgendarNa(ag) { return ag && (ag.dono || (ag.tipo === 'pastoral' ? pode('agendaPastoral') : pode('instituto'))); }
@@ -5706,7 +5706,7 @@ function carregarInst(forcar) {
   if (instD.carregando || (!forcar && instD.t && Date.now() - instD.t < 45000)) return Promise.resolve();
   if (cfg.token === 'supabase-v39' && window.G2_V39 && G2_V39.p1 && typeof G2_V39.p1.isRead === 'function' && !G2_V39.p1.isRead('instDados')) return Promise.resolve();   // módulo do Instituto ainda carregando: __gc.instRecarregar() refaz quando ele ficar pronto
   instD.carregando = true;
-  return chamar('instDados', {}).then(function (r) {
+  return chamar('instDados', instD.periodo || {}).then(function (r) {   // INST-9: período maior quando a agenda navega além do padrão do servidor
     instD.agendas = r.agendas || []; instD.ags = r.agendamentos || []; instD.pac = r.pacientes || {}; instD.profissionais = r.profissionais || [];
     instD.perm = r.perm || {}; instD.elegiveis = r.elegiveis || []; instD.hoje = r.hoje || hoje(); instD.t = Date.now();
   }).catch(function (e) { toast(e.message, 5000); instD.t = Date.now(); })
@@ -5729,6 +5729,25 @@ function ocupanteDe(ag, iso, hora) {
 function passou(iso, hora) { return iso < hoje() || (iso === hoje() && minStr(hora) < agoraMin()); }
 function livresDoDia(ag, iso) { return slotsDoDia(ag, iso).filter(function (h) { return !passou(iso, h) && !ocupanteDe(ag, iso, h); }); }
 function proximosDias(n) { var out = [], d = parseData(hoje()); for (var i = 0; i < n; i++) { out.push(isoData(d)); d.setDate(d.getDate() + 1); } return out; }
+/* INST-9: navegação por semana na agenda (semanas passadas e futuras). */
+function somaDias(iso, n) { var d = parseData(iso); d.setDate(d.getDate() + n); return isoData(d); }
+function inicioSemana(iso) { var d = parseData(iso); d.setDate(d.getDate() - d.getDay()); return isoData(d); }
+function diasDesde(ini, n) { var out = []; for (var i = 0; i < n; i++) out.push(somaDias(ini, i)); return out; }
+/** O servidor devolve, por padrão, de hoje-31 a hoje+120 dias. Fora disso, recarrega com o período da semana (sempre incluindo hoje). */
+function instGarantirPeriodo(ini, fim) {
+  var hj = hoje(), p = instD.periodo || { de: somaDias(hj, -31), ate: somaDias(hj, 120) };
+  if (ini >= p.de && fim <= p.ate) return;
+  var de = somaDias(hj, -31), ate = somaDias(hj, 120);
+  instD.periodo = { de: ini < de ? somaDias(ini, -7) : de, ate: fim > ate ? somaDias(fim, 7) : ate };
+  carregarInst(true);
+}
+function instIrSemana(v) {
+  var n = +v || 0, ini = n === 0 ? inicioSemana(hoje()) : somaDias(instSel.ini || inicioSemana(hoje()), 7 * n);
+  instSel.ini = ini;
+  instSel.data = n === 0 ? hoje() : (instSel.data && instSel.data >= ini && instSel.data <= somaDias(ini, 6) ? instSel.data : ini);
+  instGarantirPeriodo(ini, somaDias(ini, 6));
+  render();
+}
 function proxLivre(ag) {
   var ds = proximosDias(60);
   for (var i = 0; i < ds.length; i++) { var l = livresDoDia(ag, ds[i]); if (l.length) return { data: ds[i], hora: l[0] }; }
@@ -5857,16 +5876,25 @@ function rInstAgenda() {
   var ag = agendaPor(instSel.agenda);
   if (!instD.t) return '<div class="card"><div class="empty">Carregando…</div></div>';
   if (!ag) return '<div class="card"><div class="empty">Agenda não encontrada.</div></div>';
-  var dias = proximosDias(21), sel = instSel.data && dias.indexOf(instSel.data) >= 0 ? instSel.data : hoje();
+  // INST-9: semana de domingo a sábado, com navegação (antes: 21 dias a partir de hoje numa faixa com rolagem escondida)
+  if (!instSel.ini) instSel.ini = inicioSemana(instSel.data || hoje());
+  var dias = diasDesde(instSel.ini, 7), hjA = hoje();
+  var sel = instSel.data && dias.indexOf(instSel.data) >= 0 ? instSel.data : (dias.indexOf(hjA) >= 0 ? hjA : dias[0]);
   instSel.data = sel;
   var h = '<div class="card" style="padding:14px 16px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div style="min-width:0"><div style="font-size:11px;color:var(--tx3);font-weight:800;letter-spacing:.6px">' +
     (ag.tipo === 'pastoral' ? 'AGENDA PASTORAL' : 'AGENDA DE SAÚDE') + '</div><div style="font-size:18px;font-weight:800;margin-top:2px">' + esc(ag.nome) + '</div>' +
     '<div style="font-size:12.5px;color:var(--tx2);margin-top:2px">' + esc([ag.especialidade, ag.profissionalNome, ag.local, (ag.duracaoMin || 30) + ' min por atendimento'].filter(Boolean).join(' · ')) + '</div></div>' +
     (ag.dono ? '<span class="pill p-verde">minha agenda</span>' : '') + '</div>' +
     ((instD.perm.admin || ag.dono) ? '<div style="margin-top:10px"><button class="btn gh sm" data-a="instAgendaForm" data-v="' + esc(ag.id) + '">Editar agenda e horários</button></div>' : '') + '</div>';
-  h += '<div class="dstrip">' + dias.map(function (d) {
-    var n = slotsDoDia(ag, d).length, l = livresDoDia(ag, d).length;
-    return '<button class="dch' + (d === sel ? ' on' : '') + (n ? '' : ' off') + '" data-a="instDia" data-v="' + d + '"><small>' + DIAS[parseData(d).getDay()].slice(0, 3) + '</small><b>' + pad(parseData(d).getDate()) + '</b><i>' + (n ? (l ? l + ' livre' + (l > 1 ? 's' : '') : 'lotado') : '—') + '</i></button>';
+  var ehSemanaAtual = dias.indexOf(hjA) >= 0;
+  h += '<div class="semnav"><button class="btn gh sm" data-a="instSemana" data-v="-1" aria-label="Semana anterior">‹ Anterior</button>' +
+    '<div class="semrot"><b>' + br(dias[0]) + ' a ' + brCompleto(dias[6]) + '</b>' + (ehSemanaAtual ? '<small>esta semana</small>' : '<a data-a="instSemana" data-v="0">voltar para hoje</a>') + '</div>' +
+    '<button class="btn gh sm" data-a="instSemana" data-v="1" aria-label="Próxima semana">Próxima ›</button></div>';
+  if (instD.carregando) h += '<div style="font-size:11.5px;color:var(--tx3);margin:2px 4px">Carregando atendimentos do período…</div>';
+  h += '<div class="dstrip sem">' + dias.map(function (d) {
+    var n = slotsDoDia(ag, d).length, l = livresDoDia(ag, d).length, nAt = atendDe(ag.id, d).filter(function (a) { return a.status !== 'cancelado'; }).length;
+    var info = d < hjA ? (nAt ? nAt + ' atend.' : (n ? 'passou' : '—')) : (n ? (l ? l + ' livre' + (l > 1 ? 's' : '') : 'lotado') : '—');
+    return '<button class="dch' + (d === sel ? ' on' : '') + (n || nAt ? '' : ' off') + (d === hjA ? ' hj' : '') + '" data-a="instDia" data-v="' + d + '"><small>' + DIAS[parseData(d).getDay()].slice(0, 3) + '</small><b>' + pad(parseData(d).getDate()) + '</b><i>' + info + '</i></button>';
   }).join('') + '</div>';
   var slots = slotsDoDia(ag, sel), ags = atendDe(ag.id, sel), fora = ags.filter(function (a) { return a.status !== 'cancelado' && slots.indexOf(a.hora) < 0; }), canc = ags.filter(function (a) { return a.status === 'cancelado'; });
   h += '<div class="sec">' + DIAS[parseData(sel).getDay()] + ', ' + brCompleto(sel) + '</div>';
@@ -7015,7 +7043,8 @@ var ACOES = {
     instAgendaProf: function (v) { var pr = profissionaisDe(instD.agendas).filter(function (x) { return x.id === v; })[0] || (instD.profissionais || []).filter(function (x) { return x.id === v; })[0]; instAgendaForm('', { profissionalId: v, especialidade: (pr && pr.especialidade) || '', nome: pr ? pr.nome + ' — ' + ((pr && pr.especialidade) || '') : '' }); },
     instFiltroEsp: function (v) { instFiltroEsp = v || ''; render(); },
     instFlEsp: function (v) { instFl.esp = v; instFl.agenda = ''; instFluxo(); },
-    instAbrirAgenda: function (v) { instSel.agenda = v; instSel.data = hoje(); if (cfg.aba === 'instagenda') render(); else irAba('instagenda'); },
+    instSemana: function (v) { instIrSemana(v); },
+    instAbrirAgenda: function (v) { instSel.agenda = v; instSel.data = hoje(); instSel.ini = inicioSemana(hoje()); if (cfg.aba === 'instagenda') render(); else irAba('instagenda'); },
     instNovoAg: function (v) { instNovoAg(); }, instAgendarSlot: function (v) { var p = v.split('|'); instNovoAg(p[0], p[1], p[2]); },
     instDia: function (v) { instSel.data = v; render(); },
     instFlAgenda: function (v) { instFl.agenda = v; var a0 = agendaPor(v); if (a0) instFl.esp = espChave(a0); instFluxo(); }, instFlDia: function (v) { instFl.data = v; instFluxo(); }, instFlHora: function (v) { instFl.hora = v; instFluxo(); },
@@ -7934,7 +7963,7 @@ window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'SYNC-V39-24';   // SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
+  var BUILD = 'SYNC-V39-25';   // SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 
