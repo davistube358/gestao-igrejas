@@ -1,4 +1,5 @@
-/* 2Gather v39 · Ministérios · MIN-3
+/* 2Gather v39 · Ministérios · MIN-4
+   MIN-4: aba "Crianças" no ministério Kids (módulo app_v39_kids.js, KIDS-2) e utilitários G2_MIN._u.
    MIN-3: logo e faixa dentro do cadastro do ministério (sem botão à parte); líder/auxiliar abre o cadastro só para as imagens.
    Carregar DEPOIS do app.js. Requer no Supabase: sql/KIDS_1_ministerios_aplicar.sql (MIN-1) e sql/MIN_2_imagens_aplicar.sql (logo/faixa).
    MIN-2: logo (quadrado) e faixa (larga) do ministério, como no GC. Bucket 2gather-media, pasta <igreja>/ministerios/<id>/.
@@ -14,7 +15,7 @@
    Diagnóstico no Console: G2_MIN.versao, G2_MIN._s */
 (function () {
   'use strict';
-  var VERSAO = 'MIN-3';
+  var VERSAO = 'MIN-4';
   if (window.G2_MIN) return;
   var M = window.G2_MIN = { versao: VERSAO };
   console.info('[2Gather] ministerios ' + VERSAO);
@@ -274,11 +275,14 @@
     // MIN-3: pastor/master editam tudo; líder/auxiliar abre o mesmo cadastro só para logo e faixa
     if (ehAdmin() || (lid && temImagens(m) && m.status !== 'closed')) bts += '<button class="btn gh sm" data-m="editarMin" data-v="' + esc(m.id) + '">Editar ministério</button>';
     if (bts) h += '<div class="gap"></div>' + bts;
-    var abas = [['agenda', 'Agenda'], ['equipe', 'Equipe']]; if (lid) abas.push(['funcoes', 'Funções']);
+    var abas = [['agenda', 'Agenda']];
+    if (m.tipo === 'kids' && m.status === 'active' && window.G2_KIDS) abas.push(['criancas', 'Crianças']);   // KIDS-2
+    abas.push(['equipe', 'Equipe']); if (lid) abas.push(['funcoes', 'Funções']);
     if (abas.map(function (a) { return a[0]; }).indexOf(S.aba) < 0) S.aba = 'agenda';
     h += '<div class="chips" style="margin-top:12px">' + abas.map(function (a) {
       return '<button data-m="abaMin" data-v="' + a[0] + '" class="' + (S.aba === a[0] ? 'on' : '') + '">' + a[1] + '</button>'; }).join('') + '</div>';
     if (S.aba === 'agenda') h += telaAgenda(m, lid);
+    else if (S.aba === 'criancas') h += window.G2_KIDS.tela(m);
     else if (S.aba === 'equipe') h += telaEquipe(m, lid);
     else h += telaFuncoes(m);
     return h;
@@ -561,4 +565,7 @@
   M.montar = montar;
   M.recarregar = function () { S.lista = null; S.eventos = {}; S.membros = {}; return carregarLista(true); };
   M._t = { traduz: traduz, corpo: corpo, telaLista: telaLista, telaMinisterio: telaMinisterio };
+  // KIDS-2: utilitários para o módulo app_v39_kids.js (mesma conexão, modal e toast)
+  M._u = { rpc: rpc, cliente: cliente, toast: toast, modal: modal, fecharModal: fecharModal, traduz: traduz, pintar: pintar,
+           igrejaId: function () { return S.igreja; }, minAtual: minAtual };
 })();
