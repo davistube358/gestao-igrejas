@@ -526,10 +526,39 @@ function aplicarCep(prefixo) {
     if (info) {
       info.style.color = '#1f6b40';
       info.textContent = 'CEP encontrado: ' + [r.bairro, r.cidade].filter(Boolean).join(' · ') +
-        (r.bairro ? '' : ' — esta cidade usa CEP único; preencha o bairro manualmente.');
+        (r.bairro ? '' : ' — esta cidade usa CEP único; ' + dicaBuscaBairro(prefixo));
     }
+    if (!r.bairro) { cepSemBairro(prefixo, false); return; }
     if (campoAtivo && document.body.contains(campoAtivo) && typeof campoAtivo.focus === 'function') campoAtivo.focus();
-  }).catch(function (e) { if (info) { info.style.color = '#a12424'; info.textContent = e.message + ' Preencha bairro e cidade manualmente.'; } });
+  }).catch(function (e) {
+    if (info) { info.style.color = '#a12424'; info.textContent = e.message + ' ' + dicaBuscaBairro(prefixo); }
+    cepSemBairro(prefixo, true);
+  });
+}
+/* CAD-1: CEP sem bairro (não encontrado ou CEP único): busca do bairro na cidade da igreja (Configurações). */
+function dicaBuscaBairro(px) {
+  return ($(px + '-bairrosel') ? 'escolha o bairro de ' : 'digite para buscar o bairro em ') + cidadeIgreja() + '.';
+}
+function cepSemBairro(px, naoAchou) {
+  var cid = $(px + '-cidade');
+  if (naoAchou && cid && !cid.value.trim()) cid.value = cidadeIgreja();
+  var sel = $(px + '-bairrosel'), inp = $(px + '-bairro');
+  var alvo = sel && (!inp || inp.classList.contains('hide')) ? sel : inp;
+  if (alvo && !String((inp && inp.value) || '').trim() && typeof alvo.focus === 'function') setTimeout(function () { alvo.focus(); }, 0);
+}
+/** Bairros conhecidos da cidade da igreja: a lista das Configurações + os já usados nos cadastros dessa cidade. */
+function bairrosConhecidos() {
+  var vistos = {}, out = [], ch = chaveCidade(cidadeIgreja());
+  function add(b) { b = String(b || '').trim(); var k = normalizar(b); if (b && !vistos[k]) { vistos[k] = 1; out.push(b); } }
+  listaBairros().forEach(add);
+  try {
+    ((db && db.pessoas) || []).forEach(function (p) {
+      if (p.deleted || !p.bairro) return;
+      var e = separarBairroCidade(p.bairro, p.cidade);
+      if (!e.cidade || chaveCidade(e.cidade) === ch) add(e.bairro);
+    });
+  } catch (e) { /* sem base local */ }
+  return out.sort(function (a, b) { return a.localeCompare(b, 'pt-BR'); });
 }
 
 /* ───────── mapa de calor por bairro ───────── */
@@ -3281,6 +3310,7 @@ function atualizarConfig(c) {
    'configPublica'). Enquanto o banco não tiver configuração salva (salvoEm vazio), o app segue com a fonte antiga
    (Apps Script) e o 1º "Salvar" do master migra tudo, inclusive logo e ícone (bucket 2gather-media, <igreja>/branding/). ── */
 var CFG_BUCKET = '2gather-media';
+var cfgInstitutos = null;   // CAD-1: [{registroId, nome, fantasia, cnpj, ie, im, presidente, responsavel, telefone, email, endereco, obs, ativa, principal}]
 function cfgV39Ativo() { return cfg.token === 'supabase-v39' && !!(cfg.usuario && cfg.usuario.igrejaId); }
 function cfgEncarregadoPartes(s) {   // texto livre antigo "nome · telefone · e-mail" -> 3 campos
   var o = { nome: '', fone: '', email: '' };
@@ -3292,7 +3322,7 @@ function cfgEncarregadoPartes(s) {   // texto livre antigo "nome · telefone · 
 }
 function cfgDoBanco(o) {
   o = o || {};
-  return { nome: o.nome || '', cnpj: o.cnpj || '', fundacao: o.fundacao || '', pastorPresidente: o.pastorPresidente || '', endereco: o.endereco || {},
+  return { nome: o.nome || '', cnpj: o.cnpj || '', razaoSocial: o.razaoSocial || '', ie: o.ie || '', im: o.im || '', fundacao: o.fundacao || '',   // CAD-1: + razão social, IE, IM pastorPresidente: o.pastorPresidente || '', endereco: o.endereco || {},
     cultos: o.cultos || [], bairros: o.bairros || [], cor: o.cor || '',
     encarregadoNome: o.encarregadoNome || '', encarregadoTelefone: o.encarregadoTelefone || '', encarregadoEmail: o.encarregadoEmail || '',
     encarregado: [o.encarregadoNome, o.encarregadoTelefone, o.encarregadoEmail].filter(Boolean).join(' · '),
@@ -3330,7 +3360,8 @@ function aplicarConfigV39(c, imgs) {
 function v39CarregarConfig() {
   if (!cfgV39Ativo()) return Promise.resolve(false);
   return v39RpcApp('v39_config_get', { p_church_id: cfg.usuario.igrejaId }).then(function (r) {
-    var o = r && r.config; if (!o || !o.salvoEm) return false;
+    cfgInstitutos = (r && r.institutos) || [];   // CAD-1: cadastro legal do(s) Instituto(s) (base única: Financeiro › Entidades)
+    var o = r && r.config; if (!o || !o.salvoEm) { if (cfg.aba === 'config') render(); return false; }
     return aplicarConfigV39(cfgDoBanco(o));
   }).then(function (m) { if (m) render(); return m; }).catch(function (e) {
     if (!/PGRST202|does not exist|schema cache/i.test(String((e && (e.message || e.code)) || ''))) console.warn('[2Gather][config]', e);
@@ -3364,7 +3395,7 @@ function salvarConfigV39(c) {
   var lg = c.logo !== undefined ? c.logo : (migra && igr.logo ? igr.logo : undefined);
   var ic = c.icone !== undefined ? c.icone : (migra && igr.icone ? igr.icone : undefined);
   return Promise.all([sobe(lg, 'logo'), sobe(ic, 'icone'), sobe(c.favicon, 'favicon')]).then(function (paths) {
-    var e = c.endereco || {}, p = { nome: c.nome, cnpj: c.cnpj, fundacao: c.fundacao, pastorPresidente: c.pastorPresidente,
+    var e = c.endereco || {}, p = { nome: c.nome, cnpj: c.cnpj, razaoSocial: c.razaoSocial || '', ie: c.ie || '', im: c.im || '', fundacao: c.fundacao, pastorPresidente: c.pastorPresidente,
       endereco: { cep: e.cep || '', rua: e.rua || '', numero: e.numero || '', complemento: e.complemento || '', bairro: e.bairro || '', cidade: e.cidade || '' },
       cultos: c.cultos || [], bairros: c.bairros || [], cor: c.cor || '',
       encarregadoNome: c.encarregadoNome || '', encarregadoTelefone: c.encarregadoTelefone || '', encarregadoEmail: c.encarregadoEmail || '' };
@@ -3688,7 +3719,9 @@ function mascaraCnpj(t) {
 }
 function lerCfgForm() {
   if (!$('cf-nome')) return cfgDraft;
-  var c = { nome: $('cf-nome').value.trim(), cnpj: $('cf-cnpj').value.trim(), fundacao: $('cf-fund').value, pastorPresidente: $('cf-pastor').value.trim(), cultos: [],
+  var c = { nome: $('cf-nome').value.trim(), cnpj: $('cf-cnpj').value.trim(), fundacao: $('cf-fund').value,
+    razaoSocial: $('cf-razao') ? $('cf-razao').value.trim() : ((cfgDraft && cfgDraft.razaoSocial) || ''),   // CAD-1
+    ie: $('cf-ie') ? $('cf-ie').value.trim() : ((cfgDraft && cfgDraft.ie) || ''), im: $('cf-im') ? $('cf-im').value.trim() : ((cfgDraft && cfgDraft.im) || ''), pastorPresidente: $('cf-pastor').value.trim(), cultos: [],
     endereco: { cep: mascaraCep($('cf-cep').value), rua: $('cf-endereco').value.trim(), numero: $('cf-numero').value.trim(), complemento: $('cf-complemento').value.trim(),
                 bairro: $('cf-bairro').value.trim(), cidade: $('cf-cidade').value.trim() },
     bairros: ((cfgDraft && cfgDraft.bairros) || (igr.config && igr.config.bairros) || []).slice(),
@@ -3710,7 +3743,7 @@ function lerCfgForm() {
 }
 function rConfig() {
   if (!pode('config')) return '<div class="empty">Sem permissão.</div>';
-  if (!cfgDraft) { var b = igr.config || {}; cfgDraft = { nome: b.nome || '', cnpj: b.cnpj || '', fundacao: b.fundacao || '', pastorPresidente: b.pastorPresidente || '', cultos: (b.cultos || []).slice(),
+  if (!cfgDraft) { var b = igr.config || {}; cfgDraft = { nome: b.nome || '', cnpj: b.cnpj ? mascaraCnpj(b.cnpj) : '', razaoSocial: b.razaoSocial || '', ie: b.ie || '', im: b.im || '', fundacao: b.fundacao || '', pastorPresidente: b.pastorPresidente || '', cultos: (b.cultos || []).slice(),
     endereco: JSON.parse(JSON.stringify(b.endereco || {})), bairros: (b.bairros || []).slice(), cor: b.cor || '' };
     var ep = (b.encarregadoNome || b.encarregadoTelefone || b.encarregadoEmail) ? { nome: b.encarregadoNome || '', fone: b.encarregadoTelefone || '', email: b.encarregadoEmail || '' } : cfgEncarregadoPartes(b.encarregado);   // CONFIG-1: texto antigo vira 3 campos
     cfgDraft.encarregadoNome = ep.nome; cfgDraft.encarregadoTelefone = ep.fone; cfgDraft.encarregadoEmail = ep.email; }
@@ -3747,9 +3780,13 @@ function rConfig() {
     }).join('') + '<input type="color" id="cf-cor" value="' + esc(c.cor || COR_PADRAO) + '" title="Outra cor"></div>' +
     '<div style="font-size:11px;color:#888;margin-top:4px">Cor de destaque de botões, ícones e marcações para todos os usuários. Padrão: azul.</div>' +
     '<label>Nome da igreja</label><input id="cf-nome" value="' + esc(c.nome) + '" placeholder="Ex.: Viver Church Matão">' +
+    (cfg.token === 'supabase-v39' ? '<label>Razão social</label><input id="cf-razao" value="' + esc(c.razaoSocial) + '" placeholder="Como está no CNPJ">' : '') +
     '<div class="g2"><div><label>CNPJ</label><input id="cf-cnpj" inputmode="numeric" value="' + esc(c.cnpj) + '" placeholder="00.000.000/0000-00"></div>' +
     '<div><label>Data de fundação</label><input id="cf-fund" type="date" value="' + esc(c.fundacao) + '"></div></div>' +
-    '<label>Pastor presidente</label><input id="cf-pastor" value="' + esc(c.pastorPresidente) + '"></div>' + blocoConfigEndereco(c) +
+    (cfg.token === 'supabase-v39' ? '<div class="g2"><div><label>Inscrição estadual</label><input id="cf-ie" value="' + esc(c.ie) + '"></div>' +
+      '<div><label>Inscrição municipal</label><input id="cf-im" value="' + esc(c.im) + '"></div></div>' +
+      '<div style="font-size:11px;color:#888;margin-top:6px;line-height:1.5">Cadastro legal único: o mesmo CNPJ, razão social e endereço aparecem no Financeiro (Entidades), nos relatórios e na política de privacidade.</div>' : '') +
+    '<label>Pastor presidente</label><input id="cf-pastor" value="' + esc(c.pastorPresidente) + '"></div>' + blocoConfigEndereco(c) + blocoConfigInstitutos() +
     '<div class="card"><h3>Horários de culto</h3>' + (c.cultos.length ? c.cultos.map(function (x, i) {
       return '<div class="cf-culto" style="border:1.5px solid #eee;border-radius:12px;padding:4px 10px 10px;margin-bottom:8px">' +
         '<div class="g2"><div><label>Dia</label><select class="cf-dia">' + opts(DIAS.map(function (d, j) { return [String(j), d]; }), x.dia) + '</select></div>' +
@@ -3906,6 +3943,30 @@ function politicaModeloV1() {
       cfgDraft.politica = t; cfgDraft.politicaModelo = t;
     }).catch(function (e) { console.warn('[2Gather] modelo da política indisponível', e); })
     .then(function () { if (cfg.aba === 'config') render(); });
+}
+/* CAD-1: cadastro legal do(s) Instituto(s) em Configurações. Base única: Financeiro › Entidades (v39_fin_entities);
+   a tela do Instituto e o Financeiro mostram e editam o mesmo registro. */
+function blocoConfigInstitutos() {
+  if (cfg.token !== 'supabase-v39') return '';
+  if (cfgInstitutos === null) { v39CarregarConfig(); return '<div class="card"><h3>Instituto</h3><div class="empty" style="padding:10px">Carregando...</div></div>'; }
+  var M = window.G2_FIN_ENT, ed = !!(M && typeof M.abrirForm === 'function');
+  return '<div class="card"><h3>Instituto</h3>' + (cfgInstitutos.length ? cfgInstitutos.map(function (e) {
+      var a = e.endereco || {}, end = [[a.rua, a.numero].filter(Boolean).join(', '), a.bairro, [a.cidade, a.uf].filter(Boolean).join('/')].filter(Boolean).join(' · ');
+      return '<div style="border:1.5px solid #eee;border-radius:12px;padding:8px 10px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:start">' +
+        '<div><b>' + esc(e.fantasia || e.nome) + '</b>' + (e.ativa === false ? ' <span class="pill p-cinza">inativo</span>' : '') +
+        '<div style="font-size:12px;color:#666;line-height:1.5">' + esc(e.nome) + '<br>' + (e.cnpj ? 'CNPJ ' + esc(mascaraCnpj(e.cnpj)) : 'Sem CNPJ próprio (usa o da igreja)') +
+        (e.responsavel ? ' · Responsável: ' + esc(e.responsavel) : '') + (end ? '<br>' + esc(end) : '') + '</div></div>' +
+        (ed ? '<button class="btn gh sm" data-a="cfInstEditar" data-v="' + esc(e.registroId) + '">Editar</button>' : '') + '</div></div>';
+    }).join('') : '<div class="empty" style="padding:10px">Nenhum Instituto cadastrado.</div>') +
+    (ed ? '<button class="btn gh sm" data-a="cfInstNovo">+ Instituto</button>' : '') +
+    '<div style="font-size:11px;color:#999;margin-top:8px;line-height:1.5">É o mesmo cadastro do Financeiro (Entidades) e dos documentos do Instituto (receita, prontuário). O nome de exibição e a logo dos documentos ficam na tela do Instituto.</div></div>';
+}
+function cfgInstAbrir(id) {
+  var M = window.G2_FIN_ENT; if (!M || typeof M.abrirForm !== 'function') return toast('Atualize o app para editar o Instituto.', 4000);
+  var e = id ? (cfgInstitutos || []).filter(function (x) { return x.registroId === id; })[0] : null;
+  if (id && !e) return;
+  cfgDraft = lerCfgForm();
+  M.abrirForm(e ? Object.assign({ tipo: 'institute' }, e) : null, function () { cfgInstitutos = null; v39CarregarConfig(); toast('Instituto salvo ✓', 3000); });
 }
 function blocoPublicarPolitica(c) {
   if (!podePublicarPolitica() || c.politica === undefined) return '';
@@ -4150,12 +4211,13 @@ function bairroDaLista(nome) {
 /** Campo de bairro: lista para escolher (padronizado) + "outro" para digitar. O valor fica sempre em #px-bairro. */
 function campoBairro(px, valor, obrig, dis, ph) {
   var l = listaBairros(), rot = '<label>Bairro' + (obrig ? ' *' : '') + '</label>';
-  if (!l.length) return rot + '<input id="' + px + '-bairro" value="' + esc(valor) + '" placeholder="' + (ph || 'Ex.: Bela Vista') + '"' + (dis || '') + '>';
+  var dl = '<datalist id="' + px + '-bairros-dl">' + bairrosConhecidos().map(function (b) { return '<option value="' + esc(b) + '">'; }).join('') + '</datalist>';   // CAD-1: busca na cidade da igreja
+  if (!l.length) return rot + '<input id="' + px + '-bairro" list="' + px + '-bairros-dl" autocomplete="off" value="' + esc(valor) + '" placeholder="' + (ph || 'Ex.: Bela Vista') + '"' + (dis || '') + '>' + dl;
   var achado = bairroDaLista(valor), outro = !!valor && !achado;
   return rot + '<select id="' + px + '-bairrosel"' + (dis || '') + '><option value="">— selecionar —</option>' +
     l.map(function (b) { return '<option value="' + esc(b) + '"' + (b === achado ? ' selected' : '') + '>' + esc(b) + '</option>'; }).join('') +
     '<option value="__outro__"' + (outro ? ' selected' : '') + '>Outro bairro / outra cidade…</option></select>' +
-    '<input id="' + px + '-bairro" class="' + (outro ? '' : 'hide') + '" style="margin-top:6px" value="' + esc(achado || valor || '') + '" placeholder="Digite o bairro"' + (dis || '') + '>';
+    '<input id="' + px + '-bairro" list="' + px + '-bairros-dl" autocomplete="off" class="' + (outro ? '' : 'hide') + '" style="margin-top:6px" value="' + esc(achado || valor || '') + '" placeholder="Digite para buscar o bairro"' + (dis || '') + '>' + dl;
 }
 /** Mantém a lista e o campo de texto em sincronia (ex.: depois do CEP preencher o bairro). */
 function bairroSync(px) {
@@ -6656,7 +6718,8 @@ function instIdentForm() {
     carregando(false);
     if (r.semSql) return toast('Falta rodar o INST_S18 no Supabase.', 6000);
     if (!r.edita) return toast('Somente quem gerencia o Instituto altera estes dados.', 5000);
-    var i = r.identidade || {}; ['nome', 'razaoSocial', 'cnpj', 'responsavel', 'telefone', 'email', 'cep', 'rua', 'numero', 'complemento', 'bairro', 'cidade', 'logo'].forEach(function (k) { if (i[k] == null) i[k] = ''; });
+    var i = r.identidade || {}; if (/^\d{14}$/.test(String(i.cnpj || ''))) i.cnpj = mascaraCnpj(i.cnpj);   // CAD-1: base única guarda só números
+    ['nome', 'razaoSocial', 'cnpj', 'responsavel', 'telefone', 'email', 'cep', 'rua', 'numero', 'complemento', 'bairro', 'cidade', 'logo'].forEach(function (k) { if (i[k] == null) i[k] = ''; });
     instIdent = { logo: i.logo || '' }; abrirModal(instIdentHtml(i));
   }).catch(function (e) { carregando(false); toast(e.message, 5000); });
 }
@@ -7362,6 +7425,8 @@ var ACOES = {
     sairTodos: sairTodos, encerrarSessoes: encerrarSessoes, auditoria: function () { abrirAuditoria(''); }, audBuscar: function () { abrirAuditoria($('aud-q').value); },
     anonimizar: anonimizar, verPolitica: function () { verPolitica(false); }, aceitarPolitica: aceitarPolitica, recusarPolitica: function () { consentAberto = false; sair(false); },
     cfModeloPolitica: function () { cfgDraft = lerCfgForm(); cfgDraft.politica = cfgDraft.politicaModelo || ''; render(); },
+    cfInstEditar: function (v) { cfgInstAbrir(v); },   // CAD-1
+    cfInstNovo: function () { cfgInstAbrir(''); },
     cfPoliticaAnterior: function () { cfgDraft = lerCfgForm(); cfgDraft.politica = cfgDraft.politicaAnterior || ''; render(); },   // CONFIG-1b
     lgpdPublicar: lgpdPublicar, lgpdRetirarRestricao: lgpdRetirarRestricao,
     perModo: function (v) { perBI.modo = v; if (v === 'per' && !perBI.de) { var P0 = periodoBI(); perBI.de = hoje().slice(0, 7) + '-01'; perBI.ate = hoje(); } render(); }, lvModo: function (v) { lvModoCad = v; lvGCManual = false; render(); }, encAgendar: encAgendar, encSalvarAgenda: encSalvarAgenda, encCancelar: encCancelar,
@@ -8199,7 +8264,7 @@ window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'CONFIG-1b';   // CONFIG-1b: editor da política já vem com o modelo v1 quando não há versão publicada. CONFIG-1: Configurações da igreja gravadas no Supabase (logo/ícone no Storage; encarregado em 3 campos). Antes: SYNC-V39-27   // SYNC-V39-27: checagem de duplicado no cadastro na v39; perfil sem lista de pessoas/cultos não repete chamadas; foto nova avisa o Instituto; sem Encerrar antes do dia (TRAVA24_2). SYNC-V39-26: TRAVA-1 (encerrar encontro do GC/culto; edição travada 24h depois; pastor reabre). SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
+  var BUILD = 'CAD-1';   // CAD-1: cadastro legal único (Igreja e Instituto em Configurações); CEP sem bairro busca na cidade da igreja. CONFIG-1b: editor da política já vem com o modelo v1 quando não há versão publicada. CONFIG-1: Configurações da igreja gravadas no Supabase (logo/ícone no Storage; encarregado em 3 campos). Antes: SYNC-V39-27   // SYNC-V39-27: checagem de duplicado no cadastro na v39; perfil sem lista de pessoas/cultos não repete chamadas; foto nova avisa o Instituto; sem Encerrar antes do dia (TRAVA24_2). SYNC-V39-26: TRAVA-1 (encerrar encontro do GC/culto; edição travada 24h depois; pastor reabre). SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 
@@ -8387,6 +8452,7 @@ window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }
     CONFIG_DATA_INVALIDA: 'Data de fundação inválida.',
     CONFIG_ARQUIVO_INVALIDO: 'Arquivo de imagem inválido. Escolha a imagem de novo.',
     CONFIG_INVALIDA: 'Configuração inválida: revise os campos.',
+    CONFIG_CNPJ_INVALIDO: 'CNPJ da igreja deve ter 14 números.',   // CAD-1
     REGISTRO_CANCELADO: 'Registro cancelado não pode ser encerrado nem reaberto.',
     REGISTRO_FUTURO: 'Ainda não aconteceu: só dá para encerrar a partir do dia (culto: depois do início).',
     GC_MEETING_INVALID: 'Algum dado do encontro está em formato inválido. Confira data e horários.',

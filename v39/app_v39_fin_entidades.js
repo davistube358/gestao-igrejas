@@ -1,4 +1,7 @@
-/* 2Gather v39 · Financeiro · FIN-ALL-14.1 · Entidades (Igreja e Instituto)
+/* 2Gather v39 · Financeiro · FIN-ALL-14.2 · Entidades (Igreja e Instituto)
+   14.2 (CAD-1): cadastro legal único. A Igreja vem de app.churches (o mesmo de Configurações); o Instituto é esta
+     entidade, também editada em Configurações e na tela do Instituto. G2_FIN_ENT.abrirForm(e, aoSalvar) para
+     Configurações; CEP preenche rua, bairro, cidade e UF.
    14.1: corrige a tecla Esc (não deixa camada invisível na tela) e o fechamento das janelas.
    Arquivo NOVO. Carregar DEPOIS do app_v39_financeiro.js (FIN-ALL-13). Não altera o app.js nem o financeiro.
    Requer no Supabase: INST_S7_financeiro_entidades_v2.sql e INST_S9 (já aplicados e validados).
@@ -10,7 +13,7 @@
    Diagnóstico no Console: G2_FIN_ENT.versao */
 (function () {
   'use strict';
-  var VERSAO = 'FIN-ALL-14.1';
+  var VERSAO = 'FIN-ALL-14.2';
   if (window.G2_FIN_ENT) return;
   var M = window.G2_FIN_ENT = { versao: VERSAO };
   console.info('[2Gather] financeiro entidades ' + VERSAO);
@@ -109,11 +112,14 @@
   // captura o Esc antes do módulo financeiro (que também usa o id g2f-mod) para fechar tudo de uma vez
   document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && $('g2e-mod')) { ev.stopPropagation(); fechar(); } }, true);
   function campo(id, rot, v, extra) { return '<label for="' + id + '">' + rot + '</label><input id="' + id + '" value="' + esc(v || '') + '"' + (extra || '') + '>'; }
-  function abrirForm(e) {
+  var aoSalvarForm = null;
+  function abrirForm(e, aoSalvar) {
+    aoSalvarForm = typeof aoSalvar === 'function' ? aoSalvar : null;
     var ig = e && e.tipo === 'church', a = (e && e.endereco) || {};
     var o = document.createElement('div'); o.id = 'g2e-mod'; o.className = 'g2e-m';
     o.innerHTML = '<div id="g2f-mod" style="z-index:9997"><div class="box" role="dialog" aria-modal="true"><button type="button" class="g2f-x" data-e="fechar" aria-label="Fechar">×</button><div class="bd2">' +
       '<h3>' + (e ? 'Dados legais · ' + (ig ? 'Igreja' : 'Instituto') : 'Novo Instituto') + '</h3>' +
+      '<div class="hint">Cadastro único: ' + (ig ? 'o mesmo de Configurações › Dados da igreja.' : 'o mesmo de Configurações e da tela do Instituto.') + '</div>' +
       campo('e-nome', 'Razão social *', e && e.nome) + campo('e-fant', 'Nome fantasia', e && e.fantasia) +
       campo('e-cnpj', 'CNPJ' + (ig ? '' : ' (vazio = usa o da igreja)'), e && e.cnpj ? mascCnpj(e.cnpj) : '', ' inputmode="numeric" placeholder="00.000.000/0000-00"') +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 10px">' + campo('e-ie', 'Inscrição estadual', e && e.ie) + campo('e-im', 'Inscrição municipal', e && e.im) + '</div>' +
@@ -128,10 +134,22 @@
       '</div></div></div>';
     document.body.appendChild(o);
     o.addEventListener('click', cliqueForm);
-    o.addEventListener('input', function (ev) { if (ev.target.id === 'e-cnpj') ev.target.value = mascCnpj(ev.target.value); if (ev.target.id === 'e-uf') ev.target.value = ev.target.value.toUpperCase(); });
+    o.addEventListener('input', function (ev) { if (ev.target.id === 'e-cnpj') ev.target.value = mascCnpj(ev.target.value); if (ev.target.id === 'e-uf') ev.target.value = ev.target.value.toUpperCase(); if (ev.target.id === 'e-cep') cepForm(ev.target); });
     setTimeout(function () { var n = $('e-nome'); if (n) n.focus(); }, 50);
   }
   function v(id) { var el = $(id); return el ? el.value.trim() : ''; }
+  function cepForm(inp) {   // CAD-1: CEP -> rua, bairro, cidade, UF (ViaCEP)
+    var d = soDig(inp.value).slice(0, 8); inp.value = d.length > 5 ? d.slice(0, 5) + '-' + d.slice(5) : d;
+    if (d.length !== 8) return;
+    fetch('https://viacep.com.br/ws/' + d + '/json/', { credentials: 'omit' }).then(function (r) { return r.json(); }).then(function (j) {
+      if (soDig(inp.value) !== d) return;
+      var err = $('e-err');
+      if (!j || j.erro) { if (err) err.textContent = 'CEP não encontrado. Preencha bairro e cidade.'; return; }
+      if (err) err.textContent = '';
+      var put = function (id, x, sempre) { var el = $(id); if (el && x && (sempre || !el.value.trim())) el.value = x; };
+      put('e-rua', j.logradouro); put('e-bai', j.bairro, true); put('e-cid', j.localidade, true); put('e-uf', j.uf, true);
+    }).catch(function () {});
+  }
   function salvar(regId, btn) {
     var err = $('e-err'), cn = soDig(v('e-cnpj'));
     if (v('e-nome').length < 3) { err.textContent = 'Informe a razão social (mín. 3 letras).'; return; }
@@ -145,6 +163,7 @@
     rpc('v39_fin_entity_save', { p: p }).then(function () {
       fechar(); D.lista = null; var w = $('g2e-wrap'); if (w) w.remove(); carregar(true);
       var t = T(); if (t && typeof t.carregarCtx === 'function') t.carregarCtx().catch(function () {});
+      if (aoSalvarForm) { var cb = aoSalvarForm; aoSalvarForm = null; try { cb(); } catch (e2) { console.warn('[2Gather][entidades]', e2); } }
     }).catch(function (e) { console.warn('[2Gather][entidades]', e); err.textContent = traduz(e); btn.disabled = false; btn.textContent = 'Salvar'; });
   }
   function abrirConta() {
@@ -180,5 +199,6 @@
     if (k === 'novo') abrirForm(null);
     if (k === 'conta') abrirConta();
   }, true);
+  M.abrirForm = abrirForm;   // CAD-1: usado por Configurações
   M._t = { cnpjValido: cnpjValido, mascCnpj: mascCnpj, D: D, pintar: pintar };
 })();
