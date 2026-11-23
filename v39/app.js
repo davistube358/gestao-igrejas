@@ -519,7 +519,7 @@ function aplicarCep(prefixo) {
   if (info) { info.style.color = '#999'; info.textContent = 'Consultando CEP...'; }
   buscarCep(d).then(function (r) {
     if (soDigitos(campo.value) !== d) return;
-    if (r.bairro && $(prefixo + '-bairro')) { $(prefixo + '-bairro').value = bairroDaLista(r.bairro) || r.bairro; bairroSync(prefixo); }
+    if (r.bairro && $(prefixo + '-bairro')) { $(prefixo + '-bairro').value = bairroDaLista(r.bairro) || r.bairro; bairroSync(prefixo); bairroTravar(prefixo, true); }   // BAI-1: nome dos Correios, sem digitação
     if (r.cidade && $(prefixo + '-cidade')) $(prefixo + '-cidade').value = r.cidade;
     if (prefixo === 'v' && lvModoCad === 'membro') setTimeout(lvAtualizarGC, 0);
     if (r.logradouro && $(prefixo + '-endereco') && !$(prefixo + '-endereco').value.trim()) $(prefixo + '-endereco').value = r.logradouro + ($(prefixo + '-numero') ? '' : ', ');
@@ -534,6 +534,58 @@ function aplicarCep(prefixo) {
     if (info) { info.style.color = '#a12424'; info.textContent = e.message + ' ' + dicaBuscaBairro(prefixo); }
     cepSemBairro(prefixo, true);
   });
+}
+/* BAI-1: fonte dos bairros = Correios (pelo CEP, via ViaCEP). Com o CEP encontrado, o bairro vem dos Correios e fica
+   travado; sem CEP, escolhe-se da lista da cidade (montada com os nomes dos Correios). */
+function bairroTravar(px, on) {
+  var sel = $(px + '-bairrosel'), inp = $(px + '-bairro'); if (!inp) return;
+  if (on) inp.dataset.correios = '1'; else delete inp.dataset.correios;
+  inp.readOnly = !!on; inp.title = on ? 'Bairro dos Correios (pelo CEP). Para mudar, corrija o CEP.' : '';
+  if (sel) sel.disabled = !!on;
+}
+var cepBairroCorreios = {};   // cache da sessão: CEP (8 dígitos) -> bairro dos Correios
+function cepsDosCadastros() {
+  var cid = chaveCidade(cidadeIgreja()), vistos = {}, out = [];
+  var add = function (cep, bairro, cidade) {
+    var d = soDigitos(cep); if (d.length !== 8 || vistos[d]) return;
+    var e = separarBairroCidade(bairro, cidade); if (e.cidade && chaveCidade(e.cidade) !== cid) return;
+    vistos[d] = 1; out.push(d);
+  };
+  PES().forEach(function (p) { add(p.cep, p.bairro, p.cidade); });
+  GCS().forEach(function (g) { add(g.cep, g.bairro, g.cidade); });
+  add(enderecoIgreja().cep, enderecoIgreja().bairro, cidadeIgreja());
+  return out;
+}
+/** Consulta os CEPs já cadastrados nos Correios (um por vez, com pausa) e devolve {bairros, n, falhas}. */
+function bairrosPelosCorreios(aoAndar) {
+  var ceps = cepsDosCadastros(), cid = chaveCidade(cidadeIgreja()), achados = {}, falhas = 0, i = 0;
+  function proximo() {
+    if (i >= ceps.length) return Promise.resolve();
+    var d = ceps[i++]; if (aoAndar) aoAndar(i, ceps.length);
+    var feito = cepBairroCorreios[d] !== undefined ? Promise.resolve(cepBairroCorreios[d])
+      : buscarCep(d).then(function (r) { var ok = r.bairro && chaveCidade(r.cidade) === cid ? r.bairro : ''; cepBairroCorreios[d] = ok; return ok; },
+                          function () { falhas++; return ''; });
+    return feito.then(function (bai) { if (bai) achados[normalizar(bai)] = bai; })
+      .then(function () { return new Promise(function (ok) { setTimeout(ok, 120); }); }).then(proximo);
+  }
+  return proximo().then(function () { return { bairros: Object.keys(achados).map(function (k) { return achados[k]; }), n: ceps.length, falhas: falhas }; });
+}
+function cfBairrosCorreios() {
+  cfgDraft = lerCfgForm();
+  carregando(true, 'Consultando os Correios...');
+  bairrosPelosCorreios(function (i, n) { $('carregando-txt').textContent = 'Consultando os Correios: CEP ' + i + ' de ' + n + '...'; }).then(function (r) {
+    var idx = {}; (cfgDraft.bairros || []).forEach(function (bn, j) { idx[normalizar(bn)] = j; });
+    var novos = 0, ajust = 0;
+    r.bairros.forEach(function (bn) {
+      var k = normalizar(bn);
+      if (idx[k] === undefined) { cfgDraft.bairros.push(bn); idx[k] = cfgDraft.bairros.length - 1; novos++; }
+      else if (cfgDraft.bairros[idx[k]] !== bn) { cfgDraft.bairros[idx[k]] = bn; ajust++; }   // grafia dos Correios prevalece
+    });
+    cfgDraft.bairros.sort(function (a, c) { return a.localeCompare(c, 'pt-BR'); });
+    carregando(false); render();
+    toast(r.n ? (novos + ' bairro(s) novo(s) e ' + ajust + ' grafia(s) ajustada(s) pelos Correios, de ' + r.n + ' CEP(s)' + (r.falhas ? ' (' + r.falhas + ' sem resposta)' : '') + '. Revise e salve.')
+      : 'Nenhum CEP nos cadastros desta cidade.', 7000);
+  }).catch(function (e) { carregando(false); toast((e && e.message) || 'Não foi possível consultar os Correios.', 5000); });
 }
 /* CAD-1: CEP sem bairro (não encontrado ou CEP único): busca do bairro na cidade da igreja (Configurações). */
 function dicaBuscaBairro(px) {
@@ -4355,8 +4407,8 @@ function campoBairro(px, valor, obrig, dis, ph) {
   var achado = bairroDaLista(valor), outro = !!valor && !achado;
   return rot + '<select id="' + px + '-bairrosel"' + (dis || '') + '><option value="">— selecionar —</option>' +
     l.map(function (b) { return '<option value="' + esc(b) + '"' + (b === achado ? ' selected' : '') + '>' + esc(b) + '</option>'; }).join('') +
-    '<option value="__outro__"' + (outro ? ' selected' : '') + '>Outro bairro / outra cidade…</option></select>' +
-    '<input id="' + px + '-bairro" list="' + px + '-bairros-dl" autocomplete="off" class="' + (outro ? '' : 'hide') + '" style="margin-top:6px" value="' + esc(achado || valor || '') + '" placeholder="Digite para buscar o bairro"' + (dis || '') + '>' + dl;
+    '<option value="__outro__"' + (outro ? ' selected' : '') + '>Mora em outra cidade…</option></select>' +   // BAI-1: na cidade da igreja, só a lista
+    '<input id="' + px + '-bairro" list="' + px + '-bairros-dl" autocomplete="off" class="' + (outro ? '' : 'hide') + '" style="margin-top:6px" value="' + esc(achado || valor || '') + '" placeholder="Bairro (só para quem mora fora de ' + esc(cidadeIgreja()) + ')"' + (dis || '') + '>' + dl;
 }
 /** Mantém a lista e o campo de texto em sincronia (ex.: depois do CEP preencher o bairro). */
 function bairroSync(px) {
@@ -4402,7 +4454,8 @@ function corrigirGrafiaBairros() {
   PES().forEach(function (p) {
     var e = separarBairroCidade(p.bairro, p.cidade);
     if (!e.bairro || chaveCidade(e.cidade || cidadeIgreja()) !== chaveCidade(cidadeIgreja())) return;
-    var certo = bairroDaLista(bairroPorExtenso(e.bairro));
+    var dCep = soDigitos(p.cep), correios = dCep.length === 8 ? cepBairroCorreios[dCep] : '';   // BAI-1: Correios pelo CEP; senão, a lista
+    var certo = correios || bairroDaLista(bairroPorExtenso(e.bairro));
     if (certo && (certo !== p.bairro || !p.cidade)) {
       p.bairro = certo; if (!p.cidade) p.cidade = cidadeIgreja();
       p.updatedAt = agora(); p._pend = true; n++;
@@ -4426,7 +4479,7 @@ function blocoConfigEndereco(c) {
     '<div class="g2"><div><label>Bairro</label><input id="cf-bairro" value="' + esc(e.bairro) + '"></div>' +
     '<div><label>Cidade</label><input id="cf-cidade" value="' + esc(e.cidade || 'Matão/SP') + '"></div></div></div>' +
     '<div class="card"><h3>Bairros de ' + esc(e.cidade || 'Matão/SP') + ' (' + (c.bairros || []).length + ')</h3>' +
-    '<div style="font-size:11.5px;color:#888;line-height:1.5">Nos cadastros, voluntários e discípulos escolhem o bairro desta lista em vez de digitar — evita nomes repetidos com grafias diferentes no mapa.</div>' +
+    '<div style="font-size:11.5px;color:#888;line-height:1.5">Fonte: <b>Correios</b>. Com o CEP, o bairro vem dos Correios e não é digitado; sem CEP, escolhe-se desta lista. Monte a lista pelos CEPs dos cadastros e revise.</div>' +
     '<div style="display:flex;flex-wrap:wrap;gap:6px;margin:10px 0;max-height:220px;overflow-y:auto">' +
     ((c.bairros || []).length ? c.bairros.map(function (b, i) {
       return '<span class="pill p-dour" style="font-size:12px;padding:5px 6px 5px 10px">' + esc(b) +
@@ -4434,10 +4487,11 @@ function blocoConfigEndereco(c) {
     }).join('') : '<div class="empty" style="padding:8px">Nenhum bairro cadastrado ainda.</div>') + '</div>' +
     '<label>Adicionar bairros (um por linha)</label><textarea id="cf-novosbairros" rows="3" placeholder="Bela Vista&#10;Centro&#10;Jardim Paraíso"></textarea>' +
     '<div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:8px">' +
+    '<button class="btn pr sm" data-a="cfBairrosCorreios">Montar pela base dos Correios</button>' +
     '<button class="btn gh sm" data-a="cfAddBairros">+ Adicionar</button>' +
     '<button class="btn gh sm" data-a="cfImportBairros">Importar dos cadastros</button>' +
     '<button class="btn gh sm" data-a="cfCorrigirBairros">Corrigir grafia nos cadastros</button></div>' +
-    '<div style="font-size:11px;color:#999;margin-top:6px">“Importar” traz os bairros já usados nas pessoas e GCs. Depois de salvar, “Corrigir grafia” ajusta os cadastros antigos para o nome da lista.</div></div>';
+    '<div style="font-size:11px;color:#999;margin-top:6px">“Montar pela base dos Correios” consulta os CEPs já cadastrados e usa o nome oficial dos Correios. Depois de salvar, “Corrigir grafia” ajusta os cadastros antigos (pelo CEP, quando houver; senão, pela lista).</div></div>';
 }
 function cfAddBairros() {
   cfgDraft = lerCfgForm();
@@ -7533,6 +7587,7 @@ var ACOES = {
     escolherIconeGC: function () { $('iconegc-input').click(); },
     removerIconeGC: function () { iconeGCNovo = '__remover__'; pintarIconeGC(''); },
     cfAddCulto: function () { cfgDraft = lerCfgForm(); cfgDraft.cultos.push({ dia: '0', horario: '19:00', nome: '' }); render(); },
+    cfBairrosCorreios: function () { cfBairrosCorreios(); },   // BAI-1
     cfRemBairro: function (v) { cfgDraft = lerCfgForm(); cfgDraft.bairros.splice(+v, 1); render(); },
     cfAddBairros: cfAddBairros,
     cfCor: function (v) { $('cf-cor').value = v; aplicarCor(v); var sp = document.querySelectorAll('.cores span'); for (var i = 0; i < sp.length; i++) sp[i].classList.toggle('on', sp[i].getAttribute('data-v') === v); }, cfImportBairros: cfImportBairros,
@@ -7605,7 +7660,7 @@ document.addEventListener('input', function (ev) {
     var pxc = ev.target.id.replace('-cep', '');
     ev.target.value = mascaraCep(ev.target.value);
     if (soDigitos(ev.target.value).length === 8) aplicarCep(pxc);
-    else { var inf = $(pxc + '-cepinfo'); if (inf) inf.textContent = ''; }
+    else { var inf = $(pxc + '-cepinfo'); if (inf) inf.textContent = ''; bairroTravar(pxc, false); }
   }
   if (ev.target.id === 'busca-m') { buscaM = ev.target.value; var pm = ev.target.selectionStart; render(); var em = $('busca-m'); em.focus(); em.setSelectionRange(pm, pm); }
   if (ev.target.id === 'busca-part') { buscaPart = ev.target.value; pintarPart(); }
@@ -8410,7 +8465,7 @@ window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'FIL-2';   // FIL-2: trocar de igreja/filial pelo menu do usuário (só master). FIL-1: filiais (derivações do CNPJ) como igrejas no app; troca de igreja. CAD-1: cadastro legal único (Igreja e Instituto em Configurações); CEP sem bairro busca na cidade da igreja. CONFIG-1b: editor da política já vem com o modelo v1 quando não há versão publicada. CONFIG-1: Configurações da igreja gravadas no Supabase (logo/ícone no Storage; encarregado em 3 campos). Antes: SYNC-V39-27   // SYNC-V39-27: checagem de duplicado no cadastro na v39; perfil sem lista de pessoas/cultos não repete chamadas; foto nova avisa o Instituto; sem Encerrar antes do dia (TRAVA24_2). SYNC-V39-26: TRAVA-1 (encerrar encontro do GC/culto; edição travada 24h depois; pastor reabre). SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
+  var BUILD = 'BAI-1';   // BAI-1: bairros pela base dos Correios (CEP trava o bairro; lista da cidade montada pelos CEPs). FIL-2: trocar de igreja/filial pelo menu do usuário (só master). FIL-1: filiais (derivações do CNPJ) como igrejas no app; troca de igreja. CAD-1: cadastro legal único (Igreja e Instituto em Configurações); CEP sem bairro busca na cidade da igreja. CONFIG-1b: editor da política já vem com o modelo v1 quando não há versão publicada. CONFIG-1: Configurações da igreja gravadas no Supabase (logo/ícone no Storage; encarregado em 3 campos). Antes: SYNC-V39-27   // SYNC-V39-27: checagem de duplicado no cadastro na v39; perfil sem lista de pessoas/cultos não repete chamadas; foto nova avisa o Instituto; sem Encerrar antes do dia (TRAVA24_2). SYNC-V39-26: TRAVA-1 (encerrar encontro do GC/culto; edição travada 24h depois; pastor reabre). SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 
