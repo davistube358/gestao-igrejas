@@ -2677,7 +2677,9 @@ var nomes = String((g && g.discipulosNomes) || '').split(', ');
 return ids.map(function (id, i) { return { id: id, nome: nomes[i] || 'Discípulo' }; });
 }
 function lvAguardando(gcId) { return PES(gcId).filter(function (p) { return p.lvStatus === 'pendente'; }); }
-function lvFila() { return PES().filter(function (p) { return !p.gcId && p.status !== 'Inativo' && p.status !== 'Instituto' && p.tipo !== 'Instituto' && p.origem !== 'usuário do app' && p.origem !== 'instituto'; }); }
+/** KIDS-2: criança cadastrada pelo Kids (canal = source 'kids') fica fora da fila de visita e do direcionamento a GC. */
+function ehKids(p) { return !!p && p.canal === 'kids'; }
+function lvFila() { return PES().filter(function (p) { return !p.gcId && p.status !== 'Inativo' && p.status !== 'Instituto' && p.tipo !== 'Instituto' && p.origem !== 'usuário do app' && p.origem !== 'instituto' && !ehKids(p); }); }
 function lvBadgeGC() {
 if (cfg.modo !== 'gc') return 0;
 var g = gcPor(gcA()); if (!g) return 0;
@@ -5097,7 +5099,7 @@ function campoCanal(px, p, dis, rot) {
     '<div id="' + px + '-canalwrap" class="' + (atual === 'Outros' ? '' : 'hide') + '"><label>Qual? (informe)</label>' +
     '<input id="' + px + '-canaloutro" value="' + esc(p ? p.canalOutro : '') + '" placeholder="Ex.: passou na frente da igreja"' + dis + '></div>';
 }
-function textoCanal(p) { return p.canal === 'Outros' && p.canalOutro ? 'Outros — ' + p.canalOutro : (p.canal || ''); }
+function textoCanal(p) { if (p.canal === 'kids') return 'Kids'; if (p.canal === 'kids_concluido') return 'Kids (saiu aos 12)'; return p.canal === 'Outros' && p.canalOutro ? 'Outros — ' + p.canalOutro : (p.canal || ''); }
 
 /* ── base única: consulta antes de cadastrar no GC ── */
 function blocoCorrespondencias(itens, botoes) {
@@ -5203,7 +5205,7 @@ function orgSupervisores(gcs) {
   ordem.sort(function (a, b) { return a === '_sem' ? 1 : b === '_sem' ? -1 : grupos[a].nome.localeCompare(grupos[b].nome, 'pt-BR'); });
   return ordem.map(function (k) {
     var gr = grupos[k], st = orgSoma(gr.gcs.map(orgStatsGC));
-    var fila = PES().filter(function (p) { return !p.gcId && p.status !== 'Inativo' && p.supRespId === k; }).length;
+    var fila = PES().filter(function (p) { return !p.gcId && p.status !== 'Inativo' && p.supRespId === k && !ehKids(p); }).length;
     st.fila = fila;
     return orgNo('s_' + k, k === '_sem' ? 'var(--vermelho)' : 'var(--verde)', esc(gr.nome), 'SUPERVISOR',
       orgChips(st, ['gcs', 'part', 'mem', 'lv'].concat(fila ? ['fila'] : [])),
@@ -5223,7 +5225,7 @@ function blocoOrganograma() {
   var stGC = orgSoma(gcs.map(orgStatsGC));
   var igreja = { part: todas.length, mem: todas.filter(function (p) { return p.status === 'Ativo'; }).length,
                  vis: todas.filter(function (p) { return p.status === 'Em visita'; }).length, gcs: gcs.length, lv: stGC.lv,
-                 fila: PES().filter(function (p) { return !p.gcId && p.status !== 'Inativo'; }).length };
+                 fila: PES().filter(function (p) { return !p.gcId && p.status !== 'Inativo' && !ehKids(p); }).length };
   var pastores = (db.equipe || []).filter(function (u) { return u.papel === 'pastor'; }).map(function (u) { return u.nome; });
   if (!pastores.length && igr.config && igr.config.pastorPresidente) pastores = [igr.config.pastorPresidente];
   var corpoPastor = '<div style="font-size:11px;color:#888;font-weight:700;margin-top:8px">IGREJA</div>' +
@@ -8468,7 +8470,7 @@ window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'MIN-1';   // MIN-1: módulo Ministérios (aba ministerios desenhada pelo app_v39_ministerios.js; eventos de ministério fora da lista de cultos). BAI-1: bairros pela base dos Correios (CEP trava o bairro; lista da cidade montada pelos CEPs). FIL-2: trocar de igreja/filial pelo menu do usuário (só master). FIL-1: filiais (derivações do CNPJ) como igrejas no app; troca de igreja. CAD-1: cadastro legal único (Igreja e Instituto em Configurações); CEP sem bairro busca na cidade da igreja. CONFIG-1b: editor da política já vem com o modelo v1 quando não há versão publicada. CONFIG-1: Configurações da igreja gravadas no Supabase (logo/ícone no Storage; encarregado em 3 campos). Antes: SYNC-V39-27   // SYNC-V39-27: checagem de duplicado no cadastro na v39; perfil sem lista de pessoas/cultos não repete chamadas; foto nova avisa o Instituto; sem Encerrar antes do dia (TRAVA24_2). SYNC-V39-26: TRAVA-1 (encerrar encontro do GC/culto; edição travada 24h depois; pastor reabre). SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
+  var BUILD = 'KIDS-2';   // KIDS-2: crianças do Kids (canal kids) fora da fila de visita e do direcionamento a GC; aba Crianças no Kids (app_v39_kids.js). MIN-1: módulo Ministérios (aba ministerios desenhada pelo app_v39_ministerios.js; eventos de ministério fora da lista de cultos). BAI-1: bairros pela base dos Correios (CEP trava o bairro; lista da cidade montada pelos CEPs). FIL-2: trocar de igreja/filial pelo menu do usuário (só master). FIL-1: filiais (derivações do CNPJ) como igrejas no app; troca de igreja. CAD-1: cadastro legal único (Igreja e Instituto em Configurações); CEP sem bairro busca na cidade da igreja. CONFIG-1b: editor da política já vem com o modelo v1 quando não há versão publicada. CONFIG-1: Configurações da igreja gravadas no Supabase (logo/ícone no Storage; encarregado em 3 campos). Antes: SYNC-V39-27   // SYNC-V39-27: checagem de duplicado no cadastro na v39; perfil sem lista de pessoas/cultos não repete chamadas; foto nova avisa o Instituto; sem Encerrar antes do dia (TRAVA24_2). SYNC-V39-26: TRAVA-1 (encerrar encontro do GC/culto; edição travada 24h depois; pastor reabre). SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 
