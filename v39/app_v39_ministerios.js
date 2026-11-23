@@ -1,4 +1,5 @@
-/* 2Gather v39 · Ministérios · MIN-2
+/* 2Gather v39 · Ministérios · MIN-3
+   MIN-3: logo e faixa dentro do cadastro do ministério (sem botão à parte); líder/auxiliar abre o cadastro só para as imagens.
    Carregar DEPOIS do app.js. Requer no Supabase: sql/KIDS_1_ministerios_aplicar.sql (MIN-1) e sql/MIN_2_imagens_aplicar.sql (logo/faixa).
    MIN-2: logo (quadrado) e faixa (larga) do ministério, como no GC. Bucket 2gather-media, pasta <igreja>/ministerios/<id>/.
           Quem troca: master/pastor e líder/auxiliar do ministério (o banco confere). Sem o MIN_2 no servidor o botão não aparece.
@@ -13,7 +14,7 @@
    Diagnóstico no Console: G2_MIN.versao, G2_MIN._s */
 (function () {
   'use strict';
-  var VERSAO = 'MIN-2';
+  var VERSAO = 'MIN-3';
   if (window.G2_MIN) return;
   var M = window.G2_MIN = { versao: VERSAO };
   console.info('[2Gather] ministerios ' + VERSAO);
@@ -114,42 +115,39 @@
       });
     });
   }
-  function formImagens(m) {
-    S.imgNova = { logo: null, faixa: null, min: m.id };
+  /* MIN-3: logo e faixa ficam dentro do cadastro do ministério (sem botão à parte) */
+  function blocoImagens(m) {
+    S.imgNova = { logo: null, faixa: null };
     var lg = urlImg(m.logo), fx = urlImg(m.faixa);
-    modal('<h2>Logo e faixa · ' + esc(m.nome) + '</h2>' +
-      '<div class="ini-sub" style="margin-bottom:8px">Aparecem na lista de ministérios e no topo da tela do ministério. A imagem é recortada no centro.</div>' +
-      '<label>Logo <span style="font-weight:500;color:#aaa">(quadrado)</span></label>' +
+    return '<div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--ln,#e6e8eb)"><label>Logo <span style="font-weight:500;color:#aaa">(quadrado)</span></label>' +
       '<div style="display:flex;gap:12px;align-items:center"><div class="fotoprev" data-m="escolherImg" data-v="logo" id="mi-logo" style="height:88px;width:88px;flex:0 0 88px;border-radius:22px;background-size:cover;background-position:center;font-size:11px;' +
         (lg ? "background-image:url('" + esc(lg) + "');border:none;color:transparent" : '') + '">Escolher</div>' +
-      '<div><span class="pill p-cinza ' + (m.logo ? '' : 'hide') + '" id="mi-logo-rem" data-m="removerImg" data-v="logo" style="cursor:pointer">remover logo</span></div></div>' +
-      '<label style="margin-top:12px">Faixa <span style="font-weight:500;color:#aaa">(larga, 3:1)</span></label>' +
+      '<div><div class="ini-sub" style="margin:0 0 6px">Aparece na lista de ministérios. A imagem é recortada no centro.</div>' +
+      '<span class="pill p-cinza ' + (m.logo ? '' : 'hide') + '" id="mi-logo-rem" data-m="removerImg" data-v="logo" style="cursor:pointer">remover logo</span></div></div>' +
+      '<label style="margin-top:12px">Faixa <span style="font-weight:500;color:#aaa">(larga, 3:1 · topo da tela do ministério)</span></label>' +
       '<div class="fotoprev" data-m="escolherImg" data-v="faixa" id="mi-faixa" style="height:110px;width:100%;border-radius:14px;background-size:cover;background-position:center;font-size:11px;' +
         (fx ? "background-image:url('" + esc(fx) + "');border:none;color:transparent" : '') + '">Escolher</div>' +
       '<div style="text-align:right;margin-top:6px"><span class="pill p-cinza ' + (m.faixa ? '' : 'hide') + '" id="mi-faixa-rem" data-m="removerImg" data-v="faixa" style="cursor:pointer">remover faixa</span></div>' +
-      '<input type="file" id="mi-arq" accept="image/jpeg,image/png,image/webp" style="display:none">' +
-      '<div class="gap"></div><button class="btn pr" data-m="salvarImagens" data-v="' + esc(m.id) + '">Salvar</button>' +
-      '<div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>');
+      '<input type="file" id="mi-arq" accept="image/jpeg,image/png,image/webp" style="display:none"></div>';
   }
   function pintarPrevImg(tipo, url) {
     var p = $('mi-' + tipo); if (!p) return;
     p.style.backgroundImage = url ? "url('" + url + "')" : ''; p.style.border = url ? 'none' : ''; p.style.color = url ? 'transparent' : '';
     var r = $('mi-' + tipo + '-rem'); if (r) r.classList.toggle('hide', !url);
   }
-  function salvarImagens(id) {
-    var m = (S.lista || []).filter(function (x) { return x.id === id; })[0], n = S.imgNova || {};
-    if (!m) return;
-    var tipos = ['logo', 'faixa'].filter(function (t) { return n[t]; });
-    if (!tipos.length) { fecharModal(); return; }
-    var bt = document.querySelector('[data-m="salvarImagens"]'); if (bt) { bt.disabled = true; bt.textContent = 'Enviando…'; }
-    tipos.reduce(function (p, t) { return p.then(function () { return enviarImg(m, t, n[t]); }); }, Promise.resolve())
-      .then(function () { fecharModal(); toast('Imagens salvas.'); return carregarLista(true); })
-      .catch(function (e) {
-        if (bt) { bt.disabled = false; bt.textContent = 'Salvar'; }
-        var t = String((e && (e.message || e.statusCode)) || '');
-        toast(/row-level security|403|Unauthorized/i.test(t) ? 'Só o líder do ministério, o pastor ou o master trocam as imagens.' : traduz(e), true);
-      });
+  /* envia as imagens escolhidas no formulário; devolve quantas foram gravadas */
+  function enviarImagensPendentes(id) {
+    var n = S.imgNova || {}, tipos = ['logo', 'faixa'].filter(function (t) { return n[t]; });
+    if (!tipos.length || !id) return Promise.resolve(0);
+    var m = { id: id };
+    return tipos.reduce(function (p, t) { return p.then(function () { return enviarImg(m, t, n[t]); }); }, Promise.resolve())
+      .then(function () { S.imgNova = null; return tipos.length; });
   }
+  function erroImg(e) {
+    var t = String((e && (e.message || e.statusCode)) || '');
+    return /row-level security|403|Unauthorized/i.test(t) ? 'Só o líder do ministério, o pastor ou o master trocam as imagens.' : traduz(e);
+  }
+  function servidorTemImagens() { var l = S.lista || []; return !l.length || l.some(temImagens); }
   document.addEventListener('change', function (ev) {
     if (!ev.target || ev.target.id !== 'mi-arq') return;
     var tipo = ev.target.getAttribute('data-tipo'), f = ev.target.files && ev.target.files[0];
@@ -273,8 +271,8 @@
       (m.acompanhaCultos ? ' · acompanha os cultos' : '') + (m.liderNome ? ' · líder: ' + esc(m.liderNome) : '') + (m.auxiliarNome ? ' · auxiliar: ' + esc(m.auxiliarNome) : '') + '</div>';
     if (m.status === 'closed' && m.motivoEncerramento) h += '<div class="aviso r">Encerrado: ' + esc(m.motivoEncerramento) + '</div>';
     var bts = '';
-    if (ehAdmin()) bts += '<button class="btn gh sm" data-m="editarMin" data-v="' + esc(m.id) + '">Editar ministério</button> ';
-    if (lid && temImagens(m) && m.status !== 'closed') bts += '<button class="btn gh sm" data-m="editarImagens" data-v="' + esc(m.id) + '">Logo e faixa</button>';
+    // MIN-3: pastor/master editam tudo; líder/auxiliar abre o mesmo cadastro só para logo e faixa
+    if (ehAdmin() || (lid && temImagens(m) && m.status !== 'closed')) bts += '<button class="btn gh sm" data-m="editarMin" data-v="' + esc(m.id) + '">Editar ministério</button>';
     if (bts) h += '<div class="gap"></div>' + bts;
     var abas = [['agenda', 'Agenda'], ['equipe', 'Equipe']]; if (lid) abas.push(['funcoes', 'Funções']);
     if (abas.map(function (a) { return a[0]; }).indexOf(S.aba) < 0) S.aba = 'agenda';
@@ -359,7 +357,15 @@
   }
   function formMin(m) {
     m = m || { tipo: 'kids', status: 'active', acompanhaCultos: true, idadeMax: 12 };
-    var novo = !m.id;
+    var novo = !m.id, img = servidorTemImagens() && m.status !== 'closed';
+    S.imgNova = null;
+    if (!ehAdmin()) {   // MIN-3: líder/auxiliar troca só logo e faixa; o resto é do pastor/master
+      modal('<h2>Editar ministério · ' + esc(m.nome) + '</h2>' +
+        '<div class="ini-sub">Nome, líder, situação e demais dados são alterados pelo pastor ou master.</div>' + blocoImagens(m) +
+        '<div class="gap"></div><button class="btn pr" data-m="salvarMin" data-v="' + esc(m.id) + '">Salvar</button>' +
+        '<div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>');
+      return;
+    }
     modal('<h2>' + (novo ? 'Novo ministério' : 'Editar ministério') + '</h2>' +
       '<label>Nome *</label><input id="mn-nome" value="' + esc(m.nome) + '" placeholder="Ex.: Kids">' +
       '<div class="g2"><div><label>Tipo</label><select id="mn-tipo"><option value="kids"' + (m.tipo === 'kids' ? ' selected' : '') + '>Kids (crianças)</option><option value="general"' + (m.tipo !== 'kids' ? ' selected' : '') + '>Geral</option></select></div>' +
@@ -372,23 +378,36 @@
         [['active', 'Ativo'], ['inactive', 'Inativo'], ['closed', 'Encerrado']].map(function (o) { return '<option value="' + o[0] + '"' + (m.status === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') +
         '</select></div><div><label>Motivo (inativar/encerrar)</label><input id="mn-motivo"></div></div>' +
         '<div class="ini-sub" style="margin:4px 0">Inativar ou encerrar cancela os eventos futuros do ministério. Encerrado não volta.</div>') +
+      (img ? blocoImagens(m) : '') +
       '<div class="gap"></div><button class="btn pr" data-m="salvarMin" data-v="' + esc(m.id || '') + '">Salvar</button>' +
       '<div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>');
     S.busca = { q: '', res: [], sel: null, t: 0, ministerio: m.id || null };
   }
+  function travarBotao(sim) { var bt = document.querySelector('[data-m="salvarMin"]'); if (bt) { bt.disabled = sim; bt.textContent = sim ? 'Salvando…' : 'Salvar'; } }
   function salvarMin(id) {
+    if (!ehAdmin()) {   // líder: só as imagens
+      travarBotao(true);
+      return enviarImagensPendentes(id).then(function (n) { fecharModal(); if (n) toast('Imagens salvas.'); return carregarLista(true); })
+        .catch(function (e) { travarBotao(false); toast(erroImg(e), true); });
+    }
     var p = { id: id || null, nome: $('mn-nome').value.trim(), tipo: $('mn-tipo').value, acompanhaCultos: $('mn-cultos').checked,
               idadeMax: $('mn-idade').value || null, liderId: $('mn-lider').value || null, auxiliarId: $('mn-aux').value || null,
               descricao: $('mn-desc').value.trim() || null };
     if ($('mn-status')) { p.status = $('mn-status').value; p.motivo = $('mn-motivo').value.trim() || null; }
     if (!p.nome) return toast('Informe o nome do ministério.', true);
     if (p.tipo !== 'kids') p.idadeMax = p.idadeMax || null;
+    travarBotao(true);
+    var res = null;
     rpc('v39_min_save', { p: p }).then(function (r) {
+      res = r || {};
+      // imagens depois do cadastro (ministério novo já tem id); encerrado não grava imagem
+      return (res.status === 'closed' ? Promise.resolve(0) : enviarImagensPendentes(res.id)).catch(function (e) { toast('O ministério foi salvo, mas a imagem não: ' + erroImg(e), true); return 0; });
+    }).then(function () {
       fecharModal();
-      var t = 'Ministério salvo.'; if (r && r.eventosCriados) t += ' ' + r.eventosCriados + ' evento(s) criado(s) a partir dos cultos.'; if (r && r.eventosCancelados) t += ' ' + r.eventosCancelados + ' evento(s) futuro(s) cancelado(s).';
-      toast(t); if (r && r.id) { S.atual = r.id; delete S.eventos[r.id]; delete S.membros[r.id]; }
+      var t = 'Ministério salvo.'; if (res.eventosCriados) t += ' ' + res.eventosCriados + ' evento(s) criado(s) a partir dos cultos.'; if (res.eventosCancelados) t += ' ' + res.eventosCancelados + ' evento(s) futuro(s) cancelado(s).';
+      toast(t); if (res.id) { S.atual = res.id; delete S.eventos[res.id]; delete S.membros[res.id]; }
       return carregarLista(true).then(function () { if (S.atual) carregarDetalhe(S.atual, true); });
-    }).catch(function (e) { toast(traduz(e), true); });
+    }, function (e) { travarBotao(false); toast(traduz(e), true); });
   }
   function formFuncao(f) {
     f = f || { ativo: true };
@@ -504,10 +523,8 @@
     novoMin: function () { formMin(null); },
     editarMin: function (v) { var m = (S.lista || []).filter(function (x) { return x.id === v; })[0]; if (m) formMin(m); },
     salvarMin: salvarMin,
-    editarImagens: function (v) { var m = (S.lista || []).filter(function (x) { return x.id === v; })[0]; if (m) formImagens(m); },
     escolherImg: function (v) { var a = $('mi-arq'); if (!a) return; a.setAttribute('data-tipo', v); a.click(); },
     removerImg: function (v) { if (!S.imgNova) return; S.imgNova[v] = '__remover__'; pintarPrevImg(v, ''); },
-    salvarImagens: salvarImagens,
     abrirMin: function (v) { S.atual = v; S.aba = 'agenda'; pintar(); window.scrollTo(0, 0); carregarDetalhe(v, false); },
     voltarLista: function () { S.atual = null; pintar(); window.scrollTo(0, 0); carregarLista(true); },
     abaMin: function (v) { S.aba = v; pintar(); },
