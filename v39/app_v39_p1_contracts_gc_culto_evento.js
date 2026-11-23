@@ -1,4 +1,5 @@
-/* 2Gather v39 P1.4.3 - GC/Culto/Evento: persistencia, leitura autorizada e manutencao master
+/* 2Gather v39 P1.4.4 - GC/Culto/Evento: persistencia, leitura autorizada e manutencao master
+   P1.4.4 (MIN-1): eventos de ministerio (church_events.ministry_id, ex.: Kids) nao entram na lista de cultos/eventos.
    P1.4.3: perfil sem permissao para list_worship_services deixa de chamar a cada sincronizacao.
    P1.4.2: (1) list_worship_services chamado com os 4 parametros (resolve HTTP 300 / "leitura parcial");
            (2) horario de culto (time sem 'T') exibido; (3) antes/depois = janela de cadastro, nao recados;
@@ -35,7 +36,7 @@ M.salvarEvento=async function(i){var d=(i&&i.evento)||i||{},p=ep(d);if(!p.name)f
 P14.hydrate=async function(church){church=church||cid();var out={gcs:null,eventos:null,errors:[]};
  try{out.gcs=(await rows('growth_groups',church)).map(gcLegacy);}catch(e){out.errors.push({source:'growth_groups',message:e.message});}
  var ev=[],ws=[];
- try{ev=(await rows('church_events',church)).map(function(x){return eventLegacy(x,'evento');});}catch(e){out.errors.push({source:'church_events',message:e.message});}
+ try{ev=(await rows('church_events',church)).filter(function(x){return !x.ministry_id;}).map(function(x){return eventLegacy(x,'evento');});}   /* MIN-1: eventos de ministerio (ex.: Kids) ficam so no modulo Ministerios */catch(e){out.errors.push({source:'church_events',message:e.message});}
  if(!P14._semCultos)try{ /* 4 parametros: escolhe a versao jsonb sem ambiguidade (evita HTTP 300 / PGRST203) */
   var lw=await rpc('list_worship_services',{p_church_id:church,p_date_from:null,p_date_to:null,p_status:null});
   var itens=Array.isArray(lw)?lw:((lw&&lw.items)||[]);
@@ -43,5 +44,5 @@ P14.hydrate=async function(church){church=church||cid();var out={gcs:null,evento
  }catch(e){if(semPermissao(e))P14._semCultos=true;else out.errors.push({source:'list_worship_services',message:e.message});}   /* P1.4.3: perfil sem permissao (ex.: profissional de saude) nao chama de novo ate recarregar */
  out.eventos=ev.concat(ws);out.ok=out.errors.length===0;return out;};
 /* compatibilidade com app.js P1.3 */
-V.p13=P14;P14.version='P1.4.2';P.contracts=P.contracts||{};P.contracts.gc=gcp;P.contracts.culto=wp;P.contracts.evento=ep;
+V.p13=P14;P14.version='P1.4.4';P.contracts=P.contracts||{};P.contracts.gc=gcp;P.contracts.culto=wp;P.contracts.evento=ep;
 })();

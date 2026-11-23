@@ -1265,7 +1265,7 @@ function render() {
   validarContexto();
   var g = cfg.modo === 'gc' ? gcPor(cfg.gcAtual) : null;
   $('h-img').src = g ? iconeGC(g.id) : LOGO;
-  var TIT = { instituto: 'Instituto', instcursos: 'Cursos do Instituto', instmercado: 'Mercado solidário', instfarmacia: 'Farmácia solidária', instpac: 'Pacientes e prontuários', instagenda: 'Agenda', lvcasas: 'Lar de Vida', relatorios: 'Relatórios', financeiro: 'Financeiro', usuarios: 'Usuários e acessos', avisos: 'Avisos', gcs: 'GCs', conta: 'Configurações', mais: 'Configurações' };
+  var TIT = { instituto: 'Instituto', instcursos: 'Cursos do Instituto', instmercado: 'Mercado solidário', instfarmacia: 'Farmácia solidária', instpac: 'Pacientes e prontuários', instagenda: 'Agenda', lvcasas: 'Lar de Vida', relatorios: 'Relatórios', financeiro: 'Financeiro', ministerios: 'Ministérios', usuarios: 'Usuários e acessos', avisos: 'Avisos', gcs: 'GCs', conta: 'Configurações', mais: 'Configurações' };
   $('h-tit').textContent = TIT[cfg.aba] ? TIT[cfg.aba] : cfg.modo === 'lv' ? igrNome() : cfg.aba === 'config' ? 'Configurações' : cfg.aba === 'cultos' ? 'Cultos e eventos' : cfg.aba === 'membros' ? 'Cadastro de pessoas' : cfg.aba === 'cursos' ? 'Treinamentos/Reuniões' : cfg.modo === 'ger' ? igrNome() : (g ? g.nome : 'Meu GC');
   $('h-papel').textContent = PAPEL_NOME[papel()] || '';
   var raizes = abasAtuais().map(function (a) { return a.id; }), naRaiz = raizes.indexOf(cfg.aba) >= 0 && !cursoAberto;
@@ -1281,12 +1281,13 @@ function render() {
   var f = {
     bi: rBI, gcs: rGCs, novo: rNovoGC, usuarios: rUsuarios, conta: rConta,
     painel: rPainel, pessoas: rPessoas, chamada: rChamada, alertas: rAlertas, mais: rMaisGC,
-    lv: rLVGer, lar: rLar, instituto: rInstituto, instcursos: rInstCursos, instmercado: rEstoque, instfarmacia: rEstoque, instagenda: rInstAgenda, instpac: rInstPac, lvcasas: rLVVol, avisos: rAvisos, relatorios: rRelatorios, financeiro: rFinanceiro, lvnovo: rLVNovo, lvmeus: rLVMeus, cultos: rCultos, config: rConfig, membros: rConsulta, cursos: rCursos
+    lv: rLVGer, lar: rLar, instituto: rInstituto, instcursos: rInstCursos, instmercado: rEstoque, instfarmacia: rEstoque, instagenda: rInstAgenda, instpac: rInstPac, lvcasas: rLVVol, avisos: rAvisos, relatorios: rRelatorios, financeiro: rFinanceiro, lvnovo: rLVNovo, lvmeus: rLVMeus, cultos: rCultos, config: rConfig, membros: rConsulta, cursos: rCursos, ministerios: rMinisterios
   }[cfg.aba];
   if (cfg.modo === 'gc' && !g) {
     $('main').innerHTML = '<div class="empty">' + (db.gcs.length ? 'Você ainda não está vinculado a um GC. Fale com a liderança.' : 'Carregando dados do GC...') + '</div>';
   } else $('main').innerHTML = f ? f() : '';
   if (cfg.aba === 'usuarios') carregarUsuarios();
+  if (cfg.aba === 'ministerios' && window.G2_MIN) setTimeout(function () { G2_MIN.montar(); }, 0);   // MIN-1
   if (cfg.aba !== 'config') { if (cfgDraft) aplicarCor(igr.config && igr.config.cor); cfgDraft = null; jorDraft = null; logoNovo = null; iconeNovo = null; }
   if (cfg.aba !== 'painel' && cfg.aba !== 'bi') mapaGcs = null;
   if (cfg.aba === 'lv') setTimeout(lvGeoFila, 0);
@@ -1390,7 +1391,7 @@ function modulosDisponiveis() {
   if (ger && podeFin()) m.push({ id: 'financeiro', nome: 'Financeiro', ic: IC_FIN, cor: '#c99a1a' });
   if (ger && temCursos()) m.push({ id: 'cursos', nome: 'Treinamentos', ic: IC_CURSO, cor: '#0f8a8a' });
   if (ger) m.push({ id: 'relatorios', nome: 'Relatórios', ic: IC_REL, cor: '#5E6470' });
-  m.push({ id: 'ministerios', nome: 'Ministérios', ic: IC_MIN, cor: '#9aa0a6', breve: true });
+  m.push(window.G2_MIN ? { id: 'ministerios', nome: 'Ministérios', ic: IC_MIN, cor: '#d6457a' } : { id: 'ministerios', nome: 'Ministérios', ic: IC_MIN, cor: '#9aa0a6', breve: true });   // MIN-1
   m.forEach(function (x) {
     if (x.id === 'lv') x.n = lvFila().length;
     if (x.id === 'lar') x.n = lvBadgeGC();
@@ -1405,7 +1406,7 @@ function blocoModulos() {
   }).join('') + '</div>';
 }
 function abrirModulo(id) {
-  if (id === 'ministerios') {
+  if (id === 'ministerios' && !window.G2_MIN) {   // MIN-1: com o módulo carregado, abre a aba
     return abrirModal('<h2>Ministérios</h2><div class="aviso" style="margin-top:8px"><b>Em construção.</b> Este módulo vai reunir os ministérios da igreja ' +
       '(louvor, infantil, mídia, recepção, intercessão…), com equipes, escalas e avisos — no mesmo modelo da escala dos encontros do GC.</div>' +
       '<div class="gap"></div><button class="btn pr" data-a="fechar">Entendi</button>');
@@ -1414,6 +1415,8 @@ function abrirModulo(id) {
   irAba(id);
 }
 
+/* MIN-1: a tela de Ministérios é desenhada pelo app_v39_ministerios.js */
+function rMinisterios() { return window.G2_MIN ? G2_MIN.html() : '<div class="empty">Carregando ministérios…</div>'; }
 function rBI() {
   var gcs = GCSativos(), ids = gcs.map(function (g) { return g.id; }), h = inicioGestor();
   if (pode('relFin') || pode('usuarios')) h += '<div class="sec">Visão geral da igreja</div>' + barraPeriodo() + blocoVisaoIgreja(gcs, true);
@@ -3485,7 +3488,7 @@ function abasExtras() {
   if (cfg.modo === 'gc') x.push('lar');
   if (cfg.modo === 'lv' && pode('visitantes')) x.push('lvnovo', 'lvmeus');
   if (cfg.modo === 'lv' && pode('lvVisitas')) x.push('lvcasas');
-  x.push('avisos');
+  x.push('avisos', 'ministerios');   // MIN-1
   if (temInst()) x.push('instituto', 'instagenda', 'instpac'); if (temInstCursos()) x.push('instcursos'); if (temEstMercado()) x.push('instmercado'); if (temEstFarmacia()) x.push('instfarmacia');
   if (pode('rede')) x.push('novo');
   if (pode('config')) x.push('config');
@@ -8446,7 +8449,7 @@ if (cfg.token && cfg.usuario) {
 }
 else mostrarTela('s-login');
 
-window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }, render: function () { render(); }, sincronizar: sincronizar, metricas: metricas, pendentes: pendentesLocais,
+window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }, render: function () { render(); }, sincronizar: sincronizar, metricas: metricas, pendentes: pendentesLocais, abrirModal: abrirModal, fechar: fechar, irAba: irAba,   // MIN-1: modal e navegação para módulos
   estRecarregar: function () { estD = { mercado: estNovo(), farmacia: estNovo() }; if (cfg.token && /^inst(mercado|farmacia)$/.test(cfg.aba || '')) render(); },
   instRecarregar: function () { instD.t = 0; instD.carregando = false; if (cfg.token && /^(instituto|instagenda)$/.test(cfg.aba || '')) render(); },
     instFoto: function (pid, url) { if (instD.pac && instD.pac[pid]) instD.pac[pid].foto = url; },
@@ -8465,7 +8468,7 @@ window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'BAI-1';   // BAI-1: bairros pela base dos Correios (CEP trava o bairro; lista da cidade montada pelos CEPs). FIL-2: trocar de igreja/filial pelo menu do usuário (só master). FIL-1: filiais (derivações do CNPJ) como igrejas no app; troca de igreja. CAD-1: cadastro legal único (Igreja e Instituto em Configurações); CEP sem bairro busca na cidade da igreja. CONFIG-1b: editor da política já vem com o modelo v1 quando não há versão publicada. CONFIG-1: Configurações da igreja gravadas no Supabase (logo/ícone no Storage; encarregado em 3 campos). Antes: SYNC-V39-27   // SYNC-V39-27: checagem de duplicado no cadastro na v39; perfil sem lista de pessoas/cultos não repete chamadas; foto nova avisa o Instituto; sem Encerrar antes do dia (TRAVA24_2). SYNC-V39-26: TRAVA-1 (encerrar encontro do GC/culto; edição travada 24h depois; pastor reabre). SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
+  var BUILD = 'MIN-1';   // MIN-1: módulo Ministérios (aba ministerios desenhada pelo app_v39_ministerios.js; eventos de ministério fora da lista de cultos). BAI-1: bairros pela base dos Correios (CEP trava o bairro; lista da cidade montada pelos CEPs). FIL-2: trocar de igreja/filial pelo menu do usuário (só master). FIL-1: filiais (derivações do CNPJ) como igrejas no app; troca de igreja. CAD-1: cadastro legal único (Igreja e Instituto em Configurações); CEP sem bairro busca na cidade da igreja. CONFIG-1b: editor da política já vem com o modelo v1 quando não há versão publicada. CONFIG-1: Configurações da igreja gravadas no Supabase (logo/ícone no Storage; encarregado em 3 campos). Antes: SYNC-V39-27   // SYNC-V39-27: checagem de duplicado no cadastro na v39; perfil sem lista de pessoas/cultos não repete chamadas; foto nova avisa o Instituto; sem Encerrar antes do dia (TRAVA24_2). SYNC-V39-26: TRAVA-1 (encerrar encontro do GC/culto; edição travada 24h depois; pastor reabre). SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 
