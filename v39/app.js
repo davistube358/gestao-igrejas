@@ -4061,6 +4061,31 @@ function filStatusOk(v) {
     cfgFiliais = (r && r.lista) || null; fechar(); render();
   }).catch(function (e) { toast(filMsg(e), 6000); }).then(function () { carregando(false); });
 }
+/* FIL-2: escolher a igreja (matriz ou filial) pelo menu do usuário. Só master; lista só onde há acesso ativo. */
+function abrirTrocaIgreja() {
+  if (eu().papel !== 'master') return toast('Só o master troca de igreja por aqui.', 4000);
+  abrirModal('<h2>Trocar de igreja</h2><div id="ti-lista"><div class="empty" style="padding:10px">Carregando...</div></div>' +
+    '<div style="height:12px"></div><button class="btn gh" data-a="fechar" style="width:100%">Fechar</button>');
+  v39RpcApp('v39_branch_list', { p_church_id: cfg.usuario.igrejaId }).then(function (r) {
+    cfgFiliais = r || cfgFiliais;
+    var el = $('ti-lista'); if (!el) return;
+    el.innerHTML = htmlTrocaIgreja(r || {});
+  }).catch(function (e) { var el = $('ti-lista'); if (el) el.innerHTML = '<div class="empty" style="padding:10px">' + esc(filMsg(e)) + '</div>'; });
+}
+function htmlTrocaIgreja(F) {
+  var atual = F.atual, mz = F.matriz || {}, itens = [];
+  if (mz.id && mz.tenhoAcesso) itens.push({ id: mz.id, nome: mz.nome, cnpj: mz.cnpj, tipo: 'Matriz' });
+  (F.filiais || []).forEach(function (f) { if (f.tenhoAcesso && f.status === 'active') itens.push({ id: f.id, nome: f.nome, cnpj: f.cnpj, tipo: 'Filial', local: [f.cidade, f.uf].filter(Boolean).join('/') }); });
+  if (itens.length < 2) return '<div class="empty" style="padding:10px">Você só tem acesso a esta igreja. As filiais são criadas em Configurações › Filiais.</div>';
+  return '<div style="font-size:12.5px;color:var(--tx2);line-height:1.5;margin:4px 0 8px">Ao trocar, o app recarrega com os dados da igreja escolhida.</div>' +
+    itens.map(function (x) {
+      var aqui = x.id === atual;
+      return '<div style="border:1.5px solid ' + (aqui ? 'var(--pri, #2A6FDB)' : '#eee') + ';border-radius:12px;padding:8px 10px;margin-bottom:8px;display:flex;justify-content:space-between;gap:8px;align-items:center">' +
+        '<div style="min-width:0"><b>' + esc(x.nome) + '</b> <span class="pill ' + (x.tipo === 'Matriz' ? 'p-dour' : 'p-verde') + '">' + x.tipo + '</span>' +
+        '<div style="font-size:12px;color:#666">' + (x.cnpj ? 'CNPJ ' + esc(mascaraCnpj(x.cnpj)) : 'Sem CNPJ próprio') + (x.local ? ' · ' + esc(x.local) : '') + '</div></div>' +
+        (aqui ? '<span class="pill p-verde">você está aqui</span>' : '<button class="btn pr sm" data-a="filEntrar" data-v="' + esc(x.id) + '">Entrar</button>') + '</div>';
+    }).join('');
+}
 /** Troca a igreja da sessão (matriz/filial): só sem alterações pendentes; limpa os dados locais e recarrega com o perfil daquela igreja. */
 function v39TrocarIgreja(id) {
   if (!id || !cfg.usuario || id === cfg.usuario.igrejaId) return;
@@ -7377,6 +7402,7 @@ function abrirMenuUsuario() {
     '<div class="us">' + (np ? '<b style="color:#C2262B">' + np + (np === 1 ? ' alteração aguardando envio' : ' alterações aguardando envio') + '</b>'
       : (cfg.ultima ? 'Sincronizado às ' + horaLocal(cfg.ultima) : 'Ainda não sincronizado')) + '</div>' +
     itemMenu('sincronizar', '<path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5M3 21v-5h5"/>', 'Sincronizar agora') +
+    (cfg.token === 'supabase-v39' && u.papel === 'master' ? itemMenu('trocarIgreja', '<path d="M3 21h18M5 21V9l7-5 7 5v12"/><path d="M9 21v-6h6v6"/>', 'Trocar de igreja / filial') : '') +   // FIL-2: só master
     itemMenu('trocarSenha', '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>', 'Trocar minha senha') +
     itemMenu('nav', IC_CONFIG, 'Configurações').replace('data-a="nav"', 'data-a="nav" data-v="' + (cfg.modo === 'gc' ? 'mais' : 'conta') + '"') +
     itemMenu('verPolitica', '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>', 'Política de privacidade') +
@@ -7545,6 +7571,7 @@ var ACOES = {
     filStatus: function (v) { filStatus(v); },
     filStatusOk: function (v) { filStatusOk(v); },
     filEntrar: function (v) { v39TrocarIgreja(v); },
+    trocarIgreja: function () { abrirTrocaIgreja(); },   // FIL-2
     cfInstNovo: function () { cfgInstAbrir(''); },
     cfPoliticaAnterior: function () { cfgDraft = lerCfgForm(); cfgDraft.politica = cfgDraft.politicaAnterior || ''; render(); },   // CONFIG-1b
     lgpdPublicar: lgpdPublicar, lgpdRetirarRestricao: lgpdRetirarRestricao,
@@ -8383,7 +8410,7 @@ window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'FIL-1';   // FIL-1: filiais (derivações do CNPJ) como igrejas no app; troca de igreja. CAD-1: cadastro legal único (Igreja e Instituto em Configurações); CEP sem bairro busca na cidade da igreja. CONFIG-1b: editor da política já vem com o modelo v1 quando não há versão publicada. CONFIG-1: Configurações da igreja gravadas no Supabase (logo/ícone no Storage; encarregado em 3 campos). Antes: SYNC-V39-27   // SYNC-V39-27: checagem de duplicado no cadastro na v39; perfil sem lista de pessoas/cultos não repete chamadas; foto nova avisa o Instituto; sem Encerrar antes do dia (TRAVA24_2). SYNC-V39-26: TRAVA-1 (encerrar encontro do GC/culto; edição travada 24h depois; pastor reabre). SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
+  var BUILD = 'FIL-2';   // FIL-2: trocar de igreja/filial pelo menu do usuário (só master). FIL-1: filiais (derivações do CNPJ) como igrejas no app; troca de igreja. CAD-1: cadastro legal único (Igreja e Instituto em Configurações); CEP sem bairro busca na cidade da igreja. CONFIG-1b: editor da política já vem com o modelo v1 quando não há versão publicada. CONFIG-1: Configurações da igreja gravadas no Supabase (logo/ícone no Storage; encarregado em 3 campos). Antes: SYNC-V39-27   // SYNC-V39-27: checagem de duplicado no cadastro na v39; perfil sem lista de pessoas/cultos não repete chamadas; foto nova avisa o Instituto; sem Encerrar antes do dia (TRAVA24_2). SYNC-V39-26: TRAVA-1 (encerrar encontro do GC/culto; edição travada 24h depois; pastor reabre). SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 
