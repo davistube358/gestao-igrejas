@@ -910,11 +910,20 @@ function v39AuthLogin(usuario, senha) {
     });
   });
 }
-function v39LegacyUsuario(login, auth) {
+function v39LegacyUsuario(login, auth, igrejaSel) {
   var d = auth.data || {}, c = auth.context || {}, a = c.account || c.userAccount || c.usuario || d.usuario || d.user || {};
   var person = c.person || c.pessoa || {};
   var churches = c.churches || c.igrejas || c.accesses || [];
   var assignments = c.assignments || c.profileAssignments || c.atribuicoes || [];
+  // FIL-1: com acesso a mais de uma igreja (matriz e filiais), perfil e permissões são os da igreja escolhida
+  // (a lembrada, senão a matriz). Com uma igreja só, nada muda.
+  var ativasIg = churches.filter(function (x) { return x && x.status === 'active' && x.church_id; });
+  var escolhidaIg = igrejaSel ? ativasIg.filter(function (x) { return x.church_id === igrejaSel; })[0] : null;
+  if (!escolhidaIg && ativasIg.length > 1) escolhidaIg = ativasIg.filter(function (x) { return !(x.churches && x.churches.parent_church_id); })[0] || ativasIg[0];
+  if (escolhidaIg) {
+    churches = [escolhidaIg];
+    assignments = assignments.filter(function (x) { return x && (x.church_user_access_id || x.access_id) === escolhidaIg.id; });
+  }
   var now = Date.now();
   var activeAssignments = assignments.filter(function (x) {
     if (!x) return false;
@@ -977,9 +986,11 @@ function entrar() {
   erroEm('l-erro', ''); $('b-entrar').disabled = true; carregando(true, 'Entrando...');
   v39AuthLogin(u, s)
     .then(function (auth) {
-      var usuario = v39LegacyUsuario(u, auth);
+      var usuario = v39LegacyUsuario(u, auth, lsGet(K_IGREJA_ATIVA) || '');   // FIL-1: última igreja usada (matriz ou filial)
       var trocou = cfg.usuario && cfg.usuario.id !== usuario.id;
-      if (trocou) { db = { pessoas: [], encontros: [], gcs: [], equipe: [], pendentes: 0 }; fotos = {}; salvarDB(); salvarFotos(); }
+      var trocouIgreja = !trocou && cfg.usuario && cfg.usuario.igrejaId && usuario.igrejaId && cfg.usuario.igrejaId !== usuario.igrejaId;
+      if (trocou || trocouIgreja) { db = { pessoas: [], encontros: [], gcs: [], equipe: [], pendentes: 0 }; fotos = {}; salvarDB(); salvarFotos(); }
+      if (trocouIgreja) { igr = { config: {}, logo: '', logoV: '' }; salvarIgr(); }
       cfg.token = 'supabase-v39'; cfg.usuario = usuario; cfg.ultima = ''; cfg.hashSync = '';
       if (window.G2_V39 && G2_V39.runtime && G2_V39.runtime.state) {
         G2_V39.runtime.state.authenticated = true;
@@ -3786,7 +3797,7 @@ function rConfig() {
     (cfg.token === 'supabase-v39' ? '<div class="g2"><div><label>Inscrição estadual</label><input id="cf-ie" value="' + esc(c.ie) + '"></div>' +
       '<div><label>Inscrição municipal</label><input id="cf-im" value="' + esc(c.im) + '"></div></div>' +
       '<div style="font-size:11px;color:#888;margin-top:6px;line-height:1.5">Cadastro legal único: o mesmo CNPJ, razão social e endereço aparecem no Financeiro (Entidades), nos relatórios e na política de privacidade.</div>' : '') +
-    '<label>Pastor presidente</label><input id="cf-pastor" value="' + esc(c.pastorPresidente) + '"></div>' + blocoConfigEndereco(c) + blocoConfigInstitutos() +
+    '<label>Pastor presidente</label><input id="cf-pastor" value="' + esc(c.pastorPresidente) + '"></div>' + blocoConfigEndereco(c) + blocoConfigInstitutos() + blocoConfigFiliais() +
     '<div class="card"><h3>Horários de culto</h3>' + (c.cultos.length ? c.cultos.map(function (x, i) {
       return '<div class="cf-culto" style="border:1.5px solid #eee;border-radius:12px;padding:4px 10px 10px;margin-bottom:8px">' +
         '<div class="g2"><div><label>Dia</label><select class="cf-dia">' + opts(DIAS.map(function (d, j) { return [String(j), d]; }), x.dia) + '</select></div>' +
@@ -3967,6 +3978,109 @@ function cfgInstAbrir(id) {
   if (id && !e) return;
   cfgDraft = lerCfgForm();
   M.abrirForm(e ? Object.assign({ tipo: 'institute' }, e) : null, function () { cfgInstitutos = null; v39CarregarConfig(); toast('Instituto salvo ✓', 3000); });
+}
+/* ── FIL-1: filiais (derivações do CNPJ da matriz). Cada filial é outra igreja no 2Gather (dados segregados);
+   os masters da matriz entram em todas automaticamente (banco: FIL_1). ── */
+var K_IGREJA_ATIVA = 'gcbv5_igreja_ativa', cfgFiliais = null;
+var FIL_MSG = { PERMISSION_DENIED: 'Só o master da matriz cria ou altera filiais.', BRANCH_LEVEL: 'Filial não pode ter filial: entre na matriz para criar.',
+  BRANCH_NAME_INVALID: 'Informe o nome da filial (3 a 120 letras).', BRANCH_INVALID: 'Dados inválidos.', BRANCH_CNPJ_INVALID: 'CNPJ inválido: confira os números.',
+  BRANCH_MATRIZ_SEM_CNPJ: 'Cadastre o CNPJ da matriz antes (Dados da igreja).', BRANCH_CNPJ_RAIZ: 'O CNPJ da filial precisa ter a mesma raiz (8 primeiros números) da matriz.',
+  BRANCH_CNPJ_EM_USO: 'Este CNPJ já pertence a outra igreja.', BRANCH_NOT_FOUND: 'Filial não encontrada. Atualize a tela.', REASON_REQUIRED: 'Informe o motivo (mínimo de 10 caracteres).',
+  ACCESS_DENIED: 'Sem acesso a esta igreja.' };
+function filMsg(e) { var t = String((e && (e.message || e.code)) || ''); return FIL_MSG[t] || (/PGRST202|find the function/i.test(t) ? 'O servidor ainda não tem as filiais (rode o FIL_1).' : (t || 'Não foi possível concluir.')); }
+function carregarFiliais() {
+  if (!cfgV39Ativo()) return;
+  cfgFiliais = cfgFiliais || { carregando: true };
+  v39RpcApp('v39_branch_list', { p_church_id: cfg.usuario.igrejaId }).then(function (r) { cfgFiliais = r || { filiais: [] }; })
+    .catch(function (e) { var t = String((e && (e.message || e.code)) || ''); cfgFiliais = /PGRST202|find the function/i.test(t) ? { indisponivel: true } : { erro: filMsg(e) }; })
+    .then(function () { if (cfg.aba === 'config') render(); });
+}
+function blocoConfigFiliais() {
+  if (cfg.token !== 'supabase-v39') return '';
+  if (cfgFiliais === null) { carregarFiliais(); return ''; }
+  var F = cfgFiliais; if (F.indisponivel || F.carregando) return '';
+  if (F.erro) return '<div class="card"><h3>Filiais</h3><div class="empty" style="padding:10px">' + esc(F.erro) + '</div></div>';
+  var atual = F.atual, mz = F.matriz || {}, naMatriz = atual === mz.id, l = F.filiais || [];
+  if (!l.length && !F.podeCriar) return '';
+  var h = '<div class="card"><h3>Filiais (derivações do CNPJ)</h3>' +
+    '<div style="font-size:12.5px;color:#555;line-height:1.5;margin-bottom:8px">Matriz: <b>' + esc(mz.nome || '') + '</b>' + (mz.cnpj ? ' · CNPJ ' + esc(mascaraCnpj(mz.cnpj)) : '') +
+    (naMatriz ? ' <span class="pill p-verde">você está aqui</span>' : (mz.tenhoAcesso ? ' <button class="btn gh sm" data-a="filEntrar" data-v="' + esc(mz.id) + '">Entrar na matriz</button>' : '')) + '</div>';
+  h += l.length ? l.map(function (f) {
+    var aqui = f.id === atual, ativa = f.status === 'active';
+    return '<div style="border:1.5px solid #eee;border-radius:12px;padding:8px 10px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:start">' +
+      '<div><b>' + esc(f.nome) + '</b>' + (aqui ? ' <span class="pill p-verde">você está aqui</span>' : '') + (ativa ? '' : ' <span class="pill p-cinza">inativa</span>') +
+      '<div style="font-size:12px;color:#666;line-height:1.5">' + (f.cnpj ? 'CNPJ ' + esc(mascaraCnpj(f.cnpj)) : 'Sem CNPJ próprio') +
+      ([f.cidade, f.uf].filter(Boolean).length ? ' · ' + esc([f.cidade, f.uf].filter(Boolean).join('/')) : '') + (f.tenhoAcesso ? '' : ' · sem acesso') + '</div></div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' +
+      (f.tenhoAcesso && ativa && !aqui ? '<button class="btn gh sm" data-a="filEntrar" data-v="' + esc(f.id) + '">Entrar</button>' : '') +
+      (F.podeCriar && naMatriz ? '<button class="btn gh sm" data-a="filStatus" data-v="' + esc(f.id) + '|' + (ativa ? 'inactive' : 'active') + '">' + (ativa ? 'Inativar' : 'Reativar') + '</button>' : '') +
+      '</div></div></div>';
+  }).join('') : '<div class="empty" style="padding:10px">Nenhuma filial cadastrada.</div>';
+  if (F.podeCriar && naMatriz) h += '<button class="btn gh sm" data-a="filNova">+ Filial</button>';
+  return h + '<div style="font-size:11px;color:#999;margin-top:8px;line-height:1.5">Cada filial é uma igreja no 2Gather, com membros, GCs, usuários e financeiro próprios. Os masters da matriz entram em todas; os demais usuários só onde forem liberados (tela de Usuários dentro da filial).</div></div>';
+}
+function filNova() {
+  var mz = (cfgFiliais && cfgFiliais.matriz) || {}, raiz = soDigitos(mz.cnpj || '').slice(0, 8);
+  abrirModal('<h2>Nova filial</h2><div class="sb" style="font-size:12.5px;color:var(--tx2);line-height:1.5;margin:4px 0">A filial é criada como outra igreja, ligada a esta matriz. Depois, entre nela para completar os dados em Configurações.</div>' +
+    '<label>Nome da filial *</label><input id="fl-nome" placeholder="Ex.: Viver Church Araraquara">' +
+    '<label>Razão social</label><input id="fl-razao" placeholder="Como está no CNPJ (opcional)">' +
+    '<label>CNPJ (opcional)</label><input id="fl-cnpj" inputmode="numeric" value="' + esc(raiz ? mascaraCnpj(raiz) : '') + '" placeholder="00.000.000/0002-00">' +
+    '<div style="font-size:11px;color:#888;margin-top:4px">Derivação do CNPJ da matriz: os 8 primeiros números são os mesmos' + (raiz ? ' (' + esc(mascaraCnpj(raiz)) + ')' : '') + '. Deixe só a raiz para criar sem CNPJ.</div>' +
+    '<label>CEP</label><input id="fl-cep" inputmode="numeric" maxlength="9" placeholder="00000-000"><div id="fl-cepinfo" style="font-size:11.5px;margin-top:5px;line-height:1.4"></div>' +
+    '<label>Endereço</label><input id="fl-endereco"><div class="g2"><div><label>Número</label><input id="fl-numero"></div><div><label>Bairro</label><input id="fl-bairro"></div></div>' +
+    '<label>Cidade/UF</label><input id="fl-cidade" placeholder="Ex.: Araraquara/SP">' +
+    '<div style="height:12px"></div><button class="btn pr" data-a="filSalvar" style="width:100%">Criar filial</button><div class="gap"></div><button class="btn gh" data-a="fechar" style="width:100%">Cancelar</button>');
+}
+function filPayload(get) {
+  var cn = soDigitos(get('fl-cnpj')); if (cn.length === 8) cn = '';   // só a raiz pré-preenchida = sem CNPJ
+  var cid = get('fl-cidade'), m = cid.match(/^(.*?)\s*[\/-]\s*([A-Za-z]{2})$/);
+  return { nome: get('fl-nome'), razaoSocial: get('fl-razao'), cnpj: cn,
+    endereco: { cep: mascaraCep(get('fl-cep')), rua: get('fl-endereco'), numero: get('fl-numero'), bairro: get('fl-bairro'), cidade: m ? m[1] : cid, uf: m ? m[2].toUpperCase() : '' } };
+}
+function filSalvar() {
+  var p = filPayload(function (id) { var e = $(id); return e ? e.value.trim() : ''; });
+  if (p.nome.length < 3) return toast('Informe o nome da filial.');
+  if (p.cnpj && p.cnpj.length !== 14) return toast('CNPJ deve ter 14 números (ou deixe só a raiz para criar sem CNPJ).', 5000);
+  carregando(true, 'Criando filial...');
+  v39RpcApp('v39_branch_create', { p_church_id: cfg.usuario.igrejaId, p: p }).then(function (r) {
+    cfgFiliais = (r && r.lista) || null; fechar(); toast('Filial criada ✓ Use "Entrar" para abrir e completar os dados.', 5000); render();
+  }).catch(function (e) { toast(filMsg(e), 6000); }).then(function () { carregando(false); });
+}
+function filStatus(v) {
+  var x = String(v || '').split('|'), f = ((cfgFiliais && cfgFiliais.filiais) || []).filter(function (y) { return y.id === x[0]; })[0]; if (!f) return;
+  abrirModal('<h2>' + (x[1] === 'inactive' ? 'Inativar' : 'Reativar') + ' filial</h2><div class="sb" style="margin:4px 0">' + esc(f.nome) + '</div>' +
+    (x[1] === 'inactive' ? '<div style="font-size:12px;color:#888;line-height:1.5">Nada é apagado. A filial deixa de aparecer para entrar até ser reativada.</div>' : '') +
+    '<label>Motivo *</label><textarea id="fl-motivo" rows="3" placeholder="Mínimo de 10 caracteres"></textarea>' +
+    '<div style="height:12px"></div><button class="btn pr" data-a="filStatusOk" data-v="' + esc(v) + '" style="width:100%">Confirmar</button><div class="gap"></div><button class="btn gh" data-a="fechar" style="width:100%">Cancelar</button>');
+}
+function filStatusOk(v) {
+  var x = String(v || '').split('|'), mot = $('fl-motivo') ? $('fl-motivo').value.trim() : '';
+  if (mot.length < 10) return toast('Informe o motivo (mínimo de 10 caracteres).');
+  carregando(true, 'Salvando...');
+  v39RpcApp('v39_branch_set_status', { p_church_id: cfg.usuario.igrejaId, p_branch_id: x[0], p_status: x[1], p_reason: mot }).then(function (r) {
+    cfgFiliais = (r && r.lista) || null; fechar(); render();
+  }).catch(function (e) { toast(filMsg(e), 6000); }).then(function () { carregando(false); });
+}
+/** Troca a igreja da sessão (matriz/filial): só sem alterações pendentes; limpa os dados locais e recarrega com o perfil daquela igreja. */
+function v39TrocarIgreja(id) {
+  if (!id || !cfg.usuario || id === cfg.usuario.igrejaId) return;
+  if ((db && db.pendentes > 0) || sincronizando) return toast('Há alterações ainda não enviadas. Aguarde a sincronização antes de trocar de igreja.', 5000);
+  var V = window.G2_V39 || {};
+  carregando(true, 'Trocando de igreja...');
+  Promise.resolve(typeof V.sessionContext === 'function' ? V.sessionContext() : null).then(function (ctx) {
+    if (!ctx || !ctx.userAccount) throw new Error('Sessão expirada. Entre novamente.');
+    var acc = (ctx.churches || []).filter(function (x) { return x && x.church_id === id && x.status === 'active'; })[0];
+    if (!acc) throw new Error('Você não tem acesso ativo a esta igreja.');
+    var ant = cfg.usuario, u = v39LegacyUsuario(ant.usuario, { data: {}, context: ctx, session: { user: ctx.authUser } }, id);
+    u.trocarSenha = false; u.consent = ant.consent; if (ant.consentEm) u.consentEm = ant.consentEm;
+    lsSet(K_IGREJA_ATIVA, id);
+    db = { pessoas: [], encontros: [], gcs: [], equipe: [], pendentes: 0 }; fotos = {}; salvarDB(); salvarFotos();
+    igr = { config: {}, logo: '', logoV: '' }; salvarIgr();
+    cfg.usuario = u; cfg.ultima = ''; cfg.hashSync = ''; cfg.gcAtual = ''; cfg.aba = '';
+    cfg.modo = ['master', 'pastor', 'supervisor'].indexOf(u.papel) >= 0 || ehGestor() ? 'ger' : 'gc';
+    salvarCfg();
+    location.reload();
+  }).catch(function (e) { carregando(false); toast((e && e.message) || 'Não foi possível trocar de igreja.', 5000); });
 }
 function blocoPublicarPolitica(c) {
   if (!podePublicarPolitica() || c.politica === undefined) return '';
@@ -7426,6 +7540,11 @@ var ACOES = {
     anonimizar: anonimizar, verPolitica: function () { verPolitica(false); }, aceitarPolitica: aceitarPolitica, recusarPolitica: function () { consentAberto = false; sair(false); },
     cfModeloPolitica: function () { cfgDraft = lerCfgForm(); cfgDraft.politica = cfgDraft.politicaModelo || ''; render(); },
     cfInstEditar: function (v) { cfgInstAbrir(v); },   // CAD-1
+    filNova: function () { filNova(); },   // FIL-1
+    filSalvar: function () { filSalvar(); },
+    filStatus: function (v) { filStatus(v); },
+    filStatusOk: function (v) { filStatusOk(v); },
+    filEntrar: function (v) { v39TrocarIgreja(v); },
     cfInstNovo: function () { cfgInstAbrir(''); },
     cfPoliticaAnterior: function () { cfgDraft = lerCfgForm(); cfgDraft.politica = cfgDraft.politicaAnterior || ''; render(); },   // CONFIG-1b
     lgpdPublicar: lgpdPublicar, lgpdRetirarRestricao: lgpdRetirarRestricao,
@@ -7453,9 +7572,9 @@ document.addEventListener('click', function (ev) {
 document.addEventListener('input', function (ev) {
   if (ev.target.id === 'busca-m' && false) {}
   if (ev.target.id === 'busca-p') { buscaP = ev.target.value; var pos = ev.target.selectionStart; render(); var el = $('busca-p'); el.focus(); el.setSelectionRange(pos, pos); }
-  if (ev.target.id === 'cf-cnpj' || ev.target.id === 'ii-cnpj') ev.target.value = mascaraCnpj(ev.target.value);
+  if (ev.target.id === 'cf-cnpj' || ev.target.id === 'ii-cnpj' || ev.target.id === 'fl-cnpj') ev.target.value = mascaraCnpj(ev.target.value);
     if (ev.target.id === 'ip-busca') { instPac.q = ev.target.value; clearTimeout(instPacT); instPacT = setTimeout(function () { carregarInstPac(instPac.q); }, 350); }
-  if (['f-cep', 'g-cep', 'v-cep', 'cf-cep', 'ii-cep'].indexOf(ev.target.id) >= 0) {
+  if (['f-cep', 'g-cep', 'v-cep', 'cf-cep', 'ii-cep', 'fl-cep'].indexOf(ev.target.id) >= 0) {
     var pxc = ev.target.id.replace('-cep', '');
     ev.target.value = mascaraCep(ev.target.value);
     if (soDigitos(ev.target.value).length === 8) aplicarCep(pxc);
@@ -8264,7 +8383,7 @@ window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'CAD-1';   // CAD-1: cadastro legal único (Igreja e Instituto em Configurações); CEP sem bairro busca na cidade da igreja. CONFIG-1b: editor da política já vem com o modelo v1 quando não há versão publicada. CONFIG-1: Configurações da igreja gravadas no Supabase (logo/ícone no Storage; encarregado em 3 campos). Antes: SYNC-V39-27   // SYNC-V39-27: checagem de duplicado no cadastro na v39; perfil sem lista de pessoas/cultos não repete chamadas; foto nova avisa o Instituto; sem Encerrar antes do dia (TRAVA24_2). SYNC-V39-26: TRAVA-1 (encerrar encontro do GC/culto; edição travada 24h depois; pastor reabre). SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
+  var BUILD = 'FIL-1';   // FIL-1: filiais (derivações do CNPJ) como igrejas no app; troca de igreja. CAD-1: cadastro legal único (Igreja e Instituto em Configurações); CEP sem bairro busca na cidade da igreja. CONFIG-1b: editor da política já vem com o modelo v1 quando não há versão publicada. CONFIG-1: Configurações da igreja gravadas no Supabase (logo/ícone no Storage; encarregado em 3 campos). Antes: SYNC-V39-27   // SYNC-V39-27: checagem de duplicado no cadastro na v39; perfil sem lista de pessoas/cultos não repete chamadas; foto nova avisa o Instituto; sem Encerrar antes do dia (TRAVA24_2). SYNC-V39-26: TRAVA-1 (encerrar encontro do GC/culto; edição travada 24h depois; pastor reabre). SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 
