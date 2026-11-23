@@ -3697,7 +3697,7 @@ function lerCfgForm() {
     encarregadoTelefone: $('cf-enc-fone') ? $('cf-enc-fone').value.trim() : ((cfgDraft && cfgDraft.encarregadoTelefone) || ''),
     encarregadoEmail: $('cf-enc-email') ? $('cf-enc-email').value.trim() : ((cfgDraft && cfgDraft.encarregadoEmail) || ''),
     politica: $('cf-politica') ? $('cf-politica').value : (cfgDraft ? cfgDraft.politica : undefined),
-    politicaModelo: cfgDraft ? cfgDraft.politicaModelo : '',
+    politicaModelo: cfgDraft ? cfgDraft.politicaModelo : '', politicaAnterior: cfgDraft ? cfgDraft.politicaAnterior : '',
     politicaVersao: cfgDraft ? cfgDraft.politicaVersao : '', politicaPublicadaEm: cfgDraft ? cfgDraft.politicaPublicadaEm : '', politicaFonte: cfgDraft ? cfgDraft.politicaFonte : '',
     politicaNovaV: $('cf-politica-versao') ? $('cf-politica-versao').value.trim() : (cfgDraft ? cfgDraft.politicaNovaV : '') };
   c.encarregado = [c.encarregadoNome, c.encarregadoTelefone, c.encarregadoEmail].filter(Boolean).join(' · ');   // texto único para a fonte antiga
@@ -3725,6 +3725,7 @@ function rConfig() {
         cfgDraft.politica = r && r.ok ? r.texto : ''; cfgDraft.politicaModelo = r && r.ok && r.modelo ? r.texto : (cfgDraft.politicaModelo || '');
         if (r && r.ok && r.modelo) cfgDraft.politicaModelo = r.texto;
       }
+      if (cfg.token === 'supabase-v39' && cfgDraft.politicaFonte !== 'supabase') return politicaModeloV1();   // CONFIG-1b: sem versão publicada, o editor já vem com o modelo v1
       if (cfg.aba === 'config') render();
     }).catch(function () { if (cfgDraft) cfgDraft.politica = ''; });
   }
@@ -3767,7 +3768,9 @@ function rConfig() {
       : '<textarea id="cf-politica" rows="12" style="font-size:13px;line-height:1.5">' + esc(c.politica) + '</textarea>') +
     '<div style="font-size:11px;color:#999;margin-top:6px;line-height:1.5">É um <b>modelo</b> — revise com um advogado antes de divulgar. Ao alterar o texto, todos os usuários precisarão aceitar a nova versão no próximo acesso.</div>' +
     (cfg.token === 'supabase-v39' ? '<div style="font-size:11px;color:#999;margin-top:4px;line-height:1.5">Marcadores preenchidos com o cadastro da igreja (Financeiro › Entidades): <code>{{IGREJA_NOME}}</code> <code>{{IGREJA_CNPJ}}</code> <code>{{IGREJA_ENDERECO}}</code> <code>{{ENCARREGADO_NOME}}</code> <code>{{ENCARREGADO_EMAIL}}</code> <code>{{ENCARREGADO_TELEFONE}}</code>. Atualizar o cadastro muda o texto exibido sem nova versão.</div>' : '') +
-    (c.politicaModelo ? '<div style="text-align:right;margin-top:6px"><span class="pill p-cinza" data-a="cfModeloPolitica" style="cursor:pointer">restaurar modelo</span></div>' : '') +
+    (c.politicaModelo || c.politicaAnterior ? '<div style="text-align:right;margin-top:6px">' +
+      (c.politicaAnterior ? '<span class="pill p-cinza" data-a="cfPoliticaAnterior" style="cursor:pointer;margin-right:6px">usar texto anterior</span>' : '') +
+      (c.politicaModelo ? '<span class="pill p-cinza" data-a="cfModeloPolitica" style="cursor:pointer">restaurar modelo</span>' : '') + '</div>' : '') +
     blocoPublicarPolitica(c) + blocoRestringidas() + '</div>' +
     blocoJornadaCfg() +
     '<button class="btn pr" data-a="cfSalvar">Salvar configurações</button>';
@@ -3849,7 +3852,7 @@ function cfSalvar() {
   c.cultos = c.cultos.filter(function (x) { return x.horario || x.nome; });
   if (logoNovo) c.logo = logoNovo;
   if (iconeNovo) c.icone = iconeNovo;
-  delete c.politicaModelo; delete c._polCarregando;
+  delete c.politicaModelo; delete c.politicaAnterior; delete c._polCarregando;
   delete c.politicaVersao; delete c.politicaPublicadaEm; delete c.politicaFonte; delete c.politicaNovaV;   // LGPD-1: a política v39 é publicada em separado (lgpdPublicar)
   var icF = iconeNovo === '__remover__' ? '' : (iconeNovo || igr.icone), lgF = logoNovo === '__remover__' ? '' : (logoNovo || igr.logo);
   var srcFav = (iconeNovo || logoNovo) ? (icF || lgF) : '';      // ícone da aba só é regerado quando alguma imagem muda
@@ -3893,6 +3896,17 @@ function podePublicarPolitica() {
   return cfg.token === 'supabase-v39' && (papel() === 'master' || (eu().permissoes || []).indexOf('privacy.manage') >= 0);
 }
 function proximaVersaoPolitica(v) { var n = parseInt(v, 10); return !v ? '1' : (String(n) === String(v).trim() ? String(n + 1) : ''); }
+/* CONFIG-1b: modelo v1 com marcadores {{...}} (v39/politica_modelo_v1.txt, cópia de docs/politica_privacidade_v1_modelo.txt).
+   Usado no editor enquanto não há versão publicada no Supabase; o texto anterior (v38), se houver, fica em "usar texto anterior". */
+function politicaModeloV1() {
+  return fetch('./politica_modelo_v1.txt?v=CONFIG-1b', { cache: 'no-cache' }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+    .then(function (t) {
+      if (!cfgDraft || !String(t || '').trim()) return;
+      if (String(cfgDraft.politica || '').trim() && cfgDraft.politica !== t) cfgDraft.politicaAnterior = cfgDraft.politica;
+      cfgDraft.politica = t; cfgDraft.politicaModelo = t;
+    }).catch(function (e) { console.warn('[2Gather] modelo da política indisponível', e); })
+    .then(function () { if (cfg.aba === 'config') render(); });
+}
 function blocoPublicarPolitica(c) {
   if (!podePublicarPolitica() || c.politica === undefined) return '';
   var novaV = c.politicaNovaV !== undefined && c.politicaNovaV !== '' ? c.politicaNovaV : proximaVersaoPolitica(c.politicaVersao);
@@ -7348,6 +7362,7 @@ var ACOES = {
     sairTodos: sairTodos, encerrarSessoes: encerrarSessoes, auditoria: function () { abrirAuditoria(''); }, audBuscar: function () { abrirAuditoria($('aud-q').value); },
     anonimizar: anonimizar, verPolitica: function () { verPolitica(false); }, aceitarPolitica: aceitarPolitica, recusarPolitica: function () { consentAberto = false; sair(false); },
     cfModeloPolitica: function () { cfgDraft = lerCfgForm(); cfgDraft.politica = cfgDraft.politicaModelo || ''; render(); },
+    cfPoliticaAnterior: function () { cfgDraft = lerCfgForm(); cfgDraft.politica = cfgDraft.politicaAnterior || ''; render(); },   // CONFIG-1b
     lgpdPublicar: lgpdPublicar, lgpdRetirarRestricao: lgpdRetirarRestricao,
     perModo: function (v) { perBI.modo = v; if (v === 'per' && !perBI.de) { var P0 = periodoBI(); perBI.de = hoje().slice(0, 7) + '-01'; perBI.ate = hoje(); } render(); }, lvModo: function (v) { lvModoCad = v; lvGCManual = false; render(); }, encAgendar: encAgendar, encSalvarAgenda: encSalvarAgenda, encCancelar: encCancelar,
     togFiltrosM: function () { fMAberto = !fMAberto; render(); },
@@ -8184,7 +8199,7 @@ window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'CONFIG-1';   // CONFIG-1: Configurações da igreja gravadas no Supabase (logo/ícone no Storage; encarregado em 3 campos). Antes: SYNC-V39-27   // SYNC-V39-27: checagem de duplicado no cadastro na v39; perfil sem lista de pessoas/cultos não repete chamadas; foto nova avisa o Instituto; sem Encerrar antes do dia (TRAVA24_2). SYNC-V39-26: TRAVA-1 (encerrar encontro do GC/culto; edição travada 24h depois; pastor reabre). SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
+  var BUILD = 'CONFIG-1b';   // CONFIG-1b: editor da política já vem com o modelo v1 quando não há versão publicada. CONFIG-1: Configurações da igreja gravadas no Supabase (logo/ícone no Storage; encarregado em 3 campos). Antes: SYNC-V39-27   // SYNC-V39-27: checagem de duplicado no cadastro na v39; perfil sem lista de pessoas/cultos não repete chamadas; foto nova avisa o Instituto; sem Encerrar antes do dia (TRAVA24_2). SYNC-V39-26: TRAVA-1 (encerrar encontro do GC/culto; edição travada 24h depois; pastor reabre). SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 
