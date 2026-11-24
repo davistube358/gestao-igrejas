@@ -1,4 +1,6 @@
-/* 2Gather v39 · Kids · KIDS-6
+/* 2Gather v39 · Kids · KIDS-7
+   KIDS-7: nascimento digitado como dd/mm/aaaa (o campo de data vinha vazio ao salvar em alguns aparelhos); parentesco da
+           criança deduzido do parentesco do responsável e do sexo (sem perguntar dos dois lados).
    KIDS-6: "Posição na lista" explicada na sala; mensagem quando a criança já está em outro culto/sala no mesmo horário (KIDS_6).
    KIDS-5: cadastro a partir da criança (responsável da base ou tela de visitante, sem etapa "família"); grau de parentesco;
            câmera ao vivo; salas (padrão do Kids e por culto) com professores; entrada com sala automática ou escolhida;
@@ -18,7 +20,7 @@
    Diagnóstico no Console: G2_KIDS.versao, G2_KIDS._s */
 (function () {
   'use strict';
-  var VERSAO = 'KIDS-6';
+  var VERSAO = 'KIDS-7';
   if (window.G2_KIDS) return;
   var K = window.G2_KIDS = { versao: VERSAO };
   console.info('[2Gather] kids ' + VERSAO);
@@ -220,7 +222,7 @@
       '<div id="km-dados">' +
       '<label>Nome completo' + (novo ? ' *' : '') + '</label><input id="km-nome" value="' + esc(p ? p.nomeCompleto : '') + '"' + (podeEditarDados ? '' : ' disabled') + '>' +
       '<div class="g2"><div><label>Como é chamado(a)</label><input id="km-apelido"' + (podeEditarDados ? '' : ' disabled') + '></div>' +
-      '<div><label>Nascimento' + (ehCr || S.form.papel === 'outro' ? ' *' : '') + '</label><input id="km-nasc" type="date" value="' + esc(p && p.nascimento ? String(p.nascimento).slice(0, 10) : '') + '"></div></div>' +
+      '<div><label>Nascimento' + (ehCr || S.form.papel === 'outro' ? ' *' : '') + '</label>' + campoData('km-nasc', p && p.nascimento) + '</div></div>' +
       '<div class="g2"><div><label>Sexo</label><select id="km-sexo"' + (podeEditarDados ? '' : ' disabled') + '><option value=""></option><option' + (p && p.sexo === 'Feminino' ? ' selected' : '') + '>Feminino</option><option' + (p && p.sexo === 'Masculino' ? ' selected' : '') + '>Masculino</option></select></div>' +
       (ehCr ? '<div><label>Situação</label><select id="km-sit"><option value="">segue a família</option><option value="visiting"' + (p && p.situacao === 'visiting' ? ' selected' : '') + '>Visitante</option><option value="active"' + (p && p.situacao === 'active' ? ' selected' : '') + '>Frequenta</option></select></div>'
             : '<div><label>WhatsApp' + (S.form.papel === 'responsavel' ? ' *' : '') + '</label><input id="km-fone" inputmode="tel" placeholder="(11) 98888-7777" value="' + esc(p && p.whatsapp ? fone(p.whatsapp) : '') + '"></div>') + '</div>' +
@@ -252,7 +254,8 @@
     var p = { ministerioId: S.min, familiaId: f.id, papel: F.papel };
     if (F.fmId) p.id = F.fmId;
     if (F.pessoaId) p.pessoaId = F.pessoaId;
-    var pes = { nome: ($('km-nome') || {}).value, apelido: ($('km-apelido') || {}).value, nascimento: ($('km-nasc') || {}).value || null,
+    var nascM = lerData('km-nasc'); if (nascM === null) return toast('Data de nascimento inválida: use dd/mm/aaaa.', true);
+    var pes = { nome: ($('km-nome') || {}).value, apelido: ($('km-apelido') || {}).value, nascimento: nascM || null,
                 sexo: ($('km-sexo') || {}).value || null, whatsapp: $('km-fone') ? $('km-fone').value : null };
     Object.keys(pes).forEach(function (k) { if (typeof pes[k] === 'string') pes[k] = pes[k].trim(); if (pes[k] === '') pes[k] = null; });
     p.pessoa = pes;
@@ -384,6 +387,30 @@
     var l = papel === 'crianca' ? PAR_CRIANCA : papel === 'todos' ? PAR_TODOS : PAR_ADULTO;
     return '<select id="' + id + '"><option value="">— escolha —</option>' + l.map(function (x) { return '<option' + (x === atual ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('') + '</select>';
   }
+  /* KIDS-7: data digitada como dd/mm/aaaa (o campo de data do navegador vinha vazio em alguns aparelhos) */
+  function campoData(id, iso) {
+    var v = iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '';
+    return '<input id="' + id + '" data-k-data="1" inputmode="numeric" maxlength="10" placeholder="dd/mm/aaaa" autocomplete="off" value="' + esc(v) + '">';
+  }
+  function mascaraData(v) { var d = String(v || '').replace(/\D/g, '').slice(0, 8); return d.length > 4 ? d.slice(0, 2) + '/' + d.slice(2, 4) + '/' + d.slice(4) : d.length > 2 ? d.slice(0, 2) + '/' + d.slice(2) : d; }
+  /* devolve 'aaaa-mm-dd', '' (vazio) ou null (inválida) */
+  function lerData(id) {
+    var el = $(id); if (!el) return '';
+    var v = String(el.value || '').trim(); if (!v) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+    var m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); if (!m) return null;
+    var d = +m[1], mo = +m[2], a = +m[3], dt = new Date(a, mo - 1, d);
+    if (dt.getFullYear() !== a || dt.getMonth() !== mo - 1 || dt.getDate() !== d || dt > new Date() || a < 1900) return null;
+    return a + '-' + ('0' + mo).slice(-2) + '-' + ('0' + d).slice(-2);
+  }
+  /* parentesco da criança deduzido do parentesco do responsável e do sexo da criança */
+  function parentescoInverso(parResp, sexo) {
+    var f = sexo === 'Feminino';
+    var m = { 'Pai': f ? 'Filha' : 'Filho', 'Mãe': f ? 'Filha' : 'Filho', 'Padrasto': f ? 'Enteada' : 'Enteado', 'Madrasta': f ? 'Enteada' : 'Enteado',
+              'Avô': f ? 'Neta' : 'Neto', 'Avó': f ? 'Neta' : 'Neto', 'Tio': f ? 'Sobrinha' : 'Sobrinho', 'Tia': f ? 'Sobrinha' : 'Sobrinho',
+              'Irmão': f ? 'Irmã' : 'Irmão', 'Irmã': f ? 'Irmã' : 'Irmão', 'Primo': f ? 'Prima' : 'Primo', 'Prima': f ? 'Prima' : 'Primo' };
+    return parResp ? (m[parResp] || 'Outro') : null;
+  }
   /* crianças (uma linha por criança, juntando os núcleos em que ela aparece) */
   function criancas() {
     var mapa = {}, l = [];
@@ -471,12 +498,12 @@
     S.form = { respId: retorno && retorno.respId || null };
     modal('<h2>Nova criança</h2>' +
       '<label>Nome completo *</label><input id="kc-nome">' +
-      '<div class="g2"><div><label>Como é chamada</label><input id="kc-apelido"></div><div><label>Nascimento *</label><input id="kc-nasc" type="date"></div></div>' +
+      '<div class="g2"><div><label>Como é chamada</label><input id="kc-apelido"></div><div><label>Nascimento *</label>' + campoData('kc-nasc') + '</div></div>' +
       '<div class="g2"><div><label>Sexo *</label><select id="kc-sexo"><option value=""></option><option>Feminino</option><option>Masculino</option></select></div>' +
       '<div><label>Situação</label><select id="kc-sit"><option value="">segue o responsável</option><option value="visiting">Visitante</option><option value="active">Frequenta</option></select></div></div>' +
       '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--ln,#e6e8eb)">' + caixaBusca('kc-resp', 'Responsável (da base da igreja) *') +
-      '<div class="g2" style="margin-top:8px"><div><label>O responsável é</label>' + selectParentesco('kc-parresp', 'responsavel') + '</div>' +
-      '<div><label>A criança é</label>' + selectParentesco('kc-par', 'crianca') + '</div></div></div>' +
+      '<label style="margin-top:8px">O responsável é (da criança)</label>' + selectParentesco('kc-parresp', 'responsavel') +
+      '<div class="sb">O parentesco da criança é deduzido (ex.: Pai → Filho/Filha, conforme o sexo).</div></div>' +
       '<div class="sb" style="margin-top:6px">Depois de salvar: foto, autorização, ficha e outras pessoas que podem retirar.</div>' +
       '<div class="gap"></div><button class="btn pr" data-k="salvarNovaCrianca">Salvar criança</button>' +
       '<div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>');
@@ -489,9 +516,12 @@
     var q = $(campo + '-q'); if (q) q.value = '';
   }
   function salvarNovaCrianca() {
-    var c = { nome: $('kc-nome').value.trim(), apelido: $('kc-apelido').value.trim() || null, nascimento: $('kc-nasc').value || null, sexo: $('kc-sexo').value || null, parentesco: $('kc-par').value || null };
+    var nasc = lerData('kc-nasc');
+    var c = { nome: $('kc-nome').value.trim(), apelido: $('kc-apelido').value.trim() || null, nascimento: nasc || null, sexo: $('kc-sexo').value || null };
     if (!c.nome) return toast('Informe o nome da criança.', true);
+    if (nasc === null) return toast('Data de nascimento inválida: use dd/mm/aaaa.', true);
     if (!c.nascimento) return toast('Informe a data de nascimento.', true);
+    c.parentesco = parentescoInverso($('kc-parresp').value, c.sexo);
     if (!c.sexo) return toast('Informe o sexo (define a sala).', true);
     if (!S.form.respId) return toast('Escolha o responsável na busca ou cadastre pela tela de visitante.', true);
     var p = { ministerioId: S.min, responsavelId: S.form.respId, parentescoResponsavel: $('kc-parresp').value || null, crianca: c, situacao: $('kc-sit').value || null };
@@ -1074,6 +1104,7 @@
     if (t.getAttribute('data-k-busca')) { S.q = t.value; var pos = t.selectionStart; pintar(); var n = document.querySelector('[data-k-busca]'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) { /* segue */ } } }
     else if (t.getAttribute('data-k-pessoa')) buscarPessoa(t.value);
     else if (t.getAttribute('data-k-base')) buscarBase(t.getAttribute('data-k-base'), t.value);
+    else if (t.getAttribute('data-k-data')) t.value = mascaraData(t.value);
     else if (t.getAttribute('data-k-local')) buscarLocal(t.value);
     else if (t.getAttribute('data-k-entrada')) { var q = t.value.trim().toLowerCase(), el = $('ke-lista');
       if (el) el.innerHTML = listaEntrada(criancasElegiveis().filter(function (x) { return !q || (x.p.nomeCompleto || x.p.nome).toLowerCase().indexOf(q) >= 0 || x.f.nome.toLowerCase().indexOf(q) >= 0; })); }
