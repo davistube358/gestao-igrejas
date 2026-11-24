@@ -1,4 +1,5 @@
-/* 2Gather v39 · Kids · KIDS-5
+/* 2Gather v39 · Kids · KIDS-6
+   KIDS-6: "Posição na lista" explicada na sala; mensagem quando a criança já está em outro culto/sala no mesmo horário (KIDS_6).
    KIDS-5: cadastro a partir da criança (responsável da base ou tela de visitante, sem etapa "família"); grau de parentesco;
            câmera ao vivo; salas (padrão do Kids e por culto) com professores; entrada com sala automática ou escolhida;
            vínculos no cadastro de pessoas (G2_KIDS.blocoVinculos). Requer sql/KIDS_5_unificado_aplicar.sql.
@@ -17,7 +18,7 @@
    Diagnóstico no Console: G2_KIDS.versao, G2_KIDS._s */
 (function () {
   'use strict';
-  var VERSAO = 'KIDS-5';
+  var VERSAO = 'KIDS-6';
   if (window.G2_KIDS) return;
   var K = window.G2_KIDS = { versao: VERSAO };
   console.info('[2Gather] kids ' + VERSAO);
@@ -46,7 +47,8 @@
     KIDS_PICKUP_AGE: 'Quem retira precisa ter 12 anos ou mais.', KIDS_KINSHIP_INVALID: 'Grau de parentesco inválido.', KIDS_CHILD_AGE: 'Criança do Kids: menos de 12 anos e com data de nascimento.',
     KIDS_ROOM_AGE_INVALID: 'Faixa de idade inválida (anos até 18; meses até 48).', KIDS_ROOM_DUPLICATE: 'Já existe sala com este nome.', KIDS_ROOM_NOT_FOUND: 'Sala não encontrada ou fechada.',
     KIDS_ROOM_HAS_CHILDREN: 'Há crianças nesta sala: troque-as de sala antes de fechar.', KIDS_STAFF_NOT_MEMBER: 'O professor precisa estar na equipe ativa do Kids.', KIDS_STAFF_NO_LOGIN: 'Só quem tem acesso ao app pode ser escalado.',
-    KIDS_ROOM_NAME_REQUIRED: 'Informe o nome da sala.', KIDS_CONSENT_REQUIRED: 'Registre antes a autorização do responsável.',
+    KIDS_ROOM_NAME_REQUIRED: 'Informe o nome da sala.',
+    KIDS_CHECKIN_CONFLICT: 'A criança já está em outro culto ou sala neste horário (ou ainda não foi retirada do anterior).', KIDS_CONSENT_REQUIRED: 'Registre antes a autorização do responsável.',
     KIDS_GUARDIAN_REQUIRED: 'Escolha o responsável que autoriza.', KIDS_GUARDIAN_INVALID: 'Quem autoriza precisa ser responsável na mesma família.',
     KIDS_FAMILY_NAME_REQUIRED: 'Informe o nome da família.', KIDS_FAMILY_INACTIVE: 'Família inativa.', KIDS_PERSON_INVALID: 'Esta pessoa não pode ser usada.',
     KIDS_PERSON_NOT_IN_FAMILY: 'A pessoa não está em uma família do Kids.', KIDS_CHILD_NOT_FOUND: 'Criança não encontrada no Kids.',
@@ -630,7 +632,8 @@
       '<div class="g2"><div><label>Idade em</label><select id="ks-un"><option value="anos"' + (r.unidade !== 'meses' ? ' selected' : '') + '>anos</option><option value="meses"' + (r.unidade === 'meses' ? ' selected' : '') + '>meses (berçário)</option></select></div>' +
       '<div><label>Para</label><select id="ks-gen"><option value="">Todos</option><option value="Feminino"' + (r.genero === 'Feminino' ? ' selected' : '') + '>Meninas</option><option value="Masculino"' + (r.genero === 'Masculino' ? ' selected' : '') + '>Meninos</option></select></div></div>' +
       '<div class="g2"><div><label>Idade mínima</label><input id="ks-min" type="number" min="0" value="' + esc(r.idadeMin) + '"></div><div><label>Idade máxima *</label><input id="ks-max" type="number" min="0" value="' + esc(r.idadeMax == null ? '' : r.idadeMax) + '"></div></div>' +
-      '<div class="g2"><div><label>Capacidade (opcional)</label><input id="ks-cap" type="number" min="1" value="' + esc(r.capacidade || '') + '"></div><div><label>Ordem</label><input id="ks-ord" type="number" value="' + esc(r.ordem || 0) + '"></div></div>' +
+      '<div class="g2"><div><label>Capacidade (opcional)</label><input id="ks-cap" type="number" min="1" value="' + esc(r.capacidade || '') + '"></div><div><label>Posição na lista</label><input id="ks-ord" type="number" value="' + esc(r.ordem || 0) + '"></div></div>' +
+      '<div class="sb" style="margin-top:-2px">Posição: 1 aparece primeiro na lista. Se duas salas servirem para a criança e estiverem igualmente cheias, a de posição menor é a sugerida.</div>' +
       (comStatus ? '<div class="g2"><div><label>Situação</label><select id="ks-st">' + (ehEvento ? '<option value="open"' + (r.status !== 'closed' ? ' selected' : '') + '>Aberta</option><option value="closed"' + (r.status === 'closed' ? ' selected' : '') + '>Fechada</option>'
         : '<option value="active"' + (r.status !== 'inactive' ? ' selected' : '') + '>Ativa</option><option value="inactive"' + (r.status === 'inactive' ? ' selected' : '') + '>Inativa</option>') + '</select></div><div><label>Motivo (fechar/inativar)</label><input id="ks-mot"></div></div>' : '');
   }
