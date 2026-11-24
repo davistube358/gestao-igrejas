@@ -3566,7 +3566,7 @@ function rCultos() {
       (e.pregador ? '<b>Pregador:</b> ' + esc(e.pregador) + '<br>' : '') +
       (e.tituloPalavra ? '<b>Palavra:</b> ' + esc(e.tituloPalavra) + '<br>' : '') +
       (e.tema ? '<b>Tema da ministração:</b> ' + esc(e.tema) + '<br>' : '') +
-      '<b>Visitantes:</b> ' + (e.nVisitantes || 0) + (e.presentes ? ' · <b>Presentes:</b> ' + esc(e.presentes) : '') +
+      linhaContagemCulto(e) +
       (verValor && totalEvento(e) ? ' · <b>Arrecadado:</b> ' + moeda(totalEvento(e)) : '') +
       (e.liberado ? '<br><span style="color:#888">' + textoJanela(e) + '</span>' : '') + linhaMensagem(e) + '</div>' +
       (e.recados ? '<div style="background:var(--cc);border-radius:10px;padding:9px 10px;font-size:12.5px;margin-top:8px;white-space:pre-line">' + esc(e.recados) + '</div>' : '') +
@@ -3746,7 +3746,7 @@ function evFicha(id) {
   abrirModal('<h2>' + esc(e.titulo) + '</h2><div class="sb" style="font-size:12.5px;color:#888;margin-bottom:8px">' + esc(e.tipo || 'Culto') + ' · ' + DIAS[parseData(e.data).getDay()] + ', ' + brCompleto(e.data) + '</div>' +
     linha('Horário', esc([e.inicio, e.fim].filter(Boolean).join(' – '))) + linha('Pregador', esc(e.pregador)) + linha('Título da palavra', esc(e.tituloPalavra)) +
     linha('Tema da ministração', esc(e.tema)) + linha('Cadastro', e.liberado ? 'liberado · ' + textoJanela(e) : 'fechado') +
-    linha('Pessoas presentes', e.presentes ? esc(e.presentes) : '') + linha('Visitantes cadastrados', String(e.nVisitantes || 0)) +
+    linha('Pessoas presentes', e.presentes ? esc(e.presentes) : '') + linha('Visitantes cadastrados', String(e.nVisitantes || 0)) + linhasKidsCulto(e, linha) +
     (verValor ? linha('Dízimos', moeda(valor(e.dizimo))) + linha('Ofertas', moeda(valor(e.oferta))) + linha('Outras', moeda(valor(e.outras))) + linha('Total', '<b>' + moeda(totalEvento(e)) + '</b>') : '') +
     linha('Criado por', esc(e.criadoPor)) + linha('Observações', esc(e.obs)) +
     (e.recados ? '<div class="sec" style="margin-left:0">Recados</div><div style="background:var(--cc);border-radius:10px;padding:10px;font-size:13px;white-space:pre-line">' + esc(e.recados) + '</div>' : '') +
@@ -5450,9 +5450,32 @@ function blocoTrava(tipo, id, futuro) {   // futuro: ainda não aconteceu (sem b
   return '<div class="trv">' + (podeEncerrar(tipo) && !futuro ? '<button class="btn vd sm" data-a="trvEncerrar" data-v="' + tipo + '|' + esc(id) + '">Encerrar ' + esc(nome) + '</button> ' : '') +
     '<span>' + (t.reabertoEm ? 'Reaberto · ' : '') + 'trava automática em ' + dataHoraTrv(t.travaEm) + '</span></div>';
 }
+/* KIDS-3: Kids no culto — "Kids: N" separado e somado no total exibido (o número digitado não muda); criança visitante conta nos visitantes */
+function kidsDoCulto(e) { return e && window.G2_KIDS && typeof G2_KIDS.cultoKids === 'function' ? G2_KIDS.cultoKids(e.id) : null; }
+function linhaContagemCulto(e) {
+  var k = kidsDoCulto(e), kv = k ? (+k.visitantes || 0) : 0, kn = k ? (+k.kids || 0) : 0, p = parseInt(e.presentes, 10);
+  return '<b>Visitantes:</b> ' + ((+e.nVisitantes || 0) + kv) + (kv ? ' <span style="color:#888">(' + kv + ' do Kids)</span>' : '') +
+    (e.presentes ? ' · <b>Presentes:</b> ' + esc(e.presentes) : '') + (kn ? ' · <b>Kids:</b> ' + kn + (isNaN(p) ? '' : ' · <b>Total:</b> ' + (p + kn)) : '');
+}
+function linhasKidsCulto(e, linha) {
+  var k = kidsDoCulto(e); if (!k || !(+k.kids)) return '';
+  var p = parseInt(e.presentes, 10);
+  return linha('Crianças no Kids', k.kids + (k.visitantes ? ' (' + k.visitantes + ' visitante' + (k.visitantes > 1 ? 's' : '') + ')' : '') + (k.faltamRetirar ? ' · <b style="color:#c0392b">' + k.faltamRetirar + ' ainda sem retirada</b>' : '')) +
+    (isNaN(p) ? '' : linha('Total com o Kids', '<b>' + (p + (+k.kids)) + '</b>'));
+}
 function trvEncerrar(v) {
   var p = String(v).split('|'), tipo = p[0], id = p[1];
-  if (!confirm('Encerrar ' + (tipo === 'gc' ? 'o encontro' : 'o culto/evento') + '?\n\nDepois de 24 horas ninguém mais consegue editar (só o pastor reabre).')) return;
+  // KIDS-3: avisa (não bloqueia) se há criança no Kids sem retirada neste culto
+  if (tipo !== 'gc' && window.G2_KIDS && typeof G2_KIDS.pendentesCulto === 'function') {
+    carregando(true, 'Conferindo o Kids...');
+    G2_KIDS.pendentesCulto(id).then(function (k) { carregando(false); trvEncerrarConfirmar(tipo, id, k); }, function () { carregando(false); trvEncerrarConfirmar(tipo, id, null); });
+    return;
+  }
+  trvEncerrarConfirmar(tipo, id, null);
+}
+function trvEncerrarConfirmar(tipo, id, k) {
+  var aviso = k && +k.faltamRetirar ? '\n\nATENÇÃO: ' + k.faltamRetirar + ' criança(s) ainda no Kids sem retirada' + (k.pendentes && k.pendentes.length ? ':\n- ' + k.pendentes.join('\n- ') : '.') : '';
+  if (!confirm('Encerrar ' + (tipo === 'gc' ? 'o encontro' : 'o culto/evento') + '?\n\nDepois de 24 horas ninguém mais consegue editar (só o pastor reabre).' + aviso)) return;
   carregando(true, 'Encerrando...');
   v39RpcApp('v39_registro_encerrar', { p_church_id: cfg.usuario.igrejaId, p_tipo: tipo, p_id: id }).then(function (r) {
     TRAVAS[tipo][id] = Object.assign({}, TRAVAS[tipo][id] || {}, { status: r.status, encerradoEm: r.encerradoEm, travaEm: r.travaEm, travado: false });
@@ -8470,7 +8493,7 @@ window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'KIDS-2';   // KIDS-2: crianças do Kids (canal kids) fora da fila de visita e do direcionamento a GC; aba Crianças no Kids (app_v39_kids.js). MIN-1: módulo Ministérios (aba ministerios desenhada pelo app_v39_ministerios.js; eventos de ministério fora da lista de cultos). BAI-1: bairros pela base dos Correios (CEP trava o bairro; lista da cidade montada pelos CEPs). FIL-2: trocar de igreja/filial pelo menu do usuário (só master). FIL-1: filiais (derivações do CNPJ) como igrejas no app; troca de igreja. CAD-1: cadastro legal único (Igreja e Instituto em Configurações); CEP sem bairro busca na cidade da igreja. CONFIG-1b: editor da política já vem com o modelo v1 quando não há versão publicada. CONFIG-1: Configurações da igreja gravadas no Supabase (logo/ícone no Storage; encarregado em 3 campos). Antes: SYNC-V39-27   // SYNC-V39-27: checagem de duplicado no cadastro na v39; perfil sem lista de pessoas/cultos não repete chamadas; foto nova avisa o Instituto; sem Encerrar antes do dia (TRAVA24_2). SYNC-V39-26: TRAVA-1 (encerrar encontro do GC/culto; edição travada 24h depois; pastor reabre). SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
+  var BUILD = 'KIDS-3';   // KIDS-3: culto mostra "Kids: N" (soma no total exibido; visitantes do Kids nos visitantes) e avisa ao encerrar quem falta retirar. KIDS-2: crianças do Kids (canal kids) fora da fila de visita e do direcionamento a GC; aba Crianças no Kids (app_v39_kids.js). MIN-1: módulo Ministérios (aba ministerios desenhada pelo app_v39_ministerios.js; eventos de ministério fora da lista de cultos). BAI-1: bairros pela base dos Correios (CEP trava o bairro; lista da cidade montada pelos CEPs). FIL-2: trocar de igreja/filial pelo menu do usuário (só master). FIL-1: filiais (derivações do CNPJ) como igrejas no app; troca de igreja. CAD-1: cadastro legal único (Igreja e Instituto em Configurações); CEP sem bairro busca na cidade da igreja. CONFIG-1b: editor da política já vem com o modelo v1 quando não há versão publicada. CONFIG-1: Configurações da igreja gravadas no Supabase (logo/ícone no Storage; encarregado em 3 campos). Antes: SYNC-V39-27   // SYNC-V39-27: checagem de duplicado no cadastro na v39; perfil sem lista de pessoas/cultos não repete chamadas; foto nova avisa o Instituto; sem Encerrar antes do dia (TRAVA24_2). SYNC-V39-26: TRAVA-1 (encerrar encontro do GC/culto; edição travada 24h depois; pastor reabre). SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 

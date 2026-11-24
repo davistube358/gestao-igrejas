@@ -1,4 +1,8 @@
-/* 2Gather v39 · Kids · KIDS-2
+/* 2Gather v39 · Kids · KIDS-3
+   KIDS-3: aba "Entrada e saída": entrada com código de 4 dígitos (irmãos usam o mesmo), etiqueta térmica 62x29 mm,
+           WhatsApp ao responsável (wa.me), retirada com código ou pela foto (com motivo), cancelar com motivo;
+           contagem "Kids" no culto (G2_KIDS.cultoKids) e aviso de quem falta retirar ao encerrar (G2_KIDS.pendentesCulto).
+           Requer sql/KIDS_3_entrada_aplicar.sql.
    Arquivo NOVO. Carregar DEPOIS do app_v39_ministerios.js (MIN-3+). Requer no Supabase: sql/KIDS_2_familias_aplicar.sql.
    Aba "Crianças" do ministério Kids:
    - Famílias: responsável -> criança -> quem pode retirar (12 anos ou mais). Base única de pessoas (busca antes de cadastrar).
@@ -10,7 +14,7 @@
    Diagnóstico no Console: G2_KIDS.versao, G2_KIDS._s */
 (function () {
   'use strict';
-  var VERSAO = 'KIDS-2';
+  var VERSAO = 'KIDS-3';
   if (window.G2_KIDS) return;
   var K = window.G2_KIDS = { versao: VERSAO };
   console.info('[2Gather] kids ' + VERSAO);
@@ -43,6 +47,10 @@
     KIDS_CONSENT_NOT_FOUND: 'Não há autorização ativa.', KIDS_PROFILE_TOO_LONG: 'Texto muito longo.', KIDS_SEX_INVALID: 'Sexo inválido.',
     KIDS_MINISTRY_REQUIRED: 'Use o ministério Kids.', CPF_INVALID: 'CPF inválido.', PERSON_REQUIRED_FIELD: 'Informe o nome.', PERSON_REQUIRED: 'Informe a pessoa.',
     REASON_REQUIRED: 'Informe o motivo.', PERMISSION_DENIED: 'Sem permissão para esta ação (algumas são só do líder).', MIN_INACTIVE: 'O ministério não está ativo.',
+    KIDS_PHOTO_REQUIRED: 'Falta a foto do rosto (criança ou quem retira).', KIDS_ALREADY_IN: 'A criança já deu entrada neste culto.', KIDS_CODE_INVALID: 'Código não confere.',
+    KIDS_EVENT_CLOSED: 'Evento encerrado ou cancelado.', KIDS_PICKUP_NOT_AUTHORIZED: 'Esta pessoa não está autorizada a retirar a criança.', KIDS_NOT_PRESENT: 'A criança não está mais na sala.',
+    KIDS_BROUGHT_BY_INVALID: 'Quem trouxe precisa ser responsável ou autorizado na família.', KIDS_BROUGHT_BY_REQUIRED: 'Informe quem trouxe a criança.', KIDS_CODE_EXHAUSTED: 'Não foi possível gerar um código livre. Tente de novo.',
+    KIDS_CHECKIN_NOT_FOUND: 'Entrada não encontrada.', REGISTRO_TRAVADO: 'Evento encerrado há mais de 24h: travado. Peça ao pastor para reabrir.',
     PHOTO_SIZE_INVALID: 'A foto deve ter até 5 MB.', PHOTO_OWNED_BY_OTHER_CHURCH: 'A foto desta pessoa pertence a outra igreja.'
   };
   function traduz(e) {
@@ -354,6 +362,241 @@
 
   function recarregar() { var m = { id: S.min }; return carregar(m, true); }
 
+  /* ═════════ KIDS-3: entrada e retirada (sala) ═════════ */
+  var SALA = { ev: null, board: null, carregando: false, codigos: {}, achados: null, cultos: null, cultosEm: 0, cultosPedido: false };
+  K._sala = SALA;
+  function hora(iso) { if (!iso) return ''; var d = new Date(iso); return isNaN(d) ? '' : d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); }
+  function diaHora(iso) { if (!iso) return ''; var d = new Date(iso); return isNaN(d) ? '' : d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }) + ' ' + hora(iso); }
+  function eventosSala(m) {
+    var l = (U().eventos && U().eventos(m.id)) || [];
+    if (!Array.isArray(l)) return [];
+    var agora = Date.now();
+    return l.filter(function (e) { var t = new Date(e.inicio).getTime(); return e.status !== 'cancelled' && t > agora - 2 * 864e5 && t < agora + 2 * 864e5; });
+  }
+  function eventoPadrao(m) {
+    var l = eventosSala(m), agora = Date.now(), melhor = null, dist = Infinity;
+    l.forEach(function (e) { if (e.status === 'completed') return; var d = Math.abs(new Date(e.inicio).getTime() - agora); if (d < dist) { dist = d; melhor = e; } });
+    return melhor || l[0] || null;
+  }
+  function carregarSala(m, forcar) {
+    if (!SALA.ev) { var e = eventoPadrao(m); SALA.ev = e ? e.id : null; }
+    if (!SALA.ev || SALA.carregando || (SALA.board && SALA.board.evento && SALA.board.evento.id === SALA.ev && !forcar)) return Promise.resolve();
+    SALA.carregando = true;
+    if (S.min !== m.id || S.lista === null) carregar(m, false);
+    return rpc('v39_kids_board', { p_ministry_id: m.id, p_event_id: SALA.ev })
+      .then(function (b) { SALA.board = b; SALA.erro = ''; })
+      .catch(function (e) { SALA.board = null; SALA.erro = traduz(e); })
+      .then(function () { SALA.carregando = false; pintar(); });
+  }
+  function telaSala(m) {
+    if (!U()) return '';
+    var evs = eventosSala(m);
+    if (!evs.length) return '<div class="card" style="margin-top:8px"><div class="empty">Nenhum evento do Kids entre ontem e amanhã. Os eventos aparecem sozinhos quando o culto é criado.</div></div>';
+    if (!SALA.ev || !evs.some(function (e) { return e.id === SALA.ev; })) { SALA.ev = (eventoPadrao(m) || evs[0]).id; SALA.board = null; }
+    if (!SALA.board || !SALA.board.evento || SALA.board.evento.id !== SALA.ev) setTimeout(function () { carregarSala(m, false); }, 0);
+    var b = SALA.board && SALA.board.evento && SALA.board.evento.id === SALA.ev ? SALA.board : null;
+    var h = '<select data-k-evento="1" style="margin-top:4px">' + evs.map(function (e) {
+      return '<option value="' + esc(e.id) + '"' + (e.id === SALA.ev ? ' selected' : '') + '>' + esc(diaHora(e.inicio) + ' · ' + e.nome) + (e.status === 'completed' ? ' (encerrado)' : '') + '</option>'; }).join('') + '</select>';
+    if (SALA.erro) h += '<div class="aviso r">' + esc(SALA.erro) + '</div>';
+    if (!b) return h + '<div class="empty">Carregando a sala…</div>';
+    var fechado = b.evento.status === 'completed' || b.evento.travado;
+    h += '<div style="display:flex;gap:8px;margin:10px 0;flex-wrap:wrap">' +
+      '<div class="card" style="flex:1;min-width:90px;padding:8px 12px;margin:0"><div class="sb">Na sala</div><div style="font-size:22px;font-weight:800">' + b.presentes + '</div></div>' +
+      '<div class="card" style="flex:1;min-width:90px;padding:8px 12px;margin:0"><div class="sb">Retiradas</div><div style="font-size:22px;font-weight:800">' + b.retiradas + '</div></div>' +
+      '<div class="card" style="flex:1;min-width:90px;padding:8px 12px;margin:0"><div class="sb">Visitantes</div><div style="font-size:22px;font-weight:800">' + b.visitantes + '</div></div></div>';
+    if (b.evento.travado) h += '<div class="aviso">🔒 Evento travado (encerrado há mais de 24h).</div>';
+    else h += '<div style="display:flex;gap:8px;flex-wrap:wrap">' + (b.evento.status === 'completed' ? '' : '<button class="btn pr" data-k="entrada">+ Dar entrada</button>') +
+      '<button class="btn" data-k="retirarCodigo">Retirar com código</button><button class="btn gh" data-k="atualizarSala">Atualizar</button></div>';
+    var pres = (b.entradas || []).filter(function (x) { return x.status === 'present'; }), sai = (b.entradas || []).filter(function (x) { return x.status === 'picked_up'; });
+    h += '<div class="card" style="padding:4px 16px;margin-top:12px"><div style="font-weight:700;margin:8px 0 2px">Na sala (' + pres.length + ')</div>' +
+      (pres.length ? pres.map(function (x) {
+        return '<div style="padding:9px 0;border-bottom:1px solid var(--ln,#eceef1)"><div class="nm">' + esc(x.crianca) + ' <span class="sb">' + esc(x.idade) + ' anos</span> ' +
+          (x.temAlergia ? pill('⚠ alergia', '#c0392b') : '') + (x.temRestricao ? ' ' + pill('restrição', '#c0392b') : '') + (x.situacao === 'visiting' ? ' ' + pill('visitante', '#2f6fd6') : '') + '</div>' +
+          '<div class="sb">' + esc(x.familia) + ' · trouxe: ' + esc(x.trazidoPor) + ' · entrou ' + hora(x.entrada) + '</div>' +
+          (fechado && b.evento.travado ? '' : '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn gh sm" data-k="retirarFoto" data-v="' + esc(x.id) + '">Retirar sem código</button>' +
+            '<button class="btn gh sm" data-k="cancelarEntrada" data-v="' + esc(x.id) + '">Cancelar entrada</button></div>') + '</div>';
+      }).join('') : '<div class="sb" style="padding:8px 0">Nenhuma criança na sala.</div>') + '</div>';
+    if (sai.length) h += '<div class="card" style="padding:4px 16px;margin-top:10px"><div style="font-weight:700;margin:8px 0 2px">Já retiradas (' + sai.length + ')</div>' + sai.map(function (x) {
+      return '<div style="padding:7px 0;border-bottom:1px solid var(--ln,#eceef1)"><div class="nm">' + esc(x.crianca) + '</div><div class="sb">retirada às ' + hora(x.retirada) + ' por ' + esc(x.retiradoPor) +
+        (x.metodo === 'photo' ? ' · <b>sem código</b>: ' + esc(x.motivoFoto) : ' · com código') + '</div></div>';
+    }).join('') + '</div>';
+    return h;
+  }
+
+  /* entrada */
+  function criancasElegiveis() {
+    var dentro = {}; ((SALA.board || {}).entradas || []).forEach(function (x) { dentro[x.criancaId] = true; });
+    var l = [];
+    (S.lista || []).forEach(function (f) { (f.membros || []).forEach(function (p) { if (p.papel === 'crianca' && !p.completouIdade) l.push({ f: f, p: p, dentro: !!dentro[p.pessoaId] }); }); });
+    return l.sort(function (a, b) { return String(a.p.nome).localeCompare(String(b.p.nome)); });
+  }
+  function formEntrada(q) {
+    var l = criancasElegiveis(), qq = String(q || '').trim().toLowerCase();
+    if (qq) l = l.filter(function (x) { return (x.p.nomeCompleto || x.p.nome).toLowerCase().indexOf(qq) >= 0 || x.f.nome.toLowerCase().indexOf(qq) >= 0; });
+    modal('<h2>Dar entrada</h2><input data-k-entrada="1" value="' + esc(q || '') + '" placeholder="Nome da criança ou da família" autocomplete="off">' +
+      '<div id="ke-lista">' + listaEntrada(l) + '</div><div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>');
+  }
+  function listaEntrada(l) {
+    if (S.lista === null) return '<div class="empty">Carregando famílias…</div>';
+    if (!l.length) return '<div class="sb" style="margin:8px 0">Nenhuma criança encontrada. Cadastre na aba Crianças.</div>';
+    return '<div class="card" style="padding:2px 12px;margin-top:6px">' + l.slice(0, 40).map(function (x) {
+      var falta = [];
+      if (!x.p.temFoto) falta.push('sem foto'); if (!x.p.consentimento) falta.push('sem autorização');
+      return '<div class="row' + (x.dentro || falta.length ? '' : ' cl') + '"' + (x.dentro || falta.length ? '' : ' data-k="escolherCrianca" data-v="' + esc(x.p.pessoaId) + '" style="cursor:pointer"') + '>' + foto(x.p, 36) +
+        '<div class="info" style="margin-left:10px"><div class="nm">' + esc(x.p.nome) + ' <span class="sb">' + esc(x.p.idade) + ' anos</span></div><div class="sb">' + esc(x.f.nome) +
+        (x.dentro ? ' · <b>já está na sala</b>' : '') + (falta.length ? ' · <b style="color:#c99a1a">' + falta.join(', ') + '</b>' : '') + '</div></div></div>';
+    }).join('') + '</div>';
+  }
+  function escolherCrianca(pid) {
+    var x = criancasElegiveis().filter(function (y) { return y.p.pessoaId === pid; })[0]; if (!x) return;
+    var quem = (x.f.membros || []).filter(function (p) { return p.papel !== 'crianca' && (p.papel === 'responsavel' || p.podeRetirar); });
+    var irmao = ((SALA.board || {}).entradas || []).some(function (e) { return e.familiaId === x.f.id && e.status === 'present'; });
+    var codGuardado = SALA.codigos[SALA.ev + '|' + x.f.id] || '';
+    S.form = { criancaId: pid, familiaId: x.f.id };
+    modal('<h2>Entrada · ' + esc(x.p.nome) + '</h2>' + (x.p.temAlergia || x.p.temRestricao ? '<div class="aviso r">⚠ Esta criança tem ' + (x.p.temAlergia ? 'alergia' : 'restrição') + ' na ficha.</div>' : '') +
+      '<label>Quem trouxe *</label>' + (quem.length ? '<select id="ke-trouxe">' + quem.map(function (p) { return '<option value="' + esc(p.pessoaId) + '">' + esc(p.nome) + (p.papel === 'responsavel' ? ' (responsável)' : '') + '</option>'; }).join('') + '</select>'
+        : '<div class="aviso r">A família não tem responsável. Cadastre na aba Crianças.</div>') +
+      (irmao ? '<label>Código do irmão que já entrou</label><input id="ke-cod" inputmode="numeric" maxlength="4" value="' + esc(codGuardado) + '" placeholder="4 dígitos (vazio = código novo)">' +
+        '<div class="sb">Irmãos no mesmo culto usam o mesmo código.</div>' : '') +
+      (quem.length ? '<div class="gap"></div><button class="btn pr" data-k="confirmarEntrada">Confirmar entrada</button>' : '') +
+      '<div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>');
+  }
+  function confirmarEntrada() {
+    var F = S.form || {}, p = { ministerioId: S.min, eventoId: SALA.ev, criancaId: F.criancaId, trazidoPorId: ($('ke-trouxe') || {}).value };
+    var c = $('ke-cod') && $('ke-cod').value.trim(); if (c) p.codigoFamilia = c;
+    var bt = document.querySelector('[data-k="confirmarEntrada"]'); if (bt) bt.disabled = true;
+    rpc('v39_kids_checkin', { p: p }).then(function (r) {
+      SALA.codigos[SALA.ev + '|' + r.familiaId] = r.codigo;
+      mostrarCodigo(r); carregarSala({ id: S.min }, true);
+    }).catch(function (e) { if (bt) bt.disabled = false; toast(traduz(e), true); });
+  }
+  function textoWhats(r) {
+    return 'Olá! ' + r.crianca + ' deu entrada no Kids às ' + hora(r.entrada) + ' — ' + (r.culto || r.evento) + (r.igreja ? ' (' + r.igreja + ')' : '') + '.\n' +
+      'Código de retirada: *' + r.codigo + '*\nApresente este código para retirar a criança.';
+  }
+  function mostrarCodigo(r) {
+    S.ultimaEntrada = r;
+    var tel = String(r.whatsapp || '').replace(/\D/g, ''), link = tel ? 'https://wa.me/55' + tel + '?text=' + encodeURIComponent(textoWhats(r)) : '';
+    modal('<h2>Entrada registrada</h2><div class="nm" style="font-size:16px">' + esc(r.crianca) + '</div>' +
+      '<div style="font-size:48px;font-weight:900;letter-spacing:8px;text-align:center;margin:10px 0">' + esc(r.codigo) + '</div>' +
+      '<div class="sb" style="text-align:center">Este código só aparece agora: imprima as etiquetas e envie pelo WhatsApp.</div>' +
+      (r.temAlergia || r.temRestricao ? '<div class="aviso r">⚠ ' + (r.temAlergia ? 'Alergia' : 'Restrição') + ' na ficha.</div>' : '') +
+      '<div class="gap"></div><button class="btn pr" data-k="imprimir">Imprimir etiquetas</button>' +
+      (link ? '<div class="gap"></div><a class="btn" href="' + esc(link) + '" target="_blank" rel="noopener">Enviar WhatsApp ao responsável (' + esc(fone(tel)) + ')</a>' : '') +
+      '<div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>');
+  }
+  /* etiqueta térmica 62x29 mm: 1ª da criança, 2ª do responsável (retirada) */
+  function imprimir() {
+    var r = S.ultimaEntrada; if (!r) return;
+    var alerta = r.temAlergia ? '⚠ ALERGIA' : r.temRestricao ? '⚠ RESTRIÇÃO' : '';
+    var css = '@page{size:62mm 29mm;margin:0}*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}body{margin:0}' +
+      '.e{width:62mm;height:29mm;padding:2mm 3mm;page-break-after:always;overflow:hidden;position:relative}' +
+      '.n{font-size:15pt;font-weight:800;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+      '.c{position:absolute;right:3mm;bottom:2mm;font-size:20pt;font-weight:900;letter-spacing:1.5mm}' +
+      '.s{font-size:7.5pt;line-height:1.25}.a{font-size:10pt;font-weight:900;background:#000;color:#fff;display:inline-block;padding:0 1.5mm;margin-top:1mm}';
+    var quando = diaHora(r.entrada), culto = esc(r.culto || r.evento || '');
+    var html = '<!doctype html><html><head><meta charset="utf-8"><style>' + css + '</style></head><body>' +
+      '<div class="e"><div class="n">' + esc(r.crianca) + '</div><div class="s">' + culto + '<br>' + esc(quando) + ' · resp.: ' + esc(r.trazidoPor) + '</div>' +
+      (alerta ? '<div class="a">' + alerta + '</div>' : '') + '<div class="c">' + esc(r.codigo) + '</div></div>' +
+      '<div class="e"><div class="s"><b>RETIRADA KIDS</b> · ' + culto + '</div><div class="n" style="font-size:12pt">' + esc(r.crianca) + '</div>' +
+      '<div class="s">Apresente este código para retirar.</div><div class="c">' + esc(r.codigo) + '</div></div></body></html>';
+    var f = document.createElement('iframe'); f.style.cssText = 'position:fixed;width:0;height:0;border:0;right:0;bottom:0';
+    document.body.appendChild(f);
+    var d = f.contentWindow.document; d.open(); d.write(html); d.close();
+    setTimeout(function () { try { f.contentWindow.focus(); f.contentWindow.print(); } catch (e) { toast('Não foi possível abrir a impressão.', true); } setTimeout(function () { f.remove(); }, 4000); }, 300);
+  }
+
+  /* retirada */
+  function formRetirarCodigo() {
+    SALA.achados = null;
+    modal('<h2>Retirar com código</h2><input id="kr-cod" inputmode="numeric" maxlength="4" placeholder="Código de 4 dígitos" style="font-size:24px;letter-spacing:6px;text-align:center">' +
+      '<div class="gap"></div><button class="btn pr" data-k="buscarCodigo">Buscar</button><div id="kr-res"></div><div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>');
+  }
+  function fotosDe(ids) {
+    var falta = ids.filter(function (id) { return !S.fotos[id] && !S.fotoPedida[id]; });
+    if (!falta.length) return Promise.resolve();
+    falta.forEach(function (id) { S.fotoPedida[id] = true; });
+    return rpc('v39_people_photos', { p_person_ids: falta }).then(function (l) {
+      return U().cliente().then(function (cl) {
+        return Promise.all((l || []).map(function (x) { return cl.storage.from('person-photos').createSignedUrl(x.path, 3600).then(function (r) { if (r && r.data && r.data.signedUrl) S.fotos[x.id] = r.data.signedUrl; }); }));
+      });
+    }).catch(function () {});
+  }
+  function blocoRetirada(x, metodo) {
+    var pes = x.podemRetirar || [];
+    return '<div class="card" style="padding:10px 14px;margin-top:8px"><div class="row" style="padding:0">' + foto({ pessoaId: x.criancaId, temFoto: x.temFoto }, 56) +
+      '<div class="info" style="margin-left:10px"><div class="nm">' + esc(x.crianca) + '</div><div class="sb">' + esc(x.familia) + ' · entrou ' + hora(x.entrada) + '</div></div></div>' +
+      '<div class="sb" style="margin:8px 0 4px">Confira o rosto de quem está retirando:</div>' +
+      (pes.length ? pes.map(function (p) {
+        var ok = p.temFoto && (p.idade == null || p.idade >= 12);
+        return '<label class="row" style="padding:6px 0;gap:10px;align-items:center;cursor:' + (ok ? 'pointer' : 'default') + '"><input type="radio" name="kr-por-' + esc(x.id) + '" value="' + esc(p.pessoaId) + '"' + (ok ? '' : ' disabled') + ' style="width:auto">' +
+          foto({ pessoaId: p.pessoaId, temFoto: p.temFoto }, 64) + '<span><b>' + esc(p.nome) + '</b><br><span class="sb">' + (p.papel === 'responsavel' ? 'responsável' : 'autorizado') + (p.temFoto ? '' : ' · sem foto: não pode retirar') + '</span></span></label>';
+      }).join('') : '<div class="aviso r">Ninguém autorizado a retirar nesta família.</div>') +
+      (metodo === 'photo' ? '<label>Motivo da retirada sem código *</label><input id="kr-motivo-' + esc(x.id) + '" placeholder="Ex.: perdeu a etiqueta">' : '') +
+      '<div class="gap"></div><button class="btn pr" data-k="confirmarRetirada" data-v="' + esc(x.id) + '" data-metodo="' + metodo + '">Confirmar retirada</button></div>';
+  }
+  function buscarCodigo() {
+    var cod = ($('kr-cod') || {}).value; cod = String(cod || '').trim();
+    if (!/^\d{4}$/.test(cod)) return toast('Digite os 4 dígitos.', true);
+    rpc('v39_kids_checkin_find', { p_ministry_id: S.min, p_event_id: SALA.ev, p_codigo: cod }).then(function (l) {
+      SALA.achados = { codigo: cod, lista: l || [] };
+      var ids = []; (l || []).forEach(function (x) { ids.push(x.criancaId); (x.podemRetirar || []).forEach(function (p) { ids.push(p.pessoaId); }); });
+      var desenhar = function () { var r = $('kr-res'); if (r) r.innerHTML = (l && l.length) ? l.map(function (x) { return blocoRetirada(x, 'code'); }).join('') : '<div class="aviso r" style="margin-top:8px">Nenhuma criança na sala com este código.</div>'; };
+      desenhar(); fotosDe(ids).then(desenhar);
+    }).catch(function (e) { toast(traduz(e), true); });
+  }
+  function formRetirarFoto(checkinId) {
+    var x = ((SALA.board || {}).entradas || []).filter(function (e) { return e.id === checkinId; })[0]; if (!x) return;
+    var f = familia(x.familiaId);
+    var pes = f ? (f.membros || []).filter(function (p) { return p.papel !== 'crianca' && p.podeRetirar; }).map(function (p) { return { pessoaId: p.pessoaId, nome: p.nome, papel: p.papel, temFoto: p.temFoto, idade: p.idade }; }) : [];
+    var item = Object.assign({}, x, { podemRetirar: pes });
+    SALA.achados = { codigo: null, lista: [item] };
+    modal('<h2>Retirar sem código</h2><div class="sb">Só libere depois de conferir o rosto pela foto. Fica registrado quem liberou e o motivo.</div><div id="kr-res">' + blocoRetirada(item, 'photo') + '</div>' +
+      '<div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>');
+    fotosDe(pes.map(function (p) { return p.pessoaId; }).concat([x.criancaId])).then(function () { var r = $('kr-res'); if (r) r.innerHTML = blocoRetirada(item, 'photo'); });
+  }
+  function confirmarRetirada(checkinId, t) {
+    var metodo = t.getAttribute('data-metodo'), sel = document.querySelector('input[name="kr-por-' + checkinId + '"]:checked');
+    if (!sel) return toast('Escolha quem está retirando.', true);
+    var p = { ministerioId: S.min, checkinId: checkinId, retiradoPorId: sel.value, metodo: metodo };
+    if (metodo === 'code') p.codigo = (SALA.achados || {}).codigo;
+    else { p.motivo = (($('kr-motivo-' + checkinId) || {}).value || '').trim(); if (!p.motivo) return toast('Informe o motivo.', true); }
+    rpc('v39_kids_checkout', { p: p }).then(function (r) {
+      toast((r && r.crianca ? r.crianca + ' retirada' : 'Retirada') + ' por ' + (r && r.retiradoPor || '') + '.');
+      var rest = ((SALA.achados || {}).lista || []).filter(function (x) { return x.id !== checkinId; });
+      if (rest.length) { SALA.achados.lista = rest; var el = $('kr-res'); if (el) el.innerHTML = rest.map(function (x) { return blocoRetirada(x, metodo); }).join(''); }
+      else fechar();
+      carregarSala({ id: S.min }, true);
+    }).catch(function (e) { toast(traduz(e), true); });
+  }
+  function cancelarEntrada(checkinId) {
+    var x = ((SALA.board || {}).entradas || []).filter(function (e) { return e.id === checkinId; })[0]; if (!x) return;
+    var motivo = window.prompt('Motivo para cancelar a entrada de ' + x.crianca + ':');
+    if (motivo === null) return;
+    if (!motivo.trim()) return toast('Informe o motivo.', true);
+    rpc('v39_kids_checkin_cancel', { p: { ministerioId: S.min, checkinId: checkinId, motivo: motivo.trim() } })
+      .then(function () { toast('Entrada cancelada.'); carregarSala({ id: S.min }, true); }).catch(function (e) { toast(traduz(e), true); });
+  }
+
+  /* contagem do Kids no culto (lida pelo app.js) */
+  function carregarCultos() {
+    if (SALA.cultosPedido || !(window.G2_MIN && window.G2_MIN._u)) return;
+    SALA.cultosPedido = true;
+    rpc('v39_kids_culto_counts', { p_culto_ids: null }).then(function (r) {
+      var antes = JSON.stringify(SALA.cultos || {}); SALA.cultos = r || {}; SALA.cultosEm = Date.now();
+      if (JSON.stringify(SALA.cultos) !== antes && window.__gc && window.__gc.render) window.__gc.render();
+    }).catch(function () { SALA.cultos = SALA.cultos || {}; })
+      .then(function () { setTimeout(function () { SALA.cultosPedido = false; }, 60000); });
+  }
+  K.cultoKids = function (id) {
+    if (!SALA.cultos || Date.now() - SALA.cultosEm > 60000) carregarCultos();
+    return (SALA.cultos && SALA.cultos[id]) || null;
+  };
+  K.pendentesCulto = function (id) {
+    if (!(window.G2_MIN && window.G2_MIN._u)) return Promise.resolve(null);
+    return rpc('v39_kids_culto_counts', { p_culto_ids: [id] }).then(function (r) { return (r && r[id]) || null; }).catch(function () { return null; });
+  };
+
   /* ───────── eventos (só o que tem data-k) ───────── */
   var ACOES = {
     novaFamilia: function () { formFamilia(null, U().minAtual()); },
@@ -378,7 +621,17 @@
     salvarFicha: salvarFicha,
     foto: pedirFoto,
     concluir: function (v, t) { formConcluir(v, t.getAttribute('data-f')); },
-    confirmarConcluir: concluir
+    confirmarConcluir: concluir,
+    entrada: function () { if (S.lista === null) carregar({ id: S.min }, false); formEntrada(''); },
+    escolherCrianca: escolherCrianca,
+    confirmarEntrada: confirmarEntrada,
+    imprimir: imprimir,
+    retirarCodigo: formRetirarCodigo,
+    buscarCodigo: buscarCodigo,
+    retirarFoto: formRetirarFoto,
+    confirmarRetirada: confirmarRetirada,
+    cancelarEntrada: cancelarEntrada,
+    atualizarSala: function () { carregarSala({ id: S.min }, true); }
   };
   document.addEventListener('click', function (ev) {
     var t = ev.target.closest('[data-k]'); if (!t) return;
@@ -391,9 +644,16 @@
     var t = ev.target; if (!t || !t.getAttribute) return;
     if (t.getAttribute('data-k-busca')) { S.q = t.value; var pos = t.selectionStart; pintar(); var n = document.querySelector('[data-k-busca]'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) { /* segue */ } } }
     else if (t.getAttribute('data-k-pessoa')) buscarPessoa(t.value);
+    else if (t.getAttribute('data-k-entrada')) { var q = t.value.trim().toLowerCase(), el = $('ke-lista');
+      if (el) el.innerHTML = listaEntrada(criancasElegiveis().filter(function (x) { return !q || (x.p.nomeCompleto || x.p.nome).toLowerCase().indexOf(q) >= 0 || x.f.nome.toLowerCase().indexOf(q) >= 0; })); }
+  });
+  document.addEventListener('change', function (ev) {
+    var t = ev.target; if (!t || !t.getAttribute || !t.getAttribute('data-k-evento')) return;
+    SALA.ev = t.value; SALA.board = null; pintar();
   });
 
   K.tela = tela;
+  K.telaSala = telaSala;
   K.resetar = function () { S.min = null; S.lista = null; S.aberta = null; };
   K._t = { traduz: traduz, tela: tela, fone: fone };
 })();
