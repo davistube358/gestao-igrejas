@@ -1,4 +1,5 @@
-/* 2Gather v39 · Ministérios · MIN-5
+/* 2Gather v39 · Ministérios · MIN-6
+   MIN-6: aba "Salas" no Kids (KIDS-5), G2_MIN.abrir e G2_MIN._u.membros.
    MIN-5: aba "Entrada e saída" no Kids (KIDS-3) e G2_MIN._u.eventos.
    MIN-4: aba "Crianças" no ministério Kids (módulo app_v39_kids.js, KIDS-2) e utilitários G2_MIN._u.
    MIN-3: logo e faixa dentro do cadastro do ministério (sem botão à parte); líder/auxiliar abre o cadastro só para as imagens.
@@ -16,7 +17,7 @@
    Diagnóstico no Console: G2_MIN.versao, G2_MIN._s */
 (function () {
   'use strict';
-  var VERSAO = 'MIN-5';
+  var VERSAO = 'MIN-6';
   if (window.G2_MIN) return;
   var M = window.G2_MIN = { versao: VERSAO };
   console.info('[2Gather] ministerios ' + VERSAO);
@@ -280,6 +281,7 @@
     if (m.tipo === 'kids' && m.status === 'active' && window.G2_KIDS) {
       if (window.G2_KIDS.telaSala) abas.push(['sala', 'Entrada e saída']);   // KIDS-3
       abas.push(['criancas', 'Crianças']);   // KIDS-2
+      if (window.G2_KIDS.telaSalas) abas.push(['salas', 'Salas']);   // KIDS-5
     }
     abas.push(['equipe', 'Equipe']); if (lid) abas.push(['funcoes', 'Funções']);
     if (abas.map(function (a) { return a[0]; }).indexOf(S.aba) < 0) S.aba = 'agenda';
@@ -288,6 +290,7 @@
     if (S.aba === 'agenda') h += telaAgenda(m, lid);
     else if (S.aba === 'criancas') h += window.G2_KIDS.tela(m);
     else if (S.aba === 'sala') h += window.G2_KIDS.telaSala(m);
+    else if (S.aba === 'salas') h += window.G2_KIDS.telaSalas(m);
     else if (S.aba === 'equipe') h += telaEquipe(m, lid);
     else h += telaFuncoes(m);
     return h;
@@ -572,5 +575,7 @@
   M._t = { traduz: traduz, corpo: corpo, telaLista: telaLista, telaMinisterio: telaMinisterio };
   // KIDS-2: utilitários para o módulo app_v39_kids.js (mesma conexão, modal e toast)
   M._u = { rpc: rpc, cliente: cliente, toast: toast, modal: modal, fecharModal: fecharModal, traduz: traduz, pintar: pintar,
-           igrejaId: function () { return S.igreja; }, minAtual: minAtual, eventos: function (id) { return S.eventos[id]; } };
+           igrejaId: function () { return S.igreja; }, minAtual: minAtual, eventos: function (id) { return S.eventos[id]; }, membros: function (id) { return S.membros[id]; } };
+  // KIDS-5: abrir um ministério numa aba (volta da tela de visitante)
+  M.abrir = function (id, aba) { var g = G(); if (g.irAba) g.irAba('ministerios'); S.atual = id; S.aba = aba || 'agenda'; setTimeout(function () { pintar(); carregarDetalhe(id, true); }, 50); };
 })();
