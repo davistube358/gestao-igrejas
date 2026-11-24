@@ -3188,6 +3188,7 @@ db.pessoas = db.pessoas.filter(function (x) { return x.id !== o.id; }).concat([o
 lvPendente = null;
 if ($('v-nome') && !ant && cfg.aba === 'lvnovo') ['v-nome', 'v-apelido', 'v-fone', 'v-nasc', 'v-cep', 'v-endereco', 'v-numero', 'v-complemento', 'v-bairro', 'v-obs', 'v-conv'].forEach(function (k) { if ($(k)) $(k).value = ''; });
 salvarDB(); fechar(); render(); sincronizar(false);
+if (!ant && window.G2_KIDS && typeof G2_KIDS.aposCadastroVisitante === 'function') { try { G2_KIDS.aposCadastroVisitante(o); } catch (eK) { /* segue */ } }   // KIDS-5: volta ao Kids
 lvGCManual = false;
 toast(ant ? 'Cadastro atualizado ✓' : modo === 'membro' ? nomeChamado(o) + ' cadastrado(a) e direcionado(a) ao ' + gcNome(o.gcId) + ' ✓ — o GC foi avisado'
   : nomeChamado(o) + ' cadastrado(a) ✓ — segue para o supervisor direcionar ao GC', 4200);
@@ -4711,6 +4712,7 @@ function fichaPessoa(id) {
         : p.restritoLgpd ? 'restrito a pedido do titular (prontuário/receita sob guarda legal)' : textoConsent(p)) + '</div>' +
     (tl.length ? '<div class="sec">Jornada</div><div class="card"><div class="tl">' + tl.map(function (x) {
       return '<div class="' + x[0] + '"><b>' + x[1] + '</b><small>' + x[2] + '</small></div>'; }).join('') + '</div></div>' : '') +
+    (window.G2_KIDS && typeof G2_KIDS.blocoVinculos === 'function' && !p.anonimizadoEm && !p.restritoLgpd ? G2_KIDS.blocoVinculos(p.id) : '') +   // KIDS-5: família (vínculos)
     (papel() === 'master' && !p.anonimizadoEm && !p.restritoLgpd ? '<button class="btn dg" data-a="anonimizar" data-v="' + esc(p.id) + '">Anonimizar dados (pedido do titular)</button><div class="gap"></div>' : '') +
     '<button class="btn gh" data-a="fechar">Fechar</button>');
 }
@@ -8474,7 +8476,7 @@ if (cfg.token && cfg.usuario) {
 }
 else mostrarTela('s-login');
 
-window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }, render: function () { render(); }, sincronizar: sincronizar, metricas: metricas, pendentes: pendentesLocais, abrirModal: abrirModal, fechar: fechar, irAba: irAba,   // MIN-1: modal e navegação para módulos
+window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }, render: function () { render(); }, sincronizar: sincronizar, metricas: metricas, pendentes: pendentesLocais, abrirModal: abrirModal, fechar: fechar, irAba: irAba, pode: pode, pessoas: function () { return PES(); },   // MIN-1: modal e navegação para módulos
   estRecarregar: function () { estD = { mercado: estNovo(), farmacia: estNovo() }; if (cfg.token && /^inst(mercado|farmacia)$/.test(cfg.aba || '')) render(); },
   instRecarregar: function () { instD.t = 0; instD.carregando = false; if (cfg.token && /^(instituto|instagenda)$/.test(cfg.aba || '')) render(); },
     instFoto: function (pid, url) { if (instD.pac && instD.pac[pid]) instD.pac[pid].foto = url; },
@@ -8493,7 +8495,7 @@ window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'KIDS-3';   // KIDS-3: culto mostra "Kids: N" (soma no total exibido; visitantes do Kids nos visitantes) e avisa ao encerrar quem falta retirar. KIDS-2: crianças do Kids (canal kids) fora da fila de visita e do direcionamento a GC; aba Crianças no Kids (app_v39_kids.js). MIN-1: módulo Ministérios (aba ministerios desenhada pelo app_v39_ministerios.js; eventos de ministério fora da lista de cultos). BAI-1: bairros pela base dos Correios (CEP trava o bairro; lista da cidade montada pelos CEPs). FIL-2: trocar de igreja/filial pelo menu do usuário (só master). FIL-1: filiais (derivações do CNPJ) como igrejas no app; troca de igreja. CAD-1: cadastro legal único (Igreja e Instituto em Configurações); CEP sem bairro busca na cidade da igreja. CONFIG-1b: editor da política já vem com o modelo v1 quando não há versão publicada. CONFIG-1: Configurações da igreja gravadas no Supabase (logo/ícone no Storage; encarregado em 3 campos). Antes: SYNC-V39-27   // SYNC-V39-27: checagem de duplicado no cadastro na v39; perfil sem lista de pessoas/cultos não repete chamadas; foto nova avisa o Instituto; sem Encerrar antes do dia (TRAVA24_2). SYNC-V39-26: TRAVA-1 (encerrar encontro do GC/culto; edição travada 24h depois; pastor reabre). SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
+  var BUILD = 'KIDS-5';   // KIDS-5: família (vínculos) na ficha da pessoa; tela de visitante volta ao Kids; __gc.pode/pessoas. KIDS-3: culto mostra "Kids: N" (soma no total exibido; visitantes do Kids nos visitantes) e avisa ao encerrar quem falta retirar. KIDS-2: crianças do Kids (canal kids) fora da fila de visita e do direcionamento a GC; aba Crianças no Kids (app_v39_kids.js). MIN-1: módulo Ministérios (aba ministerios desenhada pelo app_v39_ministerios.js; eventos de ministério fora da lista de cultos). BAI-1: bairros pela base dos Correios (CEP trava o bairro; lista da cidade montada pelos CEPs). FIL-2: trocar de igreja/filial pelo menu do usuário (só master). FIL-1: filiais (derivações do CNPJ) como igrejas no app; troca de igreja. CAD-1: cadastro legal único (Igreja e Instituto em Configurações); CEP sem bairro busca na cidade da igreja. CONFIG-1b: editor da política já vem com o modelo v1 quando não há versão publicada. CONFIG-1: Configurações da igreja gravadas no Supabase (logo/ícone no Storage; encarregado em 3 campos). Antes: SYNC-V39-27   // SYNC-V39-27: checagem de duplicado no cadastro na v39; perfil sem lista de pessoas/cultos não repete chamadas; foto nova avisa o Instituto; sem Encerrar antes do dia (TRAVA24_2). SYNC-V39-26: TRAVA-1 (encerrar encontro do GC/culto; edição travada 24h depois; pastor reabre). SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 
