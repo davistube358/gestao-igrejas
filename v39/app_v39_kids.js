@@ -1,4 +1,5 @@
-/* 2Gather v39 · Kids · KIDS-9
+/* 2Gather v39 · Kids · KIDS-10
+   KIDS-10: saiu o botão "Salas deste culto" de Entrada e saída (a função fica no evento da Agenda), a pedido do Diogo.
    KIDS-9: salas e escala dos professores dentro do evento da Agenda (Ajustar/Editar evento); K.blocoEvento.
    KIDS-8: escala com confirmação (status de cada professor na sala, "sem resposta" a menos de 24 h, WhatsApp do líder
            registrado); quem retira precisa ter mais de 12 anos (13 ou mais). Sino e "Minhas escalas": app_v39_escala.js.
@@ -23,7 +24,7 @@
    Diagnóstico no Console: G2_KIDS.versao, G2_KIDS._s */
 (function () {
   'use strict';
-  var VERSAO = 'KIDS-9';
+  var VERSAO = 'KIDS-10';
   if (window.G2_KIDS) return;
   var K = window.G2_KIDS = { versao: VERSAO };
   console.info('[2Gather] kids ' + VERSAO);
@@ -878,7 +879,7 @@
       '<div class="card" style="flex:1;min-width:90px;padding:8px 12px;margin:0"><div class="sb">Visitantes</div><div style="font-size:22px;font-weight:800">' + b.visitantes + '</div></div></div>';
     var salasAb = (SALA.salas || []).filter(function (r) { return r.status === 'open'; });
     if (salasAb.length) h += '<div class="card" style="padding:6px 14px;margin:0 0 10px">' + salasAb.map(function (r) { return '<div class="row" style="padding:5px 0"><div class="info"><div class="nm">' + esc(r.nome) + ' <span class="sb">' + esc(faixa(r)) + (r.genero ? ' · ' + esc(GEN[r.genero]) : '') + '</span></div><div class="sb">' + (r.professores.length ? r.professores.map(function (x) { return esc(x.nome); }).join(', ') : 'sem professor') + '</div></div><b>' + r.presentes + (r.capacidade ? '/' + r.capacidade : '') + '</b></div>'; }).join('') + '</div>';
-    if (!b.evento.travado) h += '<button class="btn gh sm" data-k="salasEvento" style="margin-bottom:10px">Salas deste culto' + (lider(U().minAtual()) ? ' (ajustar e professores)' : '') + '</button><div class="sb" style="margin:-6px 0 10px">A escala também fica no evento, em Agenda → Ajustar.</div>';
+    h += '<div class="sb" style="margin:0 0 10px">Salas e professores deste culto: Agenda → Ajustar · salas e escala.</div>';   // KIDS-10: botão Salas deste culto saiu (fica na Agenda)
     if (b.evento.travado) h += '<div class="aviso">🔒 Evento travado (encerrado há mais de 24h).</div>';
     else h += '<div style="display:flex;gap:8px;flex-wrap:wrap">' + (b.evento.status === 'completed' ? '' : '<button class="btn pr" data-k="entrada">+ Dar entrada</button>') +
       '<button class="btn" data-k="retirarCodigo">Retirar com código</button><button class="btn gh" data-k="atualizarSala">Atualizar</button></div>';
