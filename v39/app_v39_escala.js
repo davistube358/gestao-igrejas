@@ -1,4 +1,6 @@
-/* 2Gather v39 · Avisos pessoais (sino) e "Minhas escalas" · ESCALA-3 (KIDS_4)
+/* 2Gather v39 · Avisos pessoais (sino) e "Minhas escalas" · ESCALA-4 (KIDS_4)
+   ESCALA-4: o sino não esperava o login: a 1ª busca falhava (sem sessão) e só tentava de novo após 2 min. Agora tenta de novo em
+             poucos segundos, recarrega ao entrar/trocar de conta ou igreja e ao voltar para o app.
    ESCALA-3: o caminho para escalar agora é Kids → Agenda → Ajustar evento (salas e escala).
    ESCALA-2: "Minhas escalas" fica sempre visível no Início para quem é da equipe do Kids (ou líder/admin), mesmo sem escala.
    Carregar DEPOIS do app.js, do app_v39_ministerios.js e do app_v39_kids.js. Requer KIDS_4_escala_aplicar.sql.
@@ -9,7 +11,7 @@
    O WhatsApp continua pelo wa.me do líder (na sala do culto, módulo Kids); depois vira mensagem automática pela API. */
 (function () {
   'use strict';
-  var VERSAO = 'ESCALA-3';
+  var VERSAO = 'ESCALA-4';
   if (window.G2_ESCALA) return;
   console.info('[2Gather] escala ' + VERSAO);
 
@@ -35,19 +37,23 @@
     return m < 1 ? 'agora' : m < 60 ? 'há ' + m + ' min' : m < 1440 ? 'há ' + Math.round(m / 60) + ' h' : diaHora(iso);
   }
 
-  var E = { n: 0, itens: [], esc: null, kids: [], kidsEm: 0, em: 0, carregando: false, desligado: false, inicio: false };
+  var E = { n: 0, itens: [], esc: null, kids: [], kidsEm: 0, tentativas: 0, chave: '', em: 0, carregando: false, desligado: false, inicio: false };
 
   function carregar() {
-    if (!v39() || !U() || E.desligado || E.carregando || !U().igrejaId || !(window.G2_V39 || {}).client) return Promise.resolve();
-    E.carregando = true;
+    if (!v39() || !U() || E.desligado || E.carregando || !cfg().usuario || !(window.G2_V39 || {}).client) return Promise.resolve();
+    E.carregando = true; var falhou = false;
     return Promise.all([
       rpc('v39_my_notifications', { p_limite: 30 }).then(function (r) { E.n = (r && r.naoLidas) || 0; E.itens = (r && r.itens) || []; }),
       rpc('v39_kids_my_schedule', {}).then(function (r) { E.esc = r || null; }),
       (Date.now() - E.kidsEm < 600000 ? Promise.resolve() : rpc('v39_min_list', {}).then(function (l) {   // ESCALA-2: Kids em que a pessoa tem papel
         E.kids = (Array.isArray(l) ? l : []).filter(function (m) { return m.tipo === 'kids' && m.status === 'active' && m.meuPapel; }); E.kidsEm = Date.now();
       }).catch(function () { /* sem a lista, o card só aparece com escala */ }))
-    ]).catch(function (e) { if (semFuncao(e)) E.desligado = true; else console.warn('[2Gather][escala]', e); })
-      .then(function () { E.carregando = false; E.em = Date.now(); pintarSino(); pintarCard(); });
+    ]).catch(function (e) { if (semFuncao(e)) E.desligado = true; else { falhou = true; console.warn('[2Gather][escala]', e); } })
+      .then(function () {
+        E.carregando = false; E.em = falhou ? 0 : Date.now(); pintarSino(); pintarCard();
+        if (falhou && E.tentativas++ < 6) setTimeout(carregar, 4000 * E.tentativas);   // ESCALA-4: sessão ainda carregando
+        else if (!falhou) E.tentativas = 0;
+      });
   }
 
   /* ───────── sino ───────── */
@@ -204,6 +210,8 @@
   window.G2_ESCALA = {
     versao: VERSAO,
     aposRender: function (ehInicio) {
+      var u = cfg().usuario || {}, ch = v39() ? [u.igrejaId, u.pessoaId || u.id || u.email || u.nome].join('|') : '';
+      if (ch !== E.chave) { E.chave = ch; E.n = 0; E.itens = []; E.esc = null; E.kids = []; E.kidsEm = 0; E.em = 0; E.tentativas = 0; }   // ESCALA-4: entrou/trocou de conta ou igreja
       E.inicio = !!ehInicio && v39();
       pintarSino(); pintarCard();
       if (Date.now() - E.em > 60000) carregar();
