@@ -1,4 +1,6 @@
-/* 2Gather v39 · Avisos pessoais (sino) e "Minhas escalas" · ESCALA-5 (KIDS_4)
+/* 2Gather v39 · Avisos pessoais (sino) e "Minhas escalas" · ESCALA-6 (KIDS_4)
+   ESCALA-6: escala confirmada (ou "não posso") sai do Início e fica nos Avisos (sino), em "Minhas próximas escalas"; no Início só
+             o que pede ação. Lembretes 24 h / 12 h / 2 h vêm do banco (KIDS_13). Notificação do aparelho com o app aberto.
    ESCALA-5: atualiza a cada render após 15 s (antes 60 s) e a cada 60 s com o app aberto (antes 2 min); recarregar() chamado pelo Kids ao salvar.
    ESCALA-4: o sino não esperava o login: a 1ª busca falhava (sem sessão) e só tentava de novo após 2 min. Agora tenta de novo em
              poucos segundos, recarrega ao entrar/trocar de conta ou igreja e ao voltar para o app.
@@ -12,7 +14,7 @@
    O WhatsApp continua pelo wa.me do líder (na sala do culto, módulo Kids); depois vira mensagem automática pela API. */
 (function () {
   'use strict';
-  var VERSAO = 'ESCALA-5';
+  var VERSAO = 'ESCALA-6';
   if (window.G2_ESCALA) return;
   console.info('[2Gather] escala ' + VERSAO);
 
@@ -38,13 +40,13 @@
     return m < 1 ? 'agora' : m < 60 ? 'há ' + m + ' min' : m < 1440 ? 'há ' + Math.round(m / 60) + ' h' : diaHora(iso);
   }
 
-  var E = { n: 0, itens: [], esc: null, kids: [], kidsEm: 0, tentativas: 0, chave: '', em: 0, carregando: false, desligado: false, inicio: false };
+  var E = { n: 0, itens: [], esc: null, vistos: null, kids: [], kidsEm: 0, tentativas: 0, chave: '', em: 0, carregando: false, desligado: false, inicio: false };
 
   function carregar() {
     if (!v39() || !U() || E.desligado || E.carregando || !cfg().usuario || !(window.G2_V39 || {}).client) return Promise.resolve();
     E.carregando = true; var falhou = false;
     return Promise.all([
-      rpc('v39_my_notifications', { p_limite: 30 }).then(function (r) { E.n = (r && r.naoLidas) || 0; E.itens = (r && r.itens) || []; }),
+      rpc('v39_my_notifications', { p_limite: 30 }).then(function (r) { E.n = (r && r.naoLidas) || 0; E.itens = (r && r.itens) || []; notificarNovos(); }),
       rpc('v39_kids_my_schedule', {}).then(function (r) { E.esc = r || null; }),
       (Date.now() - E.kidsEm < 600000 ? Promise.resolve() : rpc('v39_min_list', {}).then(function (l) {   // ESCALA-2: Kids em que a pessoa tem papel
         E.kids = (Array.isArray(l) ? l : []).filter(function (m) { return m.tipo === 'kids' && m.status === 'active' && m.meuPapel; }); E.kidsEm = Date.now();
@@ -55,6 +57,26 @@
         if (falhou && E.tentativas++ < 6) setTimeout(carregar, 4000 * E.tentativas);   // ESCALA-4: sessão ainda carregando
         else if (!falhou) E.tentativas = 0;
       });
+  }
+
+  /* ESCALA-6: notificação do aparelho (com o app aberto ou em segundo plano) para avisos novos */
+  function podeNotificar() { return typeof Notification !== 'undefined' && Notification.permission === 'granted'; }
+  function notificarNovos() {
+    var nao = (E.itens || []).filter(function (n) { return n.status === 'unread'; });
+    if (E.vistos === null) { E.vistos = {}; nao.forEach(function (n) { E.vistos[n.id] = 1; }); return; }   // 1ª carga: não dispara
+    nao.forEach(function (n) {
+      if (E.vistos[n.id]) return; E.vistos[n.id] = 1;
+      if (!podeNotificar()) return;
+      var op = { body: n.texto || '', tag: 'g2-' + n.id, icon: './icons/icon-192.png', badge: './icons/icon-192.png' };
+      try {
+        if (navigator.serviceWorker && navigator.serviceWorker.controller) navigator.serviceWorker.ready.then(function (rg) { rg.showNotification(n.titulo, op); }).catch(function () { try { new Notification(n.titulo, op); } catch (e) { /* segue */ } });
+        else new Notification(n.titulo, op);
+      } catch (e) { /* segue */ }
+    });
+  }
+  function pedirPermissao() {
+    if (typeof Notification === 'undefined') return toast('Este aparelho não aceita notificações do navegador.', true);
+    Notification.requestPermission().then(function (p) { toast(p === 'granted' ? 'Notificações ativadas neste aparelho.' : 'Notificações não autorizadas no aparelho.', p !== 'granted'); listaAvisos(); });
   }
 
   /* ───────── sino ───────── */
@@ -72,7 +94,12 @@
   }
   function listaAvisos() {
     var l = E.itens || [];
-    modal('<h2>Avisos</h2>' + (E.n ? '<button class="btn gh sm" data-e="lerTodos">Marcar todos como lidos</button>' : '') +
+    var prox = ((E.esc && E.esc.escalas) || []).filter(function (x) { return x.resposta !== 'pending'; });
+    var perm = typeof Notification !== 'undefined' && Notification.permission === 'default';
+    modal('<h2>Avisos</h2>' +
+      (perm ? '<div class="card" style="padding:10px 14px;margin:6px 0 10px;display:flex;gap:10px;align-items:center"><span style="flex:1" class="sb">Receba os lembretes da escala (24 h, 12 h e 2 h antes) como notificação neste aparelho.</span><button class="btn pr sm" data-e="permitir">Ativar</button></div>' : '') +
+      (prox.length ? '<div class="nm" style="margin:4px 2px 6px">Minhas próximas escalas</div><div class="card" style="padding:2px 14px;margin-bottom:12px">' + prox.map(blocoEscala).join('') + '</div>' : '') +
+      '<div class="nm" style="margin:4px 2px 6px">Avisos</div>' + (E.n ? '<button class="btn gh sm" data-e="lerTodos">Marcar todos como lidos</button>' : '') +
       '<div class="card" style="padding:2px 14px;margin-top:8px">' + (l.length ? l.map(function (n) {
         var nova = n.status === 'unread';
         return '<div class="row cl" data-e="abrirAviso" data-v="' + esc(n.id) + '" style="cursor:pointer;padding:9px 0;align-items:flex-start;border-bottom:1px solid var(--ln,#eceef1)">' +
@@ -103,9 +130,9 @@
   function rotulo(x) { return esc(x.sala) + ' · ' + esc(x.culto || x.evento) + ' · ' + esc(diaHora(x.inicio)); }
   function card() {
     var r = E.esc; if (!r) return '';
-    var es = r.escalas || [], pm = r.paraMim || [], au = r.autorizar || [];
+    var todas = r.escalas || [], es = todas.filter(function (x) { return x.resposta === 'pending'; }), pm = r.paraMim || [], au = r.autorizar || [];
     var vazio = !es.length && !pm.length && !au.length;
-    if (vazio && !E.kids.length) return '';
+    if (vazio && (todas.length || !E.kids.length)) return '';   // ESCALA-6: confirmadas ficam nos Avisos
     var h = '<div class="card" style="margin:10px 0 12px;padding:10px 14px"><div class="nm" style="font-size:15px;margin-bottom:4px">Minhas escalas · Kids</div>';
     if (vazio) {
       var lid = E.kids.some(function (m) { return m.meuPapel === 'admin' || m.meuPapel === 'leader'; });
@@ -126,8 +153,11 @@
         '<button class="btn gh sm" data-e="recusarTroca" data-v="' + esc(t.id) + '">Não posso</button></div>' +
         '<div class="sb" style="margin-top:4px">Depois de aceitar, o líder do Kids ainda precisa autorizar.</div></div>';
     });
-    es.forEach(function (x) {
-      var st = RESP[x.resposta] || RESP.pending, tr = x.transferencia;
+    es.forEach(function (x) { h += blocoEscala(x); });
+    return h + '<div class="sb" style="margin-top:6px">Depois de confirmar, a escala fica no sino (Avisos), com lembretes 24 h, 12 h e 2 h antes.</div></div>';
+  }
+  function blocoEscala(x) {
+      var st = RESP[x.resposta] || RESP.pending, tr = x.transferencia, h = '';
       h += '<div style="padding:8px 0;border-top:1px solid var(--ln,#eceef1)"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><b>' + esc(x.sala) + '</b>' +
         '<span class="sb">(' + esc(x.funcao) + ')</span>' + pill(st[0], st[1]) + '</div><div class="sb">' + esc(x.culto || x.evento) + ' · ' + esc(diaHora(x.inicio)) + '</div>' +
         (x.resposta === 'declined' && x.motivoRecusa ? '<div class="sb">Seu motivo: ' + esc(x.motivoRecusa) + '</div>' : '');
@@ -140,9 +170,7 @@
           (x.resposta !== 'declined' ? '<button class="btn gh sm" data-e="naoPosso" data-v="' + esc(x.staffId) + '">Não posso</button>' : '') +
           '<button class="btn gh sm" data-e="transferir" data-v="' + esc(x.staffId) + '">Passar para outro</button></div>';
       }
-      h += '</div>';
-    });
-    return h + '</div>';
+      return h + '</div>';
   }
   function pintarCard() {
     if (!E.inicio) return;
@@ -178,6 +206,7 @@
   }
   var ACOES = {
     abrirKids: function (id) { if (window.G2_MIN && G2_MIN.abrir) G2_MIN.abrir(id, 'agenda'); },
+    permitir: pedirPermissao,
     sino: function () { if (Date.now() - E.em > 15000) carregar().then(listaAvisos); else listaAvisos(); },
     lerTodos: function () { lerAviso(null).then(listaAvisos); },
     abrirAviso: abrirAviso,

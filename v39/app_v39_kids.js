@@ -1,4 +1,6 @@
-/* 2Gather v39 · Kids · KIDS-11
+/* 2Gather v39 · Kids · KIDS-12
+   KIDS-12: salas e professores do evento no estilo de app de escalas (cards por sala, fotos com a cor da resposta,
+            contadores, "+ Escalar professores"); escolha de professores com busca, foto e "já na sala X".
    KIDS-11: ao salvar professores, o sino e Minhas escalas atualizam na hora (quem se escala vê o aviso sem esperar).
    KIDS-10: saiu o botão "Salas deste culto" de Entrada e saída (a função fica no evento da Agenda), a pedido do Diogo.
    KIDS-9: salas e escala dos professores dentro do evento da Agenda (Ajustar/Editar evento); K.blocoEvento.
@@ -25,7 +27,7 @@
    Diagnóstico no Console: G2_KIDS.versao, G2_KIDS._s */
 (function () {
   'use strict';
-  var VERSAO = 'KIDS-11';
+  var VERSAO = 'KIDS-12';
   if (window.G2_KIDS) return;
   var K = window.G2_KIDS = { versao: VERSAO };
   console.info('[2Gather] kids ' + VERSAO);
@@ -689,16 +691,46 @@
     rpc('v39_kids_room_save', { p: p }).then(function () { fechar(); toast('Sala salva.'); SALAS.lista = null; pintar(); }).catch(function (e) { toast(traduz(e), true); });
   }
   /* salas deste culto (líder): ajustar, abrir/fechar, professores, sala só deste culto */
+  /* KIDS-12: salas e escala no estilo de app de escalas (cards, fotos, cor da resposta, contadores) */
+  var CORR = { confirmed: '#1f9d63', pending: '#e0a21b', declined: '#c0392b' };
+  var TXTR = { confirmed: 'confirmado', pending: 'aguardando', declined: 'não pode' };
+  function av(p, lado) {
+    lado = lado || 34;
+    var u = (U().fotoUrl && U().fotoUrl(p.pessoaId)) || S.fotos[p.pessoaId], cor = CORR[p.resposta] || '#c9ccd1';
+    var ini = String(p.nome || '?').trim().split(/\s+/).map(function (s) { return s[0]; }).slice(0, 2).join('').toUpperCase();
+    return '<span style="width:' + lado + 'px;height:' + lado + 'px;flex:0 0 ' + lado + 'px;border-radius:50%;border:2.5px solid ' + cor + ';display:inline-flex;align-items:center;justify-content:center;font-size:' + Math.round(lado / 3) + 'px;font-weight:800;color:#5e6470;' +
+      (u ? 'background:#eee center/cover no-repeat url(\'' + esc(u) + '\')' : 'background:#eef0f3') + '">' + (u ? '' : esc(ini)) + '</span>';
+  }
+  function chip(txt, cor, fundo) { return '<span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;color:' + (cor || '#5e6470') + ';background:' + (fundo || '#f1f2f4') + ';border-radius:99px;padding:3px 9px">' + txt + '</span>'; }
   function htmlSalasEvento() {
-    var m = U().minAtual(), l = SALA.salas || [];
-    return '<div class="card" style="padding:4px 14px;margin-top:8px">' + (l.length ? l.map(function (r) {
-        return '<div style="padding:9px 0;border-bottom:1px solid var(--ln,#eceef1)"><div class="nm">' + esc(r.nome) + ' ' + (r.status === 'closed' ? pill('fechada', '#7a7f87') : '') + '</div>' +
-          '<div class="sb">' + esc(faixa(r)) + ' · ' + esc(GEN[r.genero || '']) + ' · ' + r.presentes + (r.capacidade ? '/' + r.capacidade : '') + ' na sala · professores:' +
-          (r.professores.length ? '' : ' <b style="color:#c99a1a">nenhum</b>') + '</div>' + r.professores.map(function (x) { return linhaProfessor(r, x, lider(m)); }).join('') +
-          (lider(m) ? '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn gh sm" data-k="editarSalaEvento" data-v="' + esc(r.id) + '">Ajustar</button>' +
-            '<button class="btn gh sm" data-k="professoresSala" data-v="' + esc(r.id) + '">Professores</button></div>' : '') + '</div>';
-      }).join('') : '<div class="empty">Nenhuma sala. Cadastre as salas padrão na aba Salas.</div>') + '</div>' +
-      (lider(m) ? '<div class="gap"></div><button class="btn" data-k="novaSalaEvento">+ Sala só deste culto</button>' : '');
+    var m = U().minAtual(), l = SALA.salas || [], ld = lider(m);
+    var ab = l.filter(function (r) { return r.status === 'open'; }), tot = 0, conf = 0, rec = 0, sem = 0, alerta = false;
+    ab.forEach(function (r) { if (!r.professores.length) sem++; r.professores.forEach(function (x) { tot++; if (x.resposta === 'confirmed') conf++; if (x.resposta === 'declined') rec++; if (x.semResposta24h) alerta = true; }); });
+    var h = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 10px">' +
+      chip((alerta ? '🔔 ' : '👍 ') + conf + '/' + tot + ' confirmados', alerta ? '#c0392b' : (tot && conf === tot ? '#1f9d63' : null), alerta ? '#c0392b14' : null) +
+      chip(ab.length + ' sala(s)') + (sem ? chip(sem + ' sem professor', '#c0392b', '#c0392b14') : '') + (rec ? chip(rec + ' não pode(m)', '#c0392b', '#c0392b14') : '') + '</div>';
+    if (!l.length) h += '<div class="card" style="text-align:center;padding:18px"><div class="sb">Nenhuma sala. Cadastre as salas padrão na aba Salas.</div></div>';
+    l.forEach(function (r) {
+      var fechada = r.status === 'closed', cf = r.professores.filter(function (x) { return x.resposta === 'confirmed'; }).length;
+      h += '<div class="card" style="padding:12px 14px;margin:0 0 10px;' + (fechada ? 'opacity:.55' : '') + '">' +
+        '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div style="min-width:0">' +
+          '<div style="font-weight:800;color:var(--pri,#2f6fd6);text-transform:uppercase;font-size:14px">' + esc(r.nome) + (fechada ? ' ' + pill('fechada', '#7a7f87') : '') + '</div>' +
+          '<div class="sb">' + esc(faixa(r)) + (r.genero && GEN[r.genero] ? ' · ' + esc(GEN[r.genero]) : '') + ' · ' + r.presentes + (r.capacidade ? '/' + r.capacidade : '') + ' criança(s)</div></div>' +
+          (ld ? '<button class="btn gh sm" data-k="editarSalaEvento" data-v="' + esc(r.id) + '" title="Ajustar sala">⚙ Ajustar</button>' : '') + '</div>';
+      if (!r.professores.length) {
+        h += ld && !fechada ? '<div data-k="professoresSala" data-v="' + esc(r.id) + '" style="margin-top:10px;border:1.5px dashed #d6d9de;border-radius:12px;padding:12px;text-align:center;color:#c0392b;font-weight:700;cursor:pointer">+ Escalar professores</div>'
+          : '<div class="sb" style="margin-top:8px;color:#c0392b">Sem professor</div>';
+      } else {
+        h += '<div style="display:flex;align-items:center;gap:8px;margin-top:10px"><div style="display:flex;padding-left:6px">' +
+          r.professores.slice(0, 6).map(function (x) { return '<span style="margin-left:-6px;box-shadow:0 0 0 2px #fff;border-radius:50%;display:inline-flex">' + av(x, 30) + '</span>'; }).join('') + '</div>' +
+          chip('👍 ' + cf + '/' + r.professores.length, cf === r.professores.length ? '#1f9d63' : null) + '</div>' +
+          '<div style="margin-top:6px">' + r.professores.map(function (x) { return linhaProfessor(r, x, ld); }).join('') + '</div>';
+        if (ld && !fechada) h += '<button class="btn gh sm" style="margin-top:8px;width:100%" data-k="professoresSala" data-v="' + esc(r.id) + '">👥 Editar professores</button>';
+      }
+      h += '</div>';
+    });
+    if (ld) h += '<div data-k="novaSalaEvento" style="border:1.5px dashed #d6d9de;border-radius:12px;padding:12px;text-align:center;font-weight:700;color:var(--pri,#2f6fd6);cursor:pointer">+ Sala só deste culto</div>';
+    return h;
   }
   function formSalasEvento() {
     SALA.volta = null;
@@ -717,17 +749,18 @@
     return '<div class="sec" style="margin:16px 0 0">Salas e escala do Kids</div><div class="sb">Vêm das salas padrão do Kids; o que mudar aqui vale só para este evento. Cada professor escalado recebe aviso no app para confirmar.</div>' +
       '<div id="kse-box"><div class="empty">Carregando salas…</div></div>';
   };
-  /* KIDS-8: resposta de cada professor à escala */
-  var RESP = { pending: ['aguardando', '#c99a1a'], confirmed: ['confirmado', '#1f7a4d'], declined: ['não pode', '#c0392b'] };
+  /* KIDS-8/12: resposta de cada professor à escala */
+  var RESP = { pending: ['aguardando', '#e0a21b'], confirmed: ['confirmado', '#1f9d63'], declined: ['não pode', '#c0392b'] };
   function linhaProfessor(r, x, ehLider) {
     var st = RESP[x.resposta] || null, tr = x.transferencia;
-    return '<div style="padding:4px 0 2px 8px;border-left:3px solid ' + (x.semResposta24h ? '#c0392b' : 'transparent') + ';margin-top:4px">' +
-      '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><b style="font-size:13.5px">' + esc(x.nome) + '</b>' + (x.funcao === 'auxiliar' ? '<span class="sb">(aux.)</span>' : '') +
-      (st ? pill(st[0], st[1]) : '') + (x.semResposta24h ? pill('sem resposta · culto em menos de 24 h', '#c0392b') : '') + '</div>' +
-      (x.resposta === 'declined' && x.motivoRecusa ? '<div class="sb">Motivo: ' + esc(x.motivoRecusa) + '</div>' : '') +
-      (tr ? '<div class="sb">Troca pedida para ' + esc(tr.para) + ' · ' + (tr.status === 'pending_leader' ? '<b>aceita, aguardando sua autorização em Minhas escalas</b>' : 'aguardando quem recebe aceitar') + '</div>' : '') +
-      (ehLider && x.whatsappEm ? '<div class="sb">WhatsApp enviado ' + esc(diaHora(x.whatsappEm)) + '</div>' : '') +
-      (ehLider && x.whatsapp && x.resposta !== 'confirmed' ? '<button class="btn gh sm" style="margin-top:4px" data-k="whatsEscala" data-v="' + esc(x.staffId) + '" data-sala="' + esc(r.id) + '">' + (x.whatsappEm ? 'Lembrar pelo WhatsApp' : 'Avisar pelo WhatsApp') + '</button>' : '') +
+    return '<div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--ln,#eceef1)">' + av(x, 38) +
+      '<div style="flex:1;min-width:0"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><b style="font-size:14px">' + esc(x.nome) + '</b>' +
+        '<span class="sb">' + (x.funcao === 'auxiliar' ? 'auxiliar' : 'professor') + '</span></div>' +
+        '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:2px">' + (st ? pill(st[0], st[1]) : '') + (x.semResposta24h ? pill('sem resposta · < 24 h', '#c0392b') : '') + '</div>' +
+        (x.resposta === 'declined' && x.motivoRecusa ? '<div class="sb">Motivo: ' + esc(x.motivoRecusa) + '</div>' : '') +
+        (tr ? '<div class="sb">⇄ Troca para ' + esc(tr.para) + ' · ' + (tr.status === 'pending_leader' ? '<b>aceita, falta você autorizar (Início)</b>' : 'aguardando quem recebe') + '</div>' : '') +
+        (ehLider && x.whatsappEm ? '<div class="sb">WhatsApp enviado ' + esc(diaHora(x.whatsappEm)) + '</div>' : '') + '</div>' +
+      (ehLider && x.whatsapp && x.resposta !== 'confirmed' ? '<button class="btn gh sm" style="flex:0 0 auto" title="' + (x.whatsappEm ? 'Lembrar' : 'Avisar') + ' pelo WhatsApp" data-k="whatsEscala" data-v="' + esc(x.staffId) + '" data-sala="' + esc(r.id) + '">' + (x.whatsappEm ? 'Lembrar' : 'Avisar') + ' 💬</button>' : '') +
       '</div>';
   }
   function textoEscala(r, x) {
@@ -753,17 +786,24 @@
   }
   function formProfessores(salaId) {
     var r = (SALA.salas || []).filter(function (x) { return x.id === salaId; })[0]; if (!r) return;
-    var eq = (U().membros && U().membros(S.min)) || [], marc = {};
+    var eq = (U().membros && U().membros(S.min)) || [], marc = {}, outra = {};
     r.professores.forEach(function (x) { marc[x.pessoaId] = x.funcao; });
-    eq = (Array.isArray(eq) ? eq : []).filter(function (x) { return x.status === 'active'; });
-    modal('<h2>Professores · ' + esc(r.nome) + '</h2><div class="sb">Só quem está na equipe do Kids e tem acesso ao app. Esta lista é a escala da sala neste culto: cada professor novo recebe um aviso no app para confirmar.</div>' +
-      '<div class="card" style="padding:4px 14px;margin-top:8px">' + (eq.length ? eq.map(function (x) {
-        var dis = !x.temLogin;
-        return '<div class="row" style="padding:7px 0;gap:8px' + (dis ? ';opacity:.5' : '') + '"><input type="checkbox" class="kp-sel" value="' + esc(x.pessoaId) + '"' + (marc[x.pessoaId] ? ' checked' : '') + (dis ? ' disabled' : '') + ' style="width:auto">' +
-          '<div class="info"><div class="nm">' + esc(x.nome) + '</div><div class="sb">' + (dis ? 'sem acesso ao app' : '') + '</div></div>' +
-          '<select class="kp-fun" data-p="' + esc(x.pessoaId) + '" style="width:auto"' + (dis ? ' disabled' : '') + '><option value="professor">professor</option><option value="auxiliar"' + (marc[x.pessoaId] === 'auxiliar' ? ' selected' : '') + '>auxiliar</option></select></div>';
+    (SALA.salas || []).forEach(function (s) { if (s.id !== r.id && s.status === 'open') s.professores.forEach(function (x) { outra[x.pessoaId] = s.nome; }); });
+    eq = (Array.isArray(eq) ? eq : []).filter(function (x) { return x.status === 'active'; })
+      .sort(function (a, b) { return (b.temLogin ? 1 : 0) - (a.temLogin ? 1 : 0) || String(a.nome).localeCompare(String(b.nome)); });
+    modal('<h2>Professores · ' + esc(r.nome) + '</h2><div class="sb">Toque para escalar. Só quem está na equipe do Kids e tem acesso ao app; cada professor novo recebe aviso no app para confirmar.</div>' +
+      '<input data-k-filtro="1" placeholder="Buscar na equipe" style="margin-top:10px">' +
+      '<div class="sb" id="kp-cont" style="margin:6px 2px">' + Object.keys(marc).length + ' escalado(s) nesta sala</div>' +
+      '<div class="card" style="padding:2px 12px">' + (eq.length ? eq.map(function (x) {
+        var dis = !x.temLogin, on = !!marc[x.pessoaId];
+        return '<label class="kp-row" data-nome="' + esc(String(x.nome).toLowerCase()) + '" style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--ln,#eceef1);cursor:' + (dis ? 'default' : 'pointer') + (dis ? ';opacity:.45' : '') + '">' +
+          '<input type="checkbox" class="kp-sel" value="' + esc(x.pessoaId) + '"' + (on ? ' checked' : '') + (dis ? ' disabled' : '') + ' style="width:20px;height:20px;flex:0 0 20px;accent-color:var(--pri,#2f6fd6)">' +
+          av({ pessoaId: x.pessoaId, nome: x.nome }, 36) +
+          '<span style="flex:1;min-width:0"><b style="font-size:14px">' + esc(x.nome) + '</b><br><span class="sb">' +
+            (dis ? 'sem acesso ao app' : outra[x.pessoaId] ? 'já na sala ' + esc(outra[x.pessoaId]) + ' neste culto' : ((x.funcoes || []).map(function (f) { return f.nome; }).join(', ') || 'equipe do Kids')) + '</span></span>' +
+          '<select class="kp-fun" data-p="' + esc(x.pessoaId) + '" style="width:auto;flex:0 0 auto;border-radius:99px;padding:4px 8px;font-size:12.5px"' + (dis ? ' disabled' : '') + '><option value="professor">Professor</option><option value="auxiliar"' + (marc[x.pessoaId] === 'auxiliar' ? ' selected' : '') + '>Auxiliar</option></select></label>';
       }).join('') : '<div class="empty">Abra a aba Equipe para carregar a equipe do Kids.</div>') + '</div>' +
-      '<div class="gap"></div><button class="btn pr" data-k="salvarProfessores" data-v="' + esc(salaId) + '">Salvar</button><div class="gap"></div><button class="btn gh" data-k="voltarSalasEvento">Voltar</button>');
+      '<div class="gap"></div><button class="btn pr" data-k="salvarProfessores" data-v="' + esc(salaId) + '">Salvar escala da sala</button><div class="gap"></div><button class="btn gh" data-k="voltarSalasEvento">Voltar</button>');
   }
   function salvarProfessores(salaId) {
     var prof = [].slice.call(document.querySelectorAll('.kp-sel:checked')).map(function (c) {
@@ -1155,11 +1195,13 @@
     else if (t.getAttribute('data-k-base')) buscarBase(t.getAttribute('data-k-base'), t.value);
     else if (t.getAttribute('data-k-data')) t.value = mascaraData(t.value);
     else if (t.getAttribute('data-k-local')) buscarLocal(t.value);
+    else if (t.getAttribute('data-k-filtro')) { var fq = t.value.trim().toLowerCase(); [].forEach.call(document.querySelectorAll('.kp-row'), function (rw) { rw.style.display = !fq || rw.getAttribute('data-nome').indexOf(fq) >= 0 ? '' : 'none'; }); }
     else if (t.getAttribute('data-k-entrada')) { var q = t.value.trim().toLowerCase(), el = $('ke-lista');
       if (el) el.innerHTML = listaEntrada(criancasElegiveis().filter(function (x) { return !q || (x.p.nomeCompleto || x.p.nome).toLowerCase().indexOf(q) >= 0 || x.f.nome.toLowerCase().indexOf(q) >= 0; })); }
   });
   document.addEventListener('change', function (ev) {
-    var t = ev.target; if (!t || !t.getAttribute || !t.getAttribute('data-k-evento')) return;
+    var t = ev.target; if (t && t.classList && t.classList.contains('kp-sel')) { var c = $('kp-cont'); if (c) c.textContent = document.querySelectorAll('.kp-sel:checked').length + ' escalado(s) nesta sala'; return; }
+    if (!t || !t.getAttribute || !t.getAttribute('data-k-evento')) return;
     SALA.ev = t.value; SALA.board = null; pintar();
   });
 
