@@ -1,4 +1,6 @@
-/* 2Gather v39 · Ministérios · MIN-7
+/* 2Gather v39 · Ministérios · MIN-8
+   MIN-8: Agenda em cards (dia, mês e dia da semana, "amanhã/daqui a N dias", abas Próximas/Anteriores); no Kids, a escala de
+          cada evento no card (fotos com a cor da resposta, confirmados/escalados, alerta < 24 h, salas sem professor, trocas) — KIDS_11.
    MIN-7: no Kids, o Ajustar/Editar evento da Agenda mostra as salas e a escala dos professores (KIDS-9); evento novo do Kids reabre para montar a escala.
    MIN-6: aba "Salas" no Kids (KIDS-5), G2_MIN.abrir e G2_MIN._u.membros.
    MIN-5: aba "Entrada e saída" no Kids (KIDS-3) e G2_MIN._u.eventos.
@@ -18,7 +20,7 @@
    Diagnóstico no Console: G2_MIN.versao, G2_MIN._s */
 (function () {
   'use strict';
-  var VERSAO = 'MIN-7';
+  var VERSAO = 'MIN-8';
   if (window.G2_MIN) return;
   var M = window.G2_MIN = { versao: VERSAO };
   console.info('[2Gather] ministerios ' + VERSAO);
@@ -224,7 +226,7 @@
   function carregarDetalhe(id, forcar) {
     if (!id || S.carregandoDet[id]) return;
     if (!forcar && S.eventos[id] && S.membros[id]) return;
-    S.carregandoDet[id] = true;
+    S.carregandoDet[id] = true; if (forcar) delete AG.resumo[id];
     Promise.all([
       rpc('v39_min_events', { p_ministry_id: id, p_de: null, p_ate: null }).then(function (r) { S.eventos[id] = r || []; }).catch(function (e) { S.eventos[id] = { erro: traduz(e) }; }),
       rpc('v39_min_members', { p_ministry_id: id, p_incluir_encerrados: false }).then(function (r) { S.membros[id] = r || []; }).catch(function (e) { S.membros[id] = { erro: traduz(e) }; })
@@ -296,31 +298,105 @@
     else h += telaFuncoes(m);
     return h;
   }
+  /* ───────── MIN-8: Agenda em cards (data, evento, escala) ───────── */
+  var AG = { resumo: {}, carregando: {}, fotos: {}, pedidas: {}, aba: 'prox' };
+  var MESES = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+  var SEMANA = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+  var COR_RESP = { confirmed: '#1f9d63', pending: '#e0a21b', declined: '#c0392b' };
+  function relativo(iso) {
+    var a = new Date(); a.setHours(0, 0, 0, 0); var d = new Date(iso); d.setHours(0, 0, 0, 0);
+    var n = Math.round((d - a) / 864e5);
+    return n === 0 ? 'Hoje' : n === 1 ? 'Amanhã' : n === -1 ? 'Ontem' : n > 1 ? 'daqui a ' + n + ' dias' : 'há ' + (-n) + ' dias';
+  }
+  function carregarResumo(m) {
+    if (!m || m.tipo !== 'kids' || AG.carregando[m.id] || AG.resumo[m.id] !== undefined) return;
+    AG.carregando[m.id] = true;
+    rpc('v39_kids_schedule_summary', { p_ministry_id: m.id }).then(function (l) {
+      var mp = {}; (Array.isArray(l) ? l : []).forEach(function (x) { mp[x.eventoId] = x; }); AG.resumo[m.id] = mp; carregarFotosAg(l || []);
+    }).catch(function (e) { AG.resumo[m.id] = semFuncao(e) ? null : {}; })
+      .then(function () { AG.carregando[m.id] = false; pintar(); });
+  }
+  function carregarFotosAg(l) {
+    var ids = [];
+    l.forEach(function (x) { (x.escalados || []).forEach(function (p) { if (p.temFoto && !AG.pedidas[p.pessoaId]) { AG.pedidas[p.pessoaId] = true; ids.push(p.pessoaId); } }); });
+    if (!ids.length) return;
+    rpc('v39_people_photos', { p_person_ids: ids }).then(function (r) {
+      return cliente().then(function (cl) {
+        return Promise.all((r || []).map(function (x) {
+          return cl.storage.from('person-photos').createSignedUrl(x.path, 3600).then(function (s) { if (s && s.data && s.data.signedUrl) AG.fotos[x.id] = s.data.signedUrl; }).catch(function () {});
+        }));
+      });
+    }).then(function () { pintar(); }).catch(function () {});
+  }
+  function avatar(p) {
+    var cor = COR_RESP[p.resposta] || '#c9ccd1', u = AG.fotos[p.pessoaId], ini = String(p.nome || '?').trim().split(/\s+/).map(function (s) { return s[0]; }).slice(0, 2).join('').toUpperCase();
+    var t = esc(p.nome + ' · ' + (p.sala || '') + ' · ' + ({ confirmed: 'confirmado', pending: 'aguardando', declined: 'não pode' }[p.resposta] || ''));
+    return '<span title="' + t + '" style="width:30px;height:30px;flex:0 0 30px;border-radius:50%;margin-left:-6px;border:2px solid ' + cor + ';box-shadow:0 0 0 2px #fff;display:inline-flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:800;color:#5e6470;' +
+      (u ? 'background:#eee center/cover no-repeat url(\'' + esc(u) + '\')' : 'background:#eef0f3') + '">' + (u ? '' : esc(ini)) + '</span>';
+  }
+  var IC = {
+    ok: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v11M15 5.9 14 10h5.8a2 2 0 0 1 2 2.4l-1.4 7A2 2 0 0 1 18.4 21H7V10l4-8a3 3 0 0 1 4 3.9Z"/></svg>',
+    sino: '<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><path d="M12 2a6 6 0 0 0-6 6c0 6-3 8-3 8h18s-3-2-3-8a6 6 0 0 0-6-6Zm-2 18a2 2 0 0 0 4 0Z"/></svg>',
+    sala: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16M14 12h.01"/></svg>',
+    troca: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h13l-3-3M17 17H4l3 3"/></svg>',
+    semEscala: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 13-6M3 3l18 18"/></svg>'
+  };
+  function linhaEscala(m, e) {
+    if (m.tipo !== 'kids') return '';
+    var mp = AG.resumo[m.id];
+    if (mp === null) return '';
+    if (mp === undefined) return '<div class="sb" style="margin-top:6px">Carregando escala…</div>';
+    var x = mp[e.id];
+    if (!x || !x.salas) return e.status === 'cancelled' ? '' : '<div class="sb" style="margin-top:8px;display:flex;align-items:center;gap:5px;color:#9aa0a6">' + IC.semEscala + ' Salas e escala ainda não montadas</div>';
+    var es = x.escalados || [], mostra = es.slice(0, 6), mais = es.length - mostra.length;
+    var cont = function (ic, txt, cor, tit) { return '<span title="' + esc(tit) + '" style="display:inline-flex;align-items:center;gap:3px;color:' + (cor || '#5e6470') + ';font-size:12.5px;font-weight:700">' + ic + txt + '</span>'; };
+    return '<div style="display:flex;align-items:center;margin-top:8px;padding-left:6px;min-height:30px">' +
+        (es.length ? mostra.map(avatar).join('') + (mais > 0 ? '<span style="margin-left:4px;font-size:11.5px;font-weight:800;color:#5e6470;background:#eef0f3;border-radius:99px;padding:3px 7px">+' + mais + '</span>' : '')
+          : '<span class="sb" style="display:inline-flex;align-items:center;gap:5px;color:#c0392b;margin-left:-6px">' + IC.semEscala + ' Ninguém escalado</span>') + '</div>' +
+      '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;align-items:center">' +
+        (x.semResposta24h ? cont(IC.sino, x.confirmados + '/' + x.total, '#c0392b', 'Sem resposta e o culto é em menos de 24 h') : cont(IC.ok, x.confirmados + '/' + x.total, x.total && x.confirmados === x.total ? '#1f9d63' : null, 'Confirmados / escalados')) +
+        (x.recusados ? cont('✕ ', x.recusados, '#c0392b', 'Não podem') : '') +
+        cont(IC.sala, x.salas, x.salasSemProfessor ? '#c0392b' : null, x.salasSemProfessor ? x.salasSemProfessor + ' sala(s) sem professor' : 'Salas abertas') +
+        (x.trocas ? cont(IC.troca, x.trocas, '#6c4bd1', 'Trocas em andamento') : '') +
+        (x.euEscalado ? '<span class="pill" style="background:#2f6fd61f;color:#2f6fd6">você está escalado</span>' : '') +
+      '</div>';
+  }
+  function cardEvento(m, lid, e) {
+    var s = ST_EV[e.status] || [e.status, '#7a7f87'], r = e.resumo || null;
+    var res = r && (r.presentes != null || r.dizimo || r.oferta || r.outras)
+      ? '<div class="sb">' + (r.presentes != null ? r.presentes + ' presentes' : '') + (r.dizimo ? ' · dízimos ' + moeda(r.dizimo) : '') + (r.oferta ? ' · ofertas ' + moeda(r.oferta) : '') + (r.outras ? ' · outras ' + moeda(r.outras) : '') + '</div>' : '';
+    var podeAjustar = lid && !e.travado && e.status !== 'cancelled' && e.status !== 'completed';
+    var rs = AG.resumo[m.id] && AG.resumo[m.id][e.id], semSalasPassado = e.status === 'completed' && !(rs && rs.salas);   // não abrir (e copiar salas) em evento encerrado sem escala
+    var acao = podeAjustar ? 'ajustarEv' : (m.tipo === 'kids' && e.status !== 'cancelled' && !semSalasPassado && window.G2_KIDS ? 'verSalasEv' : '');
+    return '<div class="card"' + (acao ? ' data-m="' + acao + '" data-v="' + esc(e.id) + '" style="cursor:pointer;' : ' style="') + 'padding:12px 14px;margin:0 0 4px;' + (e.status === 'cancelled' ? 'opacity:.6;' : '') + '">' +
+      '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div style="min-width:0">' +
+        '<div style="font-weight:800;color:var(--pri,#2f6fd6);text-transform:uppercase;letter-spacing:.2px;font-size:14.5px">' + (e.travado ? '🔒 ' : '') + esc(e.nome) + '</div>' +
+        '<div class="sb" style="margin-top:2px">' + esc(horaBr(e.inicio)) + (e.fim ? '–' + esc(horaBr(e.fim)) : '') + (e.local ? ' · ' + esc(e.local) : '') +
+          (e.cultoId ? ' · acompanha: ' + esc(e.cultoNome || 'culto') : ' · evento próprio') + '</div></div>' + pill(s[0], s[1]) + '</div>' +
+      (e.status === 'cancelled' && e.motivoCancelamento ? '<div class="sb">Motivo: ' + esc(e.motivoCancelamento) + '</div>' : '') + res + linhaEscala(m, e) +
+      (acao ? '<div style="margin-top:8px;text-align:right"><span class="sb" style="font-weight:700;color:var(--pri,#2f6fd6)">' +
+        (acao === 'ajustarEv' ? (e.cultoId ? 'Ajustar' : 'Editar') + (m.tipo === 'kids' ? ' · salas e escala' : '') : 'Salas e escala') + ' ›</span></div>' : '') +
+      '</div>';
+  }
   function telaAgenda(m, lid) {
     var ev = S.eventos[m.id], h = '';
     if (lid && m.status === 'active') h += '<button class="btn gh" data-m="novoEv">+ Evento do ministério</button><div class="gap"></div>';
     if (!ev) return h + '<div class="empty">Carregando agenda…</div>';
     if (ev.erro) return h + '<div class="aviso r">' + esc(ev.erro) + '</div>';
+    carregarResumo(m);
     var hj = dia(new Date().toISOString());
     var prox = ev.filter(function (e) { return dia(e.inicio) >= hj; }), pass = ev.filter(function (e) { return dia(e.inicio) < hj; }).reverse();
     if (m.acompanhaCultos) h += '<div class="ini-sub" style="margin:0 0 8px">Cada culto da igreja gera automaticamente um evento deste ministério (mesma data e horário).</div>';
-    function lista(arr) {
-      if (!arr.length) return '<div class="card"><div class="empty">Nenhum evento.</div></div>';
-      return '<div class="card" style="padding:4px 16px">' + arr.map(function (e) {
-        var s = ST_EV[e.status] || [e.status, '#7a7f87'], r = e.resumo || null;
-        var res = r && (r.presentes != null || r.dizimo || r.oferta || r.outras)
-          ? '<div class="sb">' + (r.presentes != null ? r.presentes + ' presentes' : '') + (r.dizimo ? ' · dízimos ' + moeda(r.dizimo) : '') + (r.oferta ? ' · ofertas ' + moeda(r.oferta) : '') + (r.outras ? ' · outras ' + moeda(r.outras) : '') + '</div>' : '';
-        var podeAjustar = lid && !e.travado && e.status !== 'cancelled' && e.status !== 'completed';
-        return '<div class="row"><div class="info"><div class="nm">' + (e.travado ? '🔒 ' : '') + esc(e.nome) + ' ' + pill(s[0], s[1]) + '</div>' +
-          '<div class="sb">' + esc(dataBr(e.inicio)) + ' · ' + esc(horaBr(e.inicio)) + (e.fim ? '–' + esc(horaBr(e.fim)) : '') + (e.local ? ' · ' + esc(e.local) : '') +
-          (e.cultoId ? ' · acompanha: ' + esc(e.cultoNome || 'culto') : ' · evento próprio') + '</div>' +
-          (e.status === 'cancelled' && e.motivoCancelamento ? '<div class="sb">Motivo: ' + esc(e.motivoCancelamento) + '</div>' : '') + res + '</div>' +
-          (podeAjustar ? '<button class="btn gh sm" data-m="ajustarEv" data-v="' + esc(e.id) + '">' + (e.cultoId ? 'Ajustar' : 'Editar') + (m.tipo === 'kids' ? ' · salas e escala' : '') + '</button>'
-            : (m.tipo === 'kids' && e.status !== 'cancelled' && window.G2_KIDS ? '<button class="btn gh sm" data-m="verSalasEv" data-v="' + esc(e.id) + '">Salas e escala</button>' : '')) + '</div>';
-      }).join('') + '</div>';
-    }
-    h += '<div class="sec" style="margin-left:0">Próximos</div>' + lista(prox);
-    if (pass.length) h += '<div class="sec" style="margin-left:0">Realizados (últimos 30 dias)</div>' + lista(pass);
+    h += '<div class="chips" style="margin:4px 0 10px"><button data-m="agAba" data-v="prox" class="' + (AG.aba !== 'ant' ? 'on' : '') + '">Próximas (' + prox.length + ')</button>' +
+      '<button data-m="agAba" data-v="ant" class="' + (AG.aba === 'ant' ? 'on' : '') + '">Anteriores · últimos 30 dias (' + pass.length + ')</button></div>';
+    var arr = AG.aba === 'ant' ? pass : prox;
+    if (!arr.length) return h + '<div class="card"><div class="empty">Nenhum evento.</div></div>';
+    arr.forEach(function (e) {
+      var d = new Date(e.inicio);
+      h += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin:14px 2px 6px">' +
+        '<div><span style="font-size:20px;font-weight:800;margin-right:6px">' + d.getDate() + '</span><span class="sb" style="font-weight:700">' + MESES[d.getMonth()] + ' · ' + SEMANA[d.getDay()] + '</span></div>' +
+        '<span class="sb">' + esc(relativo(e.inicio)) + '</span></div>' + cardEvento(m, lid, e);
+    });
     return h;
   }
   function telaEquipe(m, lid) {
@@ -483,7 +559,7 @@
     var m = minAtual(); if (!m || m.tipo !== 'kids' || !window.G2_KIDS || !G2_KIDS.blocoEvento) return '';
     if (!e || !e.id) return '<div class="sb" style="margin-top:12px">Depois de salvar, o evento reabre para você montar as salas e a escala dos professores.</div>';
     if (e.status === 'cancelled') return '';
-    return G2_KIDS.blocoEvento(e.id, m.id, function () { M.ajustarEvento(e.id); });
+    return G2_KIDS.blocoEvento(e.id, m.id, function () { delete AG.resumo[m.id]; pintar(); M.ajustarEvento(e.id); });
   }
   function formEvento(e) {
     var filho = e && e.cultoId;
@@ -568,6 +644,7 @@
     novoEv: function () { formEvento(null); },
     ajustarEv: function (v) { var l = S.eventos[S.atual]; var e = Array.isArray(l) && l.filter(function (x) { return x.id === v; })[0]; if (e) formEvento(e); },
     salvarEv: salvarEv,
+    agAba: function (v) { AG.aba = v === 'ant' ? 'ant' : 'prox'; pintar(); },
     verSalasEv: function (v) { var l = S.eventos[S.atual]; var e = Array.isArray(l) && l.filter(function (x) { return x.id === v; })[0]; if (e) verSalasEv(e); },
     escolherPessoa: function (v, t) {
       var c = t.getAttribute('data-campo'), nm = t.getAttribute('data-nome');
