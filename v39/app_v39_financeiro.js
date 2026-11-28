@@ -1,4 +1,14 @@
-/* 2Gather v39 · Financeiro completo · FIN-ALL-23
+/* 2Gather v39 · Financeiro completo · FIN-ALL-24
+   FIN-ALL-24 (só tela; não exige SQL novo). NOVO LAYOUT do Financeiro (aprovado pelo Diogo em 28/11/2026, inspirado nos prints de referência):
+   - Menu lateral agrupado no lugar da fileira de 11 abas (no celular vira gaveta pelo botão "Menu"):
+     Financeiro: Visão geral · Movimentações (Livro, Receitas, Despesas, A pagar, Transferências e cartões) · Conferir e conciliar (A conferir, Conciliação);
+     Projetos: Campanhas · Convênios; Cadastros e relatórios: Cadastros (filtro Contas / Plano de contas / Fornecedores) · Relatórios.
+     Nenhuma aba saiu e cada uma continua com a mesma permissão; a seção some quando a pessoa não pode ver nenhuma aba dela.
+   - Faixa com o ano e os 12 meses (e "Hoje") no lugar das setas, nas abas que dependem do mês (agora também Visão geral e Receitas).
+   - Movimentações: resumo do mês no topo (saldo atual de todas as contas ou de uma; receitas e despesas realizado de previsto, mesmo modelo do painel).
+   - Visão geral: o painel do Financeiro dentro do módulo (resumo, pendências, lançamentos futuros, gráficos, saldo por conta, campanhas, últimos lançamentos).
+   - Receitas: passa a listar as receitas do mês (com as ações de sempre) e as receitas previstas, além do botão "Nova receita".
+   - Situação por cor na borda das linhas do Livro, Receitas, Despesas e A pagar (verde pago/recebido, amarelo em aberto, vermelho vencido, cinza cancelado/estornado/transferência).
    FIN-ALL-23 (PC-2; requer sql/PC_2_convenio_vinculo_aplicar.sql). VERBA DE CONVÊNIO na despesa e na entrada:
    - Nova despesa / Editar despesa: campo "A verba sai de um convênio?" (convênios em execução ou em prestação de contas), com a conta bancária do convênio,
      o disponível depois desta despesa e aviso se a conta contábil não é do convênio. Trocar ou retirar pede motivo (histórico; nada é apagado).
@@ -119,7 +129,7 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
    - Pop-up: não fecha mais ao clicar fora. Só pelo botão X no canto, por Cancelar ou por Esc. Botões do rodapé alinhados. */
 (function () {
   'use strict';
-  var VERSAO = 'FIN-ALL-23';
+  var VERSAO = 'FIN-ALL-24';
   if (window.G2_FIN) return;
   window.G2_FIN = { versao: VERSAO };
   console.info('[2Gather] financeiro ' + VERSAO);
@@ -301,6 +311,31 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
     var s = document.createElement('style'); s.id = 'g2f-css';
     s.textContent = [
       '.g2f-oculto{display:none!important}',
+      /* FIN-ALL-24: layout com menu lateral agrupado (gaveta no celular), faixa de meses, resumo do mês e situação por cor */
+      '.g2f-shell{display:block}@media(min-width:900px){.g2f-shell{display:grid;grid-template-columns:212px minmax(0,1fr);gap:18px;align-items:start}}',
+      '.g2f-nav{display:none;background:#fff;border-radius:16px;padding:6px;box-shadow:0 1px 2px rgba(20,22,26,.06);margin:0 0 12px}.g2f-nav.aberto{display:block}',
+      '@media(min-width:900px){.g2f-nav{display:block!important;position:sticky;top:12px;margin:0}}',
+      '.g2f-nav .gt{font-size:11px;font-weight:800;color:var(--tx3,#9AA1AC);text-transform:uppercase;letter-spacing:.4px;padding:10px 10px 4px}',
+      '#g2fin .g2f-nav{position:static;width:auto;height:auto;inset:auto;transform:none;z-index:auto}',
+      '#g2fin .g2f-nav button{display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:flex-start!important;gap:10px!important;width:100%!important;height:auto!important;min-height:0!important;margin:0!important;border:none!important;background:none;padding:9px 10px!important;border-radius:10px!important;font-family:inherit;font-size:13.5px!important;font-weight:600;color:var(--tx2,#5E6470);cursor:pointer;text-align:left;box-shadow:none!important}',
+      '#g2fin .g2f-nav button:hover{background:var(--bg,#F6F7F9)}#g2fin .g2f-nav button.on{background:var(--pri-s,#EAF0FF);color:var(--pri,#2F5BEA)}#g2fin .g2f-nav button .g2f-svg{width:17px;height:17px}',
+      '#g2fin .g2f-sub button,#g2fin .g2f-meses button{flex-direction:row!important;min-height:0!important;height:auto!important;margin:0!important;box-shadow:none!important}',
+      '.g2f-menu{display:inline-flex;margin-left:auto}@media(min-width:900px){.g2f-menu{display:none!important}}',
+      '.g2f-sub{display:flex;gap:20px;border-bottom:1px solid var(--ln,#ECEEF1);margin:0 0 12px;overflow-x:auto;scrollbar-width:none}',
+      '.g2f-sub button{flex:0 0 auto;border:none;background:none;padding:10px 0 9px;font-family:inherit;font-size:13.5px;font-weight:600;color:var(--tx2,#5E6470);border-bottom:2px solid transparent;cursor:pointer;white-space:nowrap}',
+      '.g2f-sub button.on{color:var(--tx,#14161A);border-bottom-color:var(--tx,#14161A)}',
+      '.g2f-meses{display:flex;gap:2px;align-items:center;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;background:#fff;border-radius:14px;padding:6px;margin:0 0 12px;box-shadow:0 1px 2px rgba(20,22,26,.05)}',
+      '.g2f-meses .ano{display:flex;align-items:center;gap:2px;margin-right:6px}.g2f-meses .ano b{font-size:14px;padding:0 4px}',
+      '.g2f-meses button{border:none;background:none;padding:7px 7px;border-radius:9px;font-family:inherit;font-size:12.5px;color:var(--tx2,#5E6470);cursor:pointer;flex:1 0 auto;display:inline-flex;align-items:center;justify-content:center}',
+      '.g2f-meses .ano button{flex:0 0 auto;padding:6px}.g2f-meses button.on{background:var(--tx,#14161A);color:#fff;font-weight:700}.g2f-meses button.hoje{font-weight:700;color:var(--pri,#2F5BEA)}',
+      '.g2f-res{display:grid;grid-template-columns:1fr;gap:10px;margin:0 0 12px}@media(min-width:760px){.g2f-res{grid-template-columns:minmax(0,1fr) minmax(0,1.6fr)}}',
+      '.g2f-res .c{background:#fff;border-radius:16px;padding:12px 14px;box-shadow:0 1px 2px rgba(20,22,26,.05);min-width:0}',
+      '.g2f-res select{border:none;background:var(--bg,#F6F7F9);border-radius:9px;padding:5px 8px;font-family:inherit;font-size:12.5px;color:var(--tx2,#5E6470);max-width:100%}',
+      '.g2f-res .sal b{display:block;font-size:24px;font-weight:800;letter-spacing:-.3px;margin-top:6px}.g2f-res .sal small{font-size:11.5px;color:var(--tx3,#9AA1AC)}',
+      '.g2f-res .lin{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;flex-wrap:wrap}.g2f-res .bar{height:7px;border-radius:99px;background:var(--ln,#ECEEF1);margin:5px 0 10px;overflow:hidden}.g2f-res .bar i{display:block;height:100%;border-radius:99px}',
+      '.g2f-mv.st-ok{box-shadow:inset 4px 0 0 #16A36A}.g2f-mv.st-ab{box-shadow:inset 4px 0 0 #E8A400}.g2f-mv.st-at{box-shadow:inset 4px 0 0 #E5484D}.g2f-mv.st-cz{box-shadow:inset 4px 0 0 #C9CDD4}',
+      '@media print{.g2f-shell{display:block!important}.g2f-nav,.g2f-meses,.g2f-sub,.g2f-res{display:none!important}}',
+      '.g2f-legst{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--tx3,#9AA1AC);margin:4px 4px 12px}.g2f-legst i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}',
       '#g2fin *,#g2f-dash *{box-sizing:border-box}',
       '.g2f-svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}',
       '.g2f-head{display:flex;align-items:center;gap:12px;margin:2px 0 14px}',
@@ -697,20 +732,34 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
 
   /* ───────────── abas, abrir/fechar, base ───────────── */
   var ABAS = [
+    { id: 'painel', nome: 'Visão geral', i: 'chart', ok: function () { return algum(); } },
     { id: 'livro', nome: 'Livro', i: 'book', ok: function () { return pode('financial.book.view'); } },
     { id: 'conferir', nome: 'A conferir', i: 'inbox', ok: function () { return pode('financial.sources.view'); } },
-    { id: 'entrada', nome: 'Entrada', i: 'down', ok: function () { return pode('financial.movements.create') && tes(); } },
+    { id: 'entrada', nome: 'Receitas', i: 'down', ok: function () { return pode('financial.movements.create') && tes(); } },
     { id: 'despesas', nome: 'Despesas', i: 'receipt', ok: function () { return pode('financial.expenses.create') || pode('financial.expenses.view'); } },
     { id: 'pagar', nome: 'A pagar', i: 'clock', ok: function () { return pode('financial.expenses.view') || pode('financial.expenses.pay') || pode('financial.book.view'); } },
-    { id: 'transf', nome: 'Transf. e cartões', i: 'card', ok: function () { return pode('financial.transfers.manage') || pode('financial.cards.manage'); } },
+    { id: 'transf', nome: 'Transferências e cartões', i: 'card', ok: function () { return pode('financial.transfers.manage') || pode('financial.cards.manage'); } },
     { id: 'conc', nome: 'Conciliação', i: 'scale', ok: function () { return pode('financial.reconciliation.manage') && tes(); } },
     { id: 'camp', nome: 'Campanhas', i: 'flag', ok: function () { return pode('financial.campaigns.view'); } },
     { id: 'conv', nome: 'Convênios', i: 'bank', ok: function () { return pode('financial.reports.view') || pode('financial.book.view'); } },
     { id: 'cad', nome: 'Cadastros', i: 'sliders', ok: function () { return pode('financial.accounts.manage') || pode('financial.categories.manage') || (S.ctx && S.ctx.master); } },
     { id: 'rel', nome: 'Relatórios', i: 'chart', ok: function () { return pode('financial.reports.view'); } }
   ];
-  var PERIODO = ['livro', 'transf', 'conc', 'rel'];
+  var PERIODO = ['painel', 'livro', 'entrada', 'transf', 'conc', 'rel'];
   function abasVisiveis() { return ABAS.filter(function (a) { return a.ok(); }); }
+  /* FIN-ALL-24: menu lateral agrupado. Cada seção junta abas que já existiam (nenhuma saiu); com mais de uma aba, elas viram abas internas. */
+  var SECOES = [
+    { id: 'painel', nome: 'Visão geral', i: 'chart', g: 'Financeiro', abas: ['painel'] },
+    { id: 'mov', nome: 'Movimentações', i: 'book', g: 'Financeiro', abas: ['livro', 'entrada', 'despesas', 'pagar', 'transf'] },
+    { id: 'conf', nome: 'Conferir e conciliar', i: 'inbox', g: 'Financeiro', abas: ['conferir', 'conc'] },
+    { id: 'camp', nome: 'Campanhas', i: 'flag', g: 'Projetos', abas: ['camp'] },
+    { id: 'conv', nome: 'Convênios', i: 'bank', g: 'Projetos', abas: ['conv'] },
+    { id: 'cad', nome: 'Cadastros', i: 'sliders', g: 'Cadastros e relatórios', abas: ['cad'] },
+    { id: 'rel', nome: 'Relatórios', i: 'chart', g: 'Cadastros e relatórios', abas: ['rel'] }
+  ];
+  function secaoDe(aba) { for (var i = 0; i < SECOES.length; i++) if (SECOES[i].abas.indexOf(aba) >= 0) return SECOES[i]; return SECOES[1]; }
+  function abasDaSecao(s) { var vis = abasVisiveis().map(function (a) { return a.id; }); return s.abas.filter(function (id) { return vis.indexOf(id) >= 0; }); }
+  function abaPor(id) { return ABAS.filter(function (a) { return a.id === id; })[0] || { nome: id, i: 'dot' }; }
 
   function esconderMain(main, sim) {
     Array.prototype.forEach.call(main.children, function (el) {
@@ -754,17 +803,53 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
 
   function pintarBase() {
     var o = $('g2fin'); if (!o) return;
-    var cur = ABAS.filter(function (a) { return a.id === S.aba; })[0] || { nome: '' }, comPer = PERIODO.indexOf(S.aba) >= 0;
-    var ag = new Date(), ehHoje = S.ano === ag.getFullYear() && S.mes === ag.getMonth() + 1;
-    o.innerHTML =
+    var cur = abaPor(S.aba), comPer = PERIODO.indexOf(S.aba) >= 0, sec = secaoDe(S.aba), subs = abasDaSecao(sec), gAnt = '';
+    var nav = SECOES.filter(function (s) { return abasDaSecao(s).length; }).map(function (s) {
+      var gt = s.g !== gAnt ? '<div class="gt">' + esc(s.g) + '</div>' : ''; gAnt = s.g;
+      return gt + '<button type="button" data-a="secao" data-v="' + s.id + '" class="' + (s === sec ? 'on' : '') + '"' + (s === sec ? ' aria-current="page"' : '') + '>' + ic(s.i) + esc(s.nome) + '</button>'; }).join('');
+    o.innerHTML = '<div class="g2f-shell"><div role="navigation" class="g2f-nav g2f-noprint' + (S.navAberto ? ' aberto' : '') + '" id="g2f-nav" aria-label="Menu do Financeiro">' + nav + '</div><div class="g2f-main">' +
       '<div class="g2f-head g2f-noprint"><button type="button" class="g2f-back" data-a="fechar" aria-label="Voltar ao painel Financeiro">' + ic('chevl', 20) + '</button>' +
-      '<div><div class="ini-ola">Livro financeiro</div><div class="ini-sub">' + esc(cur.nome) + (temInstituto() ? ' · ' + esc(visaoRot()) : '') + (comPer ? ' · ' + MESES[S.mes - 1] + ' de ' + S.ano : '') + '</div></div></div>' +
+      '<div><div class="ini-ola">' + esc(sec.nome) + '</div><div class="ini-sub">' + esc(subs.length > 1 ? cur.nome : 'Financeiro') + (temInstituto() ? ' · ' + esc(visaoRot()) : '') + (comPer ? ' · ' + MESES[S.mes - 1] + ' de ' + S.ano : '') + '</div></div>' +
+      '<button type="button" class="g2f-btn g2f-soft g2f-sm g2f-menu" data-a="menuNav" aria-controls="g2f-nav" aria-expanded="' + (S.navAberto ? 'true' : 'false') + '">' + ic('list') + 'Menu</button></div>' +
       htmlSeletor('livro') +
-      '<div class="chips g2f-tabs g2f-noprint" role="tablist">' + abasVisiveis().map(function (a) {
-        return '<button type="button" role="tab" data-a="aba" data-v="' + a.id + '" class="' + (a.id === S.aba ? 'on' : '') + '"' + (a.id === S.aba ? ' aria-selected="true"' : '') + '>' + ic(a.i) + esc(a.nome) + '</button>'; }).join('') + '</div>' +
-      (comPer ? '<div class="g2f-per g2f-noprint"><button type="button" data-a="mesAnt" aria-label="Mês anterior">' + ic('chevl') + '</button><b>' + MESES[S.mes - 1] + ' ' + S.ano + '</b>' +
-        (ehHoje ? '' : '<button type="button" class="g2f-hoje" data-a="mesHoje">Hoje</button>') + '<button type="button" data-a="mesProx" aria-label="Próximo mês">' + ic('chevr') + '</button></div>' : '') +
-      '<div id="g2f-bd" aria-live="polite"><div class="empty">Carregando…</div></div>';
+      (subs.length > 1 ? '<div class="g2f-sub g2f-noprint" role="tablist">' + subs.map(function (id) {
+        return '<button type="button" role="tab" data-a="aba" data-v="' + id + '" class="' + (id === S.aba ? 'on' : '') + '"' + (id === S.aba ? ' aria-selected="true"' : '') + '>' + esc(abaPor(id).nome) + '</button>'; }).join('') + '</div>' : '') +
+      (comPer ? htmlMeses() : '') +
+      (sec.id === 'mov' && podeAno() ? '<div id="g2f-res" class="g2f-res g2f-noprint"></div>' : '') +
+      '<div id="g2f-bd" aria-live="polite"><div class="empty">Carregando…</div></div></div></div>';
+    // no celular a faixa de meses e as abas internas rolam: deixa o item atual à vista
+    if (o.querySelectorAll) [].forEach.call(o.querySelectorAll('.g2f-meses .on,.g2f-sub .on'), function (x) { var pai = x.parentNode; if (pai && pai.scrollWidth > pai.clientWidth) pai.scrollLeft = Math.max(0, x.offsetLeft - pai.clientWidth / 2 + x.offsetWidth / 2); });
+  }
+  function htmlMeses() {
+    var ag = new Date(), ehHoje = S.ano === ag.getFullYear() && S.mes === ag.getMonth() + 1;
+    return '<div class="g2f-meses g2f-noprint" role="group" aria-label="Mês"><span class="ano"><button type="button" data-a="anoAnt" aria-label="Ano anterior">' + ic('chevl') + '</button><b>' + S.ano + '</b><button type="button" data-a="anoProx" aria-label="Próximo ano">' + ic('chevr') + '</button></span>' +
+      MES3.map(function (m, i) { var on = i + 1 === S.mes; return '<button type="button" data-a="mesSel" data-v="' + (i + 1) + '" class="' + (on ? 'on' : '') + '"' + (on ? ' aria-current="true"' : '') + ' aria-label="' + MESES[i] + ' de ' + S.ano + '">' + m + '</button>'; }).join('') +
+      (ehHoje ? '' : '<button type="button" class="hoje" data-a="mesHoje">Hoje</button>') + '</div>';
+  }
+  /* resumo do mês em Movimentações: saldo atual (todas as contas ou uma) e receitas/despesas realizado de previsto (mesmo modelo do painel) */
+  var RES = { k: null, ov: null };
+  function pintarResumo(forcar) {
+    var el = $('g2f-res'); if (!el) return;
+    var k = S.ano + '-' + pad(S.mes) + '|' + (S.visao || 'ig');
+    if (!forcar && RES.k === k && RES.ov) return desenharResumo();
+    RES.k = k; RES.ov = null; el.innerHTML = '<div class="c"><span class="g2f-mut">Carregando o resumo do mês…</span></div>';
+    Promise.all([rpc('v39_fin_overview', C({ p_year: S.ano, p_month: S.mes })), carregarAPagar().catch(function () {})]).then(function (r) {
+      if (RES.k !== k) return; RES.ov = r[0] || {}; desenharResumo();
+    }).catch(function () { var x = $('g2f-res'); if (x) x.innerHTML = ''; });
+  }
+  function desenharResumo() {
+    var el = $('g2f-res'); if (!el || !RES.ov) return;
+    var ov = RES.ov, contas = ov.contas || [], kD = S.ano + '-' + pad(S.mes), R = modeloPeriodo(kD + '-01', ymFim(kD), ov.livro || [], null);
+    var sel = contas.filter(function (a) { return a.id === S.resConta; })[0], saldo = sel ? num(sel.saldoAtual) : contas.reduce(function (s, a) { return s + num(a.saldoAtual); }, 0);
+    var bar = function (rot, real, tot, cor, cls) { var pc = tot > 0 ? Math.min(100, Math.round(real / tot * 100)) : 0;
+      return '<div class="lin"><span>' + rot + '</span><span><b class="' + cls + '">' + brl(real) + '</b> <span class="g2f-mut">de ' + brl(tot) + '</span></span></div><div class="bar" role="img" aria-label="' + rot + ': ' + pc + '% realizado"><i style="width:' + pc + '%;background:' + cor + '"></i></div>'; };
+    el.innerHTML = '<div class="c sal"><select data-c="resConta" aria-label="Conta do saldo"><option value="">Todas as contas</option>' + contas.map(function (a) { return '<option value="' + esc(a.id) + '"' + (sel && sel.id === a.id ? ' selected' : '') + '>' + esc(a.nome) + '</option>'; }).join('') + '</select>' +
+      '<b class="' + (saldo < 0 ? 'g2f-neg' : '') + '">' + brl(saldo) + '</b><small>saldo atual</small></div>' +
+      '<div class="c">' + bar('Receitas', R.recPago, R.rec, '#16A36A', 'g2f-pos') + bar('Despesas', R.despPago, R.desp, '#E5484D', 'g2f-neg') +
+      '<div class="g2f-mut" style="font-size:11px;margin-top:-4px">Realizado (recebido/pago) de previsto no mês · ' + MESES[S.mes - 1] + '</div></div>';
+  }
+  function legendaSt() {
+    return '<div class="g2f-legst"><span><i style="background:#16A36A"></i>pago ou recebido</span><span><i style="background:#E8A400"></i>em aberto</span><span><i style="background:#E5484D"></i>vencido</span><span><i style="background:#C9CDD4"></i>cancelado, estornado ou transferência</span></div>';
   }
   function mover(d) { var m = S.mes + d; if (m < 1) { m = 12; S.ano--; } else if (m > 12) { m = 1; S.ano++; } S.mes = m; S.cache = null; pintarBase(); recarregar(); }
   // guarda o que está na tela: se o app redesenhar a área principal, voltamos NA HORA sem buscar de novo no servidor
@@ -857,7 +942,8 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
   function recarregar() {
     if (!S.aberto || !$('g2fin')) return;
     corpo('<div class="empty">Carregando…</div>');
-    var r = { livro: tLivro, conferir: tConferir, entrada: tEntrada, despesas: tDespesas, pagar: tPagar, transf: tTransf, conc: tConc, camp: tCamp, conv: tConv, cad: tCad, rel: tRel }[S.aba];
+    if ($('g2f-res')) pintarResumo(true);
+    var r = { painel: tPainel, livro: tLivro, conferir: tConferir, entrada: tEntrada, despesas: tDespesas, pagar: tPagar, transf: tTransf, conc: tConc, camp: tCamp, conv: tConv, cad: tCad, rel: tRel }[S.aba];
     carregarCtx().then(carregarCat).then(function () { return r(); }).catch(function (e) { console.warn('[2Gather][fin]', e); corpo('<div class="card">' + esc(traduz(e)) + '</div>'); });
   }
   function restaurar() {
@@ -867,6 +953,7 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
     if (c && c.aba === S.aba && c.ano === S.ano && c.mes === S.mes && Date.now() - c.t < 180000) {
       var b = $('g2f-bd'); if (b) b.innerHTML = c.html;
       if (S.aba === 'livro' && S.ov) pintarLista();
+      pintarResumo(false);
     } else recarregar();
   }
   function avisoInicio() {
@@ -1039,7 +1126,8 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
     if (tes() && m.manual && m.status === 'posted' && m.tipo === 'income' && pode('financial.movements.update')) a.push(bt('editMov', m.id, 'Editar', 'sec'));
     if (tes() && pode('financial.movements.reverse') && (m.status === 'posted' || m.status === 'reconciled') && m.tipo !== 'reversal') a.push(bt('estornar', m.id, 'Estornar', 'red'));
     var st = m.status === 'reconciled' ? pill('conciliado', 'verde') : m.status === 'reversed' ? pill('estornado', 'vermelho') : pill((ROT.movSt[m.status] || m.status).toLowerCase(), 'cinza');
-    return '<div class="row g2f-mv"><span class="g2f-ri ' + vis.c + '">' + ic(vis.i) + '</span><div class="info"><div class="nm">' + esc(m.descricao) + '</div>' +
+    var stc = nc ? 'st-ab' : (m.status === 'reversed' || m.tipo === 'reversal' || m.tipo === 'transfer_in' || m.tipo === 'transfer_out' || m.tipo === 'opening_balance') ? 'st-cz' : 'st-ok';
+    return '<div class="row g2f-mv ' + stc + '"><span class="g2f-ri ' + vis.c + '">' + ic(vis.i) + '</span><div class="info"><div class="nm">' + esc(m.descricao) + '</div>' +
       '<div class="sb">' + esc([nc ? 'Compra no cartão' : (ROT.mov[m.tipo] || m.tipo), m.categoria, m.conta, m.forma, m.pessoa].filter(Boolean).join(' · ')) + '</div></div>' +
       (nc ? '<div class="g2f-amt"><span class="g2f-mut">' + brl(m.valor) + '</span>' + pill('na fatura · a pagar', 'amarelo') + '</div>'
           : '<div class="g2f-amt"><span class="' + (v < 0 ? 'g2f-neg' : v > 0 ? 'g2f-pos' : '') + '">' + (v > 0 ? '+ ' : '') + brl(v) + '</span>' + st + '</div>') +
@@ -1167,7 +1255,7 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
     if (podeP) a = ehF ? bt('pagarFaturaId', x.id, 'Pagar fatura') : ehC ? bt('pagarDesp', x.despesaId, 'Lançar na fatura') : x.tipo === 'parcela' ? bt('pagarParc', x.despesaId + '|' + x.id, 'Pagar parcela') : bt('pagarDesp', x.despesaId, 'Pagar');
     var sub = ehC ? 'prevista na fatura ' + x.ref + ' · ' + x.cartao + (x.vencimento ? ' · vence ' + dataBR(x.vencimento) : '')
       : (x.vencimento ? (x.vencida ? 'venceu ' : 'vence ') + dataBR(x.vencimento) : 'sem vencimento') + (ehF ? ' · fatura do cartão' : '');
-    return '<div class="row g2f-mv"><span class="g2f-ri ' + (x.vencida ? 'out' : 'amb') + '">' + ic(ehF || ehC ? 'card' : 'receipt') + '</span><div class="info"><div class="nm">' + esc(x.descricao) + (x.parcela ? ' · parcela ' + esc(x.parcela) : '') + '</div>' +
+    return '<div class="row g2f-mv ' + (x.vencida ? 'st-at' : 'st-ab') + '"><span class="g2f-ri ' + (x.vencida ? 'out' : 'amb') + '">' + ic(ehF || ehC ? 'card' : 'receipt') + '</span><div class="info"><div class="nm">' + esc(x.descricao) + (x.parcela ? ' · parcela ' + esc(x.parcela) : '') + '</div>' +
       '<div class="sb">' + esc(sub) + '</div></div><div class="g2f-amt"><span>' + brl(x.valor) + '</span>' + (ehC ? pill('prevista', 'amarelo') : x.vencida ? pill('vencida', 'vermelho') : pill('a vencer', 'amarelo')) + '</div>' +
       (a ? '<div class="g2f-acts g2f-noprint">' + a + '</div>' : '') + '</div>';
   }
@@ -1422,10 +1510,18 @@ return Promise.all([rpc('v39_fin_source_pending', C({})), rpc('v39_fin_sources',
 
   /* ───────────── ENTRADA (inclui recebimento de campanha ou voto) ───────────── */
   function tEntrada() {
-    corpo(avisoInicio() + '<div class="card"><h3>Nova entrada</h3><div class="g2f-mut" style="line-height:1.5">Dízimos, ofertas, doações, eventos e outras entradas. PIX e transferência exigem comprovante. ' +
-      'Para registrar o pagamento de um participante de campanha ou voto, escolha o tipo <b>Recebimento de campanha ou voto</b> no formulário.</div>' +
-      '<div class="g2f-tool" style="margin:12px 0 0">' + btn('novaEntrada', 'Registrar entrada', 'plus') + '</div></div>');
-    return Promise.resolve();
+    var topo = avisoInicio() + '<div class="g2f-tool g2f-noprint">' + btn('novaEntrada', 'Nova receita', 'plus') + '</div>' +
+      '<div class="g2f-note" style="margin-top:0">Dízimos, ofertas, doações, eventos e outras entradas. PIX e transferência exigem comprovante. ' +
+      'Para registrar o pagamento de um participante de campanha ou voto, escolha o tipo <b>Recebimento de campanha ou voto</b> no formulário.</div>';
+    if (!pode('financial.book.view')) { corpo(topo); return Promise.resolve(); }
+    return rpc('v39_fin_overview', C({ p_year: S.ano, p_month: S.mes })).catch(function () { return null; }).then(function (ov) {
+      var L = ((ov && ov.livro) || []).filter(function (m) { return m.tipo === 'income'; }), fechado = !!(ov && ov.periodo && ov.periodo.status === 'closed');
+      var tot = arr2(L.filter(function (m) { return m.status !== 'reversed'; }).reduce(function (s, m) { return s + num(m.valor); }, 0));
+      L.sort(function (a, b) { return String(b.data).localeCompare(String(a.data)); });
+      corpo(topo + '<div class="sec" style="display:flex;justify-content:space-between;align-items:center"><span>Receitas de ' + MESES[S.mes - 1] + '</span><span class="g2f-pos">' + brl(tot) + '</span></div>' +
+        '<div class="card lp">' + (L.length ? L.map(function (m) { return linhaMov(m, fechado); }).join('') : '<div class="empty">Nenhuma receita lançada neste mês.</div>') + '</div>' + legendaSt() +
+        blocoRecPrev(12, function (v) { return String(v || '').slice(0, 7) === S.ano + '-' + pad(S.mes); }));
+    });
   }
   function novaEntrada() {
     var pc = pode('financial.commitments.receive') && pode('financial.campaigns.view') ? rpcCamps().catch(function () { return CAMPS || []; }) : Promise.resolve(CAMPS || []);
@@ -1647,7 +1743,8 @@ return Promise.all([rpc('v39_fin_source_pending', C({})), rpc('v39_fin_sources',
     if (GVINC && !GVINC.semSql && (gConv || convAtivos('').length) && ['cancelled', 'rejected', 'reversed'].indexOf(st) < 0 && (pode('financial.expenses.create') || pode('financial.expenses.approve') || pode('financial.accounts.manage'))) a.push(bt('convDesp', e.id, 'Convênio', 'sec'));
     var tom = st === 'paid' ? 'verde' : (st === 'pending_approval' || st === 'correction_requested') ? 'amarelo' : (st === 'rejected' || st === 'cancelled') ? 'vermelho' : 'cinza';
     var chip = naFatura ? pill('na fatura do cartão', 'verde') : (pl ? pill('cartão ' + (cartao(pl.cartaoId) ? '•' + cartao(pl.cartaoId).final : '') + (pl.parcelas > 1 ? ' · ' + pl.parcelas + 'x' : ''), 'dour') : (cron.length > 1 ? pill(cron.length + ' parcelas', 'dour') : ''));
-    return '<div class="row g2f-mv"><span class="g2f-ri ' + (st === 'paid' ? 'in' : 'out') + '">' + ic(pl ? 'card' : 'receipt') + '</span><div class="info"><div class="nm">' + esc(e.descricao) + '</div>' +
+    var stc = st === 'paid' ? 'st-ok' : ['cancelled', 'rejected', 'reversed'].indexOf(st) >= 0 ? 'st-cz' : (e.vencimento && String(e.vencimento).slice(0, 10) < hoje() && ['approved', 'partially_paid'].indexOf(st) >= 0) ? 'st-at' : 'st-ab';
+    return '<div class="row g2f-mv ' + stc + '"><span class="g2f-ri ' + (st === 'paid' ? 'in' : 'out') + '">' + ic(pl ? 'card' : 'receipt') + '</span><div class="info"><div class="nm">' + esc(e.descricao) + '</div>' +
       '<div class="sb">' + esc([temInstituto() ? visaoRot() + (visaoCnpj() ? ' · ' + visaoCnpj() : '') : '', e.categoria, e.fornecedor, e.vencimento ? 'vence ' + dataBR(e.vencimento) : '', e.solicitante ? 'por ' + e.solicitante : ''].filter(Boolean).join(' · ')) + '</div>' +
       (itensTxt(e.id) ? '<div class="sb">Itens: ' + itensTxt(e.id) + '</div>' : '') + (e.motivo ? '<div class="sb">Motivo: ' + esc(e.motivo) + '</div>' : '') + (e.boleto && e.boleto.linha ? '<div class="sb">Boleto: ' + esc(e.boleto.linha) + '</div>' : '') + detParc + '</div>' +
       '<div class="g2f-amt"><span>' + brl(e.aprovado || e.valor) + '</span>' + (num(e.pago) ? '<span class="g2f-mut">pago ' + brl(e.pago) + '</span>' : '') + pill((ROT.desp[st] || st).toLowerCase(), tom) + chip + (gConv ? pill('convênio · ' + gConv.concedente, 'verde') : (convDe('desp', e.id) ? pill('convênio', 'verde') : '')) + '</div>' +
@@ -1664,7 +1761,7 @@ return Promise.all([rpc('v39_fin_source_pending', C({})), rpc('v39_fin_sources',
       h += '<div class="chips g2f-noprint">' + [['abertas', 'Em andamento'], ['encerradas', 'Encerradas (120 dias)'], ['todas', 'Todas']].map(function (f) {
         return '<button type="button" data-a="despFiltro" data-v="' + f[0] + '" class="' + (S.despFiltro === f[0] ? 'on' : '') + '">' + f[1] + '</button>'; }).join('') + '</div>';
       h += blocoCorr();
-      h += '<div class="card lp">' + (DESP.length ? DESP.map(linhaDesp).join('') : '<div class="empty">Nenhuma despesa neste filtro.</div>') + '</div>' +
+      h += '<div class="card lp">' + (DESP.length ? DESP.map(linhaDesp).join('') : '<div class="empty">Nenhuma despesa neste filtro.</div>') + '</div>' + legendaSt() +
         '<div class="g2f-note">Solicitar → aprovar → pagar. Aprovar não mexe no saldo; só o pagamento sai da conta. Despesa no cartão de crédito é lançada na fatura depois de aprovada. Quem solicitou não decide o próprio pedido.</div>';
       if (temRec) {
         h += '<div class="sec">Contas fixas</div><div class="g2f-tool g2f-noprint">' + btn('novaRec', 'Conta fixa', 'plus', 'g2f-soft') + '</div><div class="card lp">' + (RECS.length ? RECS.map(function (rc) {
@@ -2357,13 +2454,16 @@ function itensAbertos(f) {
 
   /* ───────────── CADASTROS ───────────── */
   function tCad() {
-    var C2 = S.cat || {}, h = '';
-    if (S.ctx.master || !S.ctx.inicio) {
+    var C2 = S.cat || {}, h = '', cs = S.cadSec || 'tudo', ve = function (k) { return cs === 'tudo' || cs === k; };
+    var secs = [['tudo', 'Tudo']].concat(pode('financial.accounts.manage') ? [['contas', 'Contas bancárias e caixas']] : []).concat(pode('financial.categories.manage') ? [['plano', 'Plano de contas']] : [])
+      .concat(pode('financial.expenses.create') || pode('financial.bills.manage') ? [['fornec', 'Fornecedores']] : []);
+    if (secs.length > 2) h += '<div class="chips g2f-noprint" style="margin-bottom:12px">' + secs.map(function (s) { return '<button type="button" data-a="cadSec" data-v="' + s[0] + '" class="' + (cs === s[0] ? 'on' : '') + '">' + esc(s[1]) + '</button>'; }).join('') + '</div>';
+    if ((S.ctx.master || !S.ctx.inicio) && ve('contas')) {
       h += '<div class="card"><div class="row g2f-mv" style="border:none;padding:0"><span class="g2f-ri pri">' + ic('cal') + '</span><div class="info"><div class="nm">Início do Financeiro</div><div class="sb">' + (S.ctx.inicio ? 'Começou em ' + esc(dataBR(S.ctx.inicio)) + '.' : 'Não definido.') +
         ' É o primeiro dia do Livro. GC e cultos com valores a partir desta data aparecem em "A conferir". Só muda enquanto não houver lançamentos.</div></div>' +
         (S.ctx.master ? '<div class="g2f-acts">' + btn('inicio', 'Definir data', 'cal', 'g2f-soft g2f-sm') + '</div>' : '') + '</div></div>';
     }
-    if (pode('financial.accounts.manage')) {
+    if (pode('financial.accounts.manage') && ve('contas')) {
       h += '<div class="sec">Contas bancárias e caixas</div><div class="g2f-tool g2f-noprint">' + btn('novaConta', 'Conta', 'plus', 'g2f-soft') + '</div><div class="card lp">' + ((C2.contas || []).map(function (a) {
         return '<div class="row g2f-mv"><span class="g2f-ri pri">' + ic(a.tipo === 'cash' ? 'cash' : 'bank') + '</span><div class="info"><div class="nm">' + esc(a.nome) + (a.status !== 'active' ? ' ' + pill('inativa', 'cinza') : '') + '</div>' +
           '<div class="sb">' + esc([ROT.conta[a.tipo] || a.tipo, a.banco, a.agencia ? 'ag. ' + a.agencia : '', a.numero ? 'c/c ' + a.numero : ''].filter(Boolean).join(' · ')) + '</div></div>' +
@@ -2371,7 +2471,7 @@ function itensAbertos(f) {
           '<div class="g2f-acts">' + bt('editConta', a.id, 'Editar', 'sec') + (!a.saldoInicial && tes() ? bt('saldoIni', a.id, 'Saldo inicial') : '') + (a.saldoInicial && tes() ? bt('saldoAlt', a.id, 'Alterar saldo inicial', 'sec') : '') + '</div></div>';
       }).join('') || '<div class="empty">Nenhuma conta.</div>') + '</div>';
     }
-    if (pode('financial.categories.manage')) {
+    if (pode('financial.categories.manage') && ve('plano')) {
       // PC-1: em árvore (grupo › conta), com recuo por nível. Sem grupos, a lista fica como antes (um nível só).
       var arv = arvoreCats(null), nFilhos = {};
       (C2.categorias || []).forEach(function (c) { if (c.paiId) nFilhos[c.paiId] = (nFilhos[c.paiId] || 0) + 1; });
@@ -2383,7 +2483,7 @@ function itensAbertos(f) {
       }).join('') || '<div class="empty">Nenhuma categoria.</div>') + '</div><div class="g2f-note">O código contábil é o do contador; preencha quando receber a lista. <b>Grupo</b> (ex.: 4.2 Administrativas) só soma as contas que estão dentro dele: o lançamento vai sempre numa conta final (ex.: 4.2.01 Energia). As contas padrão do sistema também podem ser colocadas dentro de um grupo (Editar).' +
         (temArvore() ? '' : ' <b>Criar plano de contas modelo</b> cria os grupos 3 Receitas e 4 Despesas (entidade sem fins lucrativos) e encaixa as contas atuais; depois é só ajustar.') + '</div>';
     }
-    if (pode('financial.expenses.create') || pode('financial.bills.manage')) {
+    if ((pode('financial.expenses.create') || pode('financial.bills.manage')) && ve('fornec')) {
       h += '<div class="sec">Fornecedores e beneficiários</div><div class="g2f-tool g2f-noprint">' + btn('novoFornec', 'Fornecedor', 'plus', 'g2f-soft') + '</div><div class="card lp">' + ((C2.fornecedores || []).map(function (f) {
         return '<div class="row g2f-mv"><span class="g2f-ri">' + ic('user') + '</span><div class="info"><div class="nm">' + esc(f.nome) + (f.status === 'inactive' ? ' ' + pill('inativo', 'cinza') : '') + '</div><div class="sb">' + esc([f.documento, f.contato].filter(Boolean).join(' · ')) + '</div></div><div class="g2f-acts">' + bt('editFornec', f.id, 'Editar', 'sec') + '</div></div>';
       }).join('') || '<div class="empty">Nenhum fornecedor.</div>') + '</div>';
@@ -2556,6 +2656,7 @@ function itensAbertos(f) {
     Promise.all(ps).then(function (r) {
       if (ANO !== a) return; a.meses = r; a.carregando = false; a.em = Date.now();
       var x = $('g2f-dash'); if (x && !S.aberto) { x.remove(); pintarDash(); }
+      if (S.aberto && S.aba === 'painel' && $('g2f-bd') && D.dados) corpo(htmlDash(true));
     });
   }
   function modelosAno() {
@@ -2868,12 +2969,34 @@ function itensAbertos(f) {
   function achar(lista, id) { return (lista || []).filter(function (x) { return x.id === id; })[0] || null; }
   function acao(p) { return p.then(function (m) { if (m) toast(m); S.cache = null; recarregar(); dashCarregar(true); }).catch(function (e) { console.warn('[2Gather][fin]', e); toast(traduz(e)); }); }
   function clique(ev) {
-    var b = ev.target.closest && ev.target.closest('[data-a]'); if (!b || !$('g2fin') || !$('g2fin').contains(b)) return;
+    var b = ev.target.closest && ev.target.closest('[data-a]');
+    // atalhos do painel (Visão geral) dentro do Financeiro aberto
+    var dd = !b && ev.target.closest && ev.target.closest('[data-d]');
+    if (dd && $('g2fin') && $('g2fin').contains(dd)) {
+      var da = dd.getAttribute('data-d'), dv = dd.getAttribute('data-v');
+      ev.stopPropagation();
+      if (da === 'abrir' && dv && abasVisiveis().some(function (x) { return x.id === dv; })) { S.aba = dv; S.cartDet = null; GREP = null; S.cache = null; S.navAberto = false; pintarBase(); return recarregar(); }
+      if (da === 'mesAnt') return mover(-1);
+      if (da === 'mesProx') return mover(1);
+      return;
+    }
+    if (!b || !$('g2fin') || !$('g2fin').contains(b)) return;
     var a = b.getAttribute('data-a'), v = b.getAttribute('data-v');
     ev.stopPropagation();
     switch (a) {
       case 'fechar': return fechar();
-      case 'aba': S.aba = v; S.cartDet = null; GREP = null; S.cache = null; pintarBase(); return recarregar();
+      case 'aba': S.aba = v; S.cartDet = null; GREP = null; S.cache = null; S.navAberto = false; (S.secAba = S.secAba || {})[secaoDe(v).id] = v; pintarBase(); return recarregar();
+      case 'secao': {
+        var sc = SECOES.filter(function (x) { return x.id === v; })[0]; if (!sc) return;
+        var lst = abasDaSecao(sc), lembra = S.secAba && S.secAba[sc.id];
+        S.aba = lst.indexOf(lembra) >= 0 ? lembra : (lst.indexOf(S.aba) >= 0 ? S.aba : lst[0]); S.cartDet = null; GREP = null; S.cache = null; S.navAberto = false;
+        pintarBase(); window.scrollTo(0, 0); return recarregar();
+      }
+      case 'menuNav': { S.navAberto = !S.navAberto; var nv = $('g2f-nav'); if (nv) nv.classList.toggle('aberto', S.navAberto); b.setAttribute('aria-expanded', S.navAberto ? 'true' : 'false'); return; }
+      case 'mesSel': S.mes = Math.max(1, Math.min(12, parseInt(v, 10) || S.mes)); S.cache = null; pintarBase(); return recarregar();
+      case 'anoAnt': S.ano--; S.cache = null; pintarBase(); return recarregar();
+      case 'anoProx': S.ano++; S.cache = null; pintarBase(); return recarregar();
+      case 'cadSec': S.cadSec = v; S.cache = null; return recarregar();
       case 'mesAnt': return mover(-1);
       case 'mesProx': return mover(1);
       case 'mesHoje': S.ano = new Date().getFullYear(); S.mes = new Date().getMonth() + 1; S.cache = null; pintarBase(); return recarregar();
@@ -3056,6 +3179,7 @@ function itensAbertos(f) {
   function mudanca(ev) {
     var el = ev.target, c = el.getAttribute && el.getAttribute('data-c'); if (!c) return;
     if (c === 'concConta') { S.concConta = el.value; S.cache = null; return recarregar(); }
+    if (c === 'resConta') { S.resConta = el.value; return desenharResumo(); }
     if (c === 'relMes') { S.relMes = el.value === '1'; S.cache = null; return recarregar(); }
     if (c === 'extrato') { var f = el.files && el.files[0]; el.value = ''; return importarExtrato(f); }
   }
@@ -3073,11 +3197,11 @@ function itensAbertos(f) {
     for (var i = 0; i < hs.length; i++) if (/^\s*financeiro\s*$/i.test(hs[i].textContent || '')) return hs[i];
     return null;
   }
-  function dashCarregar(forcar) {
-    if (D.carregando || !igrejaId()) return;
-    if (!forcar && D.dados && Date.now() - D.em < 60000) return;
-    D.carregando = true;
-    carregarCtx().then(function () {
+  function tPainel() {
+    return dashDados().then(function () { D.em = Date.now(); corpo(htmlDash(true)); carregarAno(false); });
+  }
+  function dashDados() {
+    return carregarCtx().then(function () {
       if (!algum()) { D.dados = { semAcesso: true }; return; }
       var ps = [pode('financial.book.view') || pode('financial.reports.view') ? rpc('v39_fin_overview', C({ p_year: S.ano, p_month: S.mes })).catch(function () { return null; }) : Promise.resolve(null),
         pode('financial.sources.view') ? rpc('v39_fin_source_pending', C({})).catch(function () { return null; }) : Promise.resolve(null),
@@ -3086,7 +3210,13 @@ function itensAbertos(f) {
         pode('financial.reports.view') ? rpc('v39_fin_report', C({ p_year: S.ano, p_month: S.mes })).catch(function () { return null; }) : Promise.resolve(null), carregarSent(),
         (pode('financial.expenses.view') || pode('financial.book.view') || pode('financial.expenses.pay')) ? carregarAPagar().catch(function () { APAGAR = []; PREV = []; return []; }) : Promise.resolve([])];
       return Promise.all(ps.concat([S.cat ? null : carregarCat().catch(function () { return null; })])).then(function (r) { if (r[3]) CAMPS = r[3]; D.dados = { ov: r[0], pend: r[1], desp: r[2], camps: r[3], rep: r[4] }; });
-    }).catch(function (e) { console.warn('[2Gather][fin] ' + traduz(e)); D.dados = { erro: traduz(e) }; })
+    });
+  }
+  function dashCarregar(forcar) {
+    if (D.carregando || !igrejaId()) return;
+    if (!forcar && D.dados && Date.now() - D.em < 60000) return;
+    D.carregando = true;
+    dashDados().catch(function (e) { console.warn('[2Gather][fin] ' + traduz(e)); D.dados = { erro: traduz(e) }; })
       .then(function () { D.carregando = false; D.em = Date.now(); var x = $('g2f-dash'); if (x) x.remove(); pintarDash(); carregarAno(false); });
   }
   function grafico(cols, classe) {
@@ -3112,23 +3242,23 @@ function itensAbertos(f) {
     var p = Math.round((atual - anterior) / anterior * 100);
     return (p > 0 ? '▲ ' : p < 0 ? '▼ ' : '= ') + Math.abs(p) + '% vs mês anterior';
   }
-  function htmlDash() {
+  function htmlDash(dentro) {   // dentro = Visão geral do Financeiro aberto (mês, seletor e faixa de CNPJ já estão no topo)
     var d = D.dados || {}, ov = d.ov || {}, contas = ov.contas || [], L = ov.livro || [], t = totaisCaixa(L), h = '';
     if (d.erro) return '<div class="card">' + esc(d.erro) + '</div>';
-    h += htmlSeletor('dash') + (temInstituto() ? bannerVisao() : '');
+    if (!dentro) h += htmlSeletor('dash') + (temInstituto() ? bannerVisao() : '');
     var saldo = contas.reduce(function (s, a) { return s + num(a.saldoAtual); }, 0), prev = d.camps ? previstos() : [];
     var nPend = d.pend && d.pend.itens ? d.pend.itens.length : 0;
     var nAprov = (d.desp || []).filter(function (e) { return e.status === 'pending_approval' && !e.souSolicitante; }).length;
     var nPagar = (d.desp || []).filter(function (e) { return e.status === 'approved' || e.status === 'partially_paid'; }).length;
     var nMsg = d.camps && SENT ? filaMsgs().length : 0;
     if (d.ov) {
-      h += '<div class="g2f-per g2f-dashper"><button type="button" data-d="mesAnt" aria-label="Mês anterior">' + ic('chevl') + '</button><b>' + MESES[S.mes - 1] + ' ' + S.ano + '</b><button type="button" data-d="mesProx" aria-label="Próximo mês">' + ic('chevr') + '</button></div>';
+      if (!dentro) h += '<div class="g2f-per g2f-dashper"><button type="button" data-d="mesAnt" aria-label="Mês anterior">' + ic('chevl') + '</button><b>' + MESES[S.mes - 1] + ' ' + S.ano + '</b><button type="button" data-d="mesProx" aria-label="Próximo mês">' + ic('chevr') + '</button></div>';
       var kD = S.ano + '-' + pad(S.mes);
       var iniRep = d.rep && d.rep.fluxo && d.rep.fluxo.caixaInicial != null && String(d.rep.fluxo.caixaInicial) !== '' ? num(d.rep.fluxo.caixaInicial) : null;
       var R = modeloPeriodo(kD + '-01', ymFim(kD), L, iniRep != null ? iniRep : saldoIniMes(ov));
       h += resumoModelo(R, null, 'Saldo final do mês');
     }
-    h += '<div class="big-cta" data-d="abrir" data-v="livro" role="button" tabindex="0"><div class="bi">' + ic('book', 26) + '</div><div><b>Abrir Livro financeiro</b><span>Lançamentos, despesas, campanhas e relatórios</span></div></div>';
+    if (!dentro) h += '<div class="big-cta" data-d="abrir" data-v="livro" role="button" tabindex="0"><div class="bi">' + ic('book', 26) + '</div><div><b>Abrir Livro financeiro</b><span>Lançamentos, despesas, campanhas e relatórios</span></div></div>';
     var pend = [];
     if (nPend && !visaoInst() && pode('financial.sources.view')) pend.push({ n: nPend, txt: 'GC/cultos com valores <b>a conferir</b>', aba: 'conferir', i: 'inbox' });
     if (nAprov && pode('financial.expenses.approve')) pend.push({ n: nAprov, txt: 'despesa(s) <b>aguardando sua aprovação</b>', aba: 'despesas', i: 'receipt' });
@@ -3256,6 +3386,7 @@ function itensAbertos(f) {
     msgTexto: msgTexto, genParcelas: genParcelas, addMeses: addMeses, bt: bt, carregarCtx: carregarCtx, carregarCat: carregarCat, pintarBase: pintarBase, restaurar: restaurar, manter: manter, corpo: corpo,
     formDesp: formDesp, pagarDesp: pagarDesp, tPagar: tPagar, previaFatura: previaFatura, linhaDesp: linhaDesp, formCorrDesp: formCorrDesp, editMov: editMov, interceptForm: null, formPagarFatura: formPagarFatura, estornarFatura: estornarFatura, itensAbertos: itensAbertos, proximaFatura: proximaFatura, resolverFone: resolverFone, foneDe: foneDe, htmlCamp: htmlCamp, zap: zap, ofertarRecibo: ofertarRecibo, resolverFonesCamp: resolverFonesCamp, totaisCaixa: totaisCaixa, despesasPrevistas: despesasPrevistas, carregarAPagar: carregarAPagar, desenharLivro: desenharLivro, htmlDetCartao: htmlDetCartao, linhaCartao: linhaCartao, parcelasPrevistas: parcelasPrevistas, formImportarFatura: formImportarFatura, parseFatura: parseFatura, conferirFatura: conferirFatura, mesFechamento: mesFechamento, vencFatura: vencFatura,
     previstasCartao: previstasCartao, setPlanos: function (p) { PLANOS = p; }, setFatimp: function (f) { FATIMP = f; }, setFats: function (f) { FATS = f; }, setDesp: function (d) { DESP = d; }, clique: clique, tConv: tConv, formConv: formConv, setGrants: function (g) { GRANTS = g; }, getGrep: function () { return GREP; },
+    pintarBase: pintarBase, SECOES: SECOES, abasDaSecao: abasDaSecao, htmlMeses: htmlMeses, desenharResumo: desenharResumo, setRes: function (o) { RES.ov = o; }, tEntrada: tEntrada, linhaMov: linhaMov, linhaPagar: linhaPagar,
     arvoreCats: arvoreCats, opCats: opCats, opGrupos: opGrupos, ancestrais: ancestrais, formCat: formCat, htmlCatsModelo: htmlCatsModelo, htmlConv: htmlConv,
     setGrep: function (g) { GREP = g; }, desenharRelConv: desenharRelConv,
     camposConv: camposConv, setGvinc: function (g) { GVINC = g; }, linhaDesp: linhaDesp, formDespBase: formDespBase, pagarDesp: pagarDesp, setDespLista: function (d) { DESP = d; } };
