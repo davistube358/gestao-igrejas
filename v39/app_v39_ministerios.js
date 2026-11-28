@@ -1,4 +1,5 @@
-/* 2Gather v39 · Ministérios · MIN-6
+/* 2Gather v39 · Ministérios · MIN-7
+   MIN-7: no Kids, o Ajustar/Editar evento da Agenda mostra as salas e a escala dos professores (KIDS-9); evento novo do Kids reabre para montar a escala.
    MIN-6: aba "Salas" no Kids (KIDS-5), G2_MIN.abrir e G2_MIN._u.membros.
    MIN-5: aba "Entrada e saída" no Kids (KIDS-3) e G2_MIN._u.eventos.
    MIN-4: aba "Crianças" no ministério Kids (módulo app_v39_kids.js, KIDS-2) e utilitários G2_MIN._u.
@@ -17,7 +18,7 @@
    Diagnóstico no Console: G2_MIN.versao, G2_MIN._s */
 (function () {
   'use strict';
-  var VERSAO = 'MIN-6';
+  var VERSAO = 'MIN-7';
   if (window.G2_MIN) return;
   var M = window.G2_MIN = { versao: VERSAO };
   console.info('[2Gather] ministerios ' + VERSAO);
@@ -314,7 +315,8 @@
           '<div class="sb">' + esc(dataBr(e.inicio)) + ' · ' + esc(horaBr(e.inicio)) + (e.fim ? '–' + esc(horaBr(e.fim)) : '') + (e.local ? ' · ' + esc(e.local) : '') +
           (e.cultoId ? ' · acompanha: ' + esc(e.cultoNome || 'culto') : ' · evento próprio') + '</div>' +
           (e.status === 'cancelled' && e.motivoCancelamento ? '<div class="sb">Motivo: ' + esc(e.motivoCancelamento) + '</div>' : '') + res + '</div>' +
-          (podeAjustar ? '<button class="btn gh sm" data-m="ajustarEv" data-v="' + esc(e.id) + '">' + (e.cultoId ? 'Ajustar' : 'Editar') + '</button>' : '') + '</div>';
+          (podeAjustar ? '<button class="btn gh sm" data-m="ajustarEv" data-v="' + esc(e.id) + '">' + (e.cultoId ? 'Ajustar' : 'Editar') + (m.tipo === 'kids' ? ' · salas e escala' : '') + '</button>'
+            : (m.tipo === 'kids' && e.status !== 'cancelled' && window.G2_KIDS ? '<button class="btn gh sm" data-m="verSalasEv" data-v="' + esc(e.id) + '">Salas e escala</button>' : '')) + '</div>';
       }).join('') + '</div>';
     }
     h += '<div class="sec" style="margin-left:0">Próximos</div>' + lista(prox);
@@ -476,6 +478,13 @@
       return carregarLista(true).then(function () { carregarDetalhe(id, true); });
     }).catch(function (e) { toast(traduz(e), true); });
   }
+  /* MIN-7: salas e escala do Kids dentro do evento (só eventos já salvos) */
+  function blocoKids(e) {
+    var m = minAtual(); if (!m || m.tipo !== 'kids' || !window.G2_KIDS || !G2_KIDS.blocoEvento) return '';
+    if (!e || !e.id) return '<div class="sb" style="margin-top:12px">Depois de salvar, o evento reabre para você montar as salas e a escala dos professores.</div>';
+    if (e.status === 'cancelled') return '';
+    return G2_KIDS.blocoEvento(e.id, m.id, function () { M.ajustarEvento(e.id); });
+  }
   function formEvento(e) {
     var filho = e && e.cultoId;
     if (filho) {
@@ -485,7 +494,7 @@
         '<label>Situação</label><select id="me-status">' + [['planned', 'Planejado'], ['open', 'Aberto'], ['cancelled', 'Cancelar (não haverá neste culto)']].map(function (o) {
           return '<option value="' + o[0] + '"' + (e.status === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>' +
         '<label>Motivo (obrigatório para cancelar)</label><input id="me-motivo">' +
-        '<div class="gap"></div><button class="btn pr" data-m="salvarEv" data-v="' + esc(e.id) + '">Salvar</button><div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>');
+        '<div class="gap"></div><button class="btn pr" data-m="salvarEv" data-v="' + esc(e.id) + '">Salvar</button><div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>' + blocoKids(e));
       return;
     }
     e = e || { status: 'planned' };
@@ -498,7 +507,12 @@
       '<label>Situação</label><select id="me-status">' + [['planned', 'Planejado'], ['open', 'Aberto']].concat(e.id ? [['cancelled', 'Cancelar evento']] : []).map(function (o) {
         return '<option value="' + o[0] + '"' + (e.status === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>' +
       (e.id ? '<label>Motivo (obrigatório para cancelar)</label><input id="me-motivo">' : '') +
-      '<div class="gap"></div><button class="btn pr" data-m="salvarEv" data-v="' + esc(e.id || '') + '">Salvar</button><div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>');
+      '<div class="gap"></div><button class="btn pr" data-m="salvarEv" data-v="' + esc(e.id || '') + '">Salvar</button><div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>' + blocoKids(e));
+  }
+  /* MIN-7: visualizar salas e escala (equipe sem edição, ou evento encerrado) */
+  function verSalasEv(e) {
+    modal('<h2>' + esc(e.nome) + '</h2><div class="ini-sub">' + esc(dataBr(e.inicio)) + ' · ' + esc(horaBr(e.inicio)) + '</div>' + blocoKids(e) +
+      '<div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>');
   }
   function salvarEv(id) {
     var p = { id: id || null, ministerioId: S.atual, local: $('me-local').value.trim() || null, obs: $('me-obs').value.trim() || null,
@@ -509,7 +523,12 @@
       if (!p.data) return toast('Informe a data.', true);
     }
     if (p.status === 'cancelled' && !p.motivo) return toast('Informe o motivo do cancelamento.', true);
-    rpc('v39_min_event_save', { p: p }).then(function () { fecharModal(); toast('Evento salvo.'); carregarDetalhe(S.atual, true); })
+    var mAt = minAtual(), reabrir = !id && mAt && mAt.tipo === 'kids' && window.G2_KIDS && G2_KIDS.blocoEvento;
+    rpc('v39_min_event_save', { p: p }).then(function (r) {
+      fecharModal(); toast('Evento salvo.' + (reabrir ? ' Agora monte as salas e a escala.' : '')); carregarDetalhe(S.atual, true);
+      if (reabrir && r && r.id) { var tent = 0, ab = function () { var l = S.eventos[S.atual], e = Array.isArray(l) && l.filter(function (x) { return x.id === r.id; })[0];
+        if (e) formEvento(e); else if (++tent < 20) setTimeout(ab, 250); }; setTimeout(ab, 300); }
+    })
       .catch(function (e) { toast(traduz(e), true); });
   }
 
@@ -549,6 +568,7 @@
     novoEv: function () { formEvento(null); },
     ajustarEv: function (v) { var l = S.eventos[S.atual]; var e = Array.isArray(l) && l.filter(function (x) { return x.id === v; })[0]; if (e) formEvento(e); },
     salvarEv: salvarEv,
+    verSalasEv: function (v) { var l = S.eventos[S.atual]; var e = Array.isArray(l) && l.filter(function (x) { return x.id === v; })[0]; if (e) verSalasEv(e); },
     escolherPessoa: function (v, t) {
       var c = t.getAttribute('data-campo'), nm = t.getAttribute('data-nome');
       if ($(c)) $(c).value = v;
@@ -577,5 +597,6 @@
   M._u = { rpc: rpc, cliente: cliente, toast: toast, modal: modal, fecharModal: fecharModal, traduz: traduz, pintar: pintar,
            igrejaId: function () { return S.igreja; }, minAtual: minAtual, eventos: function (id) { return S.eventos[id]; }, membros: function (id) { return S.membros[id]; } };
   // KIDS-5: abrir um ministério numa aba (volta da tela de visitante)
+  M.ajustarEvento = function (id) { ACOES.ajustarEv(id); };   // MIN-7: volta da sala/professores para o evento
   M.abrir = function (id, aba) { var g = G(); if (g.irAba) g.irAba('ministerios'); S.atual = id; S.aba = aba || 'agenda'; setTimeout(function () { pintar(); carregarDetalhe(id, true); }, 50); };
 })();

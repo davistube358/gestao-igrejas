@@ -1,4 +1,5 @@
-/* 2Gather v39 · Avisos pessoais (sino) e "Minhas escalas" · ESCALA-2 (KIDS_4)
+/* 2Gather v39 · Avisos pessoais (sino) e "Minhas escalas" · ESCALA-3 (KIDS_4)
+   ESCALA-3: o caminho para escalar agora é Kids → Agenda → Ajustar evento (salas e escala).
    ESCALA-2: "Minhas escalas" fica sempre visível no Início para quem é da equipe do Kids (ou líder/admin), mesmo sem escala.
    Carregar DEPOIS do app.js, do app_v39_ministerios.js e do app_v39_kids.js. Requer KIDS_4_escala_aplicar.sql.
    - Sino no topo com o número de avisos não lidos (app.notifications da própria conta); a lista marca como lido.
@@ -8,7 +9,7 @@
    O WhatsApp continua pelo wa.me do líder (na sala do culto, módulo Kids); depois vira mensagem automática pela API. */
 (function () {
   'use strict';
-  var VERSAO = 'ESCALA-2';
+  var VERSAO = 'ESCALA-3';
   if (window.G2_ESCALA) return;
   console.info('[2Gather] escala ' + VERSAO);
 
@@ -102,7 +103,7 @@
     if (vazio) {
       var lid = E.kids.some(function (m) { return m.meuPapel === 'admin' || m.meuPapel === 'leader'; });
       return h + '<div class="sb">Nenhuma escala nos próximos 60 dias. Quando o líder escalar você numa sala, o aviso chega no sino e você confirma aqui.' +
-        (lid ? ' Para escalar: Kids → Entrada e saída → Salas deste culto → Professores.' : '') + '</div>' +
+        (lid ? ' Para escalar: Kids → Agenda → Ajustar · salas e escala → Professores.' : '') + '</div>' +
         (lid ? '<button class="btn gh sm" style="margin-top:8px" data-e="abrirKids" data-v="' + esc(E.kids[0].id) + '">Abrir o Kids</button>' : '') + '</div>';
     }
     au.forEach(function (t) {
@@ -169,7 +170,7 @@
     }).catch(falhou);
   }
   var ACOES = {
-    abrirKids: function (id) { if (window.G2_MIN && G2_MIN.abrir) G2_MIN.abrir(id, 'sala'); },
+    abrirKids: function (id) { if (window.G2_MIN && G2_MIN.abrir) G2_MIN.abrir(id, 'agenda'); },
     sino: function () { if (Date.now() - E.em > 15000) carregar().then(listaAvisos); else listaAvisos(); },
     lerTodos: function () { lerAviso(null).then(listaAvisos); },
     abrirAviso: abrirAviso,

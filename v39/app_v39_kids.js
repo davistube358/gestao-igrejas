@@ -1,4 +1,5 @@
-/* 2Gather v39 · Kids · KIDS-8
+/* 2Gather v39 · Kids · KIDS-9
+   KIDS-9: salas e escala dos professores dentro do evento da Agenda (Ajustar/Editar evento); K.blocoEvento.
    KIDS-8: escala com confirmação (status de cada professor na sala, "sem resposta" a menos de 24 h, WhatsApp do líder
            registrado); quem retira precisa ter mais de 12 anos (13 ou mais). Sino e "Minhas escalas": app_v39_escala.js.
    KIDS-7: nascimento digitado como dd/mm/aaaa (o campo de data vinha vazio ao salvar em alguns aparelhos); parentesco da
@@ -22,7 +23,7 @@
    Diagnóstico no Console: G2_KIDS.versao, G2_KIDS._s */
 (function () {
   'use strict';
-  var VERSAO = 'KIDS-8';
+  var VERSAO = 'KIDS-9';
   if (window.G2_KIDS) return;
   var K = window.G2_KIDS = { versao: VERSAO };
   console.info('[2Gather] kids ' + VERSAO);
@@ -686,19 +687,34 @@
     rpc('v39_kids_room_save', { p: p }).then(function () { fechar(); toast('Sala salva.'); SALAS.lista = null; pintar(); }).catch(function (e) { toast(traduz(e), true); });
   }
   /* salas deste culto (líder): ajustar, abrir/fechar, professores, sala só deste culto */
-  function formSalasEvento() {
+  function htmlSalasEvento() {
     var m = U().minAtual(), l = SALA.salas || [];
-    modal('<h2>Salas deste culto</h2><div class="sb">Vêm das salas padrão do Kids. O que mudar aqui vale só para este culto.</div>' +
-      '<div class="card" style="padding:4px 14px;margin-top:8px">' + (l.length ? l.map(function (r) {
+    return '<div class="card" style="padding:4px 14px;margin-top:8px">' + (l.length ? l.map(function (r) {
         return '<div style="padding:9px 0;border-bottom:1px solid var(--ln,#eceef1)"><div class="nm">' + esc(r.nome) + ' ' + (r.status === 'closed' ? pill('fechada', '#7a7f87') : '') + '</div>' +
           '<div class="sb">' + esc(faixa(r)) + ' · ' + esc(GEN[r.genero || '']) + ' · ' + r.presentes + (r.capacidade ? '/' + r.capacidade : '') + ' na sala · professores:' +
           (r.professores.length ? '' : ' <b style="color:#c99a1a">nenhum</b>') + '</div>' + r.professores.map(function (x) { return linhaProfessor(r, x, lider(m)); }).join('') +
           (lider(m) ? '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn gh sm" data-k="editarSalaEvento" data-v="' + esc(r.id) + '">Ajustar</button>' +
             '<button class="btn gh sm" data-k="professoresSala" data-v="' + esc(r.id) + '">Professores</button></div>' : '') + '</div>';
       }).join('') : '<div class="empty">Nenhuma sala. Cadastre as salas padrão na aba Salas.</div>') + '</div>' +
-      (lider(m) ? '<div class="gap"></div><button class="btn" data-k="novaSalaEvento">+ Sala só deste culto</button>' : '') +
+      (lider(m) ? '<div class="gap"></div><button class="btn" data-k="novaSalaEvento">+ Sala só deste culto</button>' : '');
+  }
+  function formSalasEvento() {
+    SALA.volta = null;
+    modal('<h2>Salas deste culto</h2><div class="sb">Vêm das salas padrão do Kids. O que mudar aqui vale só para este culto.</div>' + htmlSalasEvento() +
       '<div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>');
   }
+  /* KIDS-9: volta para onde a sala foi aberta (evento da Agenda ou Entrada e saída) */
+  function voltarSalas() { if (SALA.volta) SALA.volta(); else formSalasEvento(); }
+  K.blocoEvento = function (eventoId, ministerioId, voltar) {
+    S.min = ministerioId || S.min; SALA.ev = eventoId; SALA.salas = null; SALA.board = null; SALA.volta = voltar || null;
+    setTimeout(function () {
+      rpc('v39_kids_event_rooms', { p_ministry_id: S.min, p_event_id: eventoId }).then(function (l) {
+        if (SALA.ev !== eventoId) return; SALA.salas = l || []; var b = $('kse-box'); if (b) b.innerHTML = htmlSalasEvento();
+      }).catch(function (e) { var b = $('kse-box'); if (b) b.innerHTML = '<div class="aviso r">' + esc(traduz(e)) + '</div>'; });
+    }, 0);
+    return '<div class="sec" style="margin:16px 0 0">Salas e escala do Kids</div><div class="sb">Vêm das salas padrão do Kids; o que mudar aqui vale só para este evento. Cada professor escalado recebe aviso no app para confirmar.</div>' +
+      '<div id="kse-box"><div class="empty">Carregando salas…</div></div>';
+  };
   /* KIDS-8: resposta de cada professor à escala */
   var RESP = { pending: ['aguardando', '#c99a1a'], confirmed: ['confirmado', '#1f7a4d'], declined: ['não pode', '#c0392b'] };
   function linhaProfessor(r, x, ehLider) {
@@ -722,7 +738,7 @@
     var x = r.professores.filter(function (p) { return p.staffId === staffId; })[0]; if (!x || !x.whatsapp) return;
     var tel = String(x.whatsapp).replace(/\D/g, '');
     window.open('https://wa.me/55' + tel + '?text=' + encodeURIComponent(textoEscala(r, x)), '_blank');
-    rpc('v39_kids_schedule_whatsapp_sent', { p: { staffId: staffId } }).then(function () { return carregarSalasEvento().then(formSalasEvento); }).catch(function (e) { toast(traduz(e), true); });
+    rpc('v39_kids_schedule_whatsapp_sent', { p: { staffId: staffId } }).then(function () { return carregarSalasEvento().then(voltarSalas); }).catch(function (e) { toast(traduz(e), true); });
   }
   function formSalaEvento(r) {
     modal('<h2>' + (r ? 'Ajustar ' + esc(r.nome) : 'Sala só deste culto') + '</h2>' + camposSala(r, !!r, true) +
@@ -731,7 +747,7 @@
   function salvarSalaEvento(id) {
     var p = lerSala(); p.ministerioId = S.min; p.eventoId = SALA.ev; p.id = id || null;
     if (!p.nome || p.idadeMax === '') return toast('Informe o nome e a idade máxima.', true);
-    rpc('v39_kids_event_room_save', { p: p }).then(function () { toast('Sala salva.'); return carregarSalasEvento().then(formSalasEvento); }).catch(function (e) { toast(traduz(e), true); });
+    rpc('v39_kids_event_room_save', { p: p }).then(function () { toast('Sala salva.'); return carregarSalasEvento().then(voltarSalas); }).catch(function (e) { toast(traduz(e), true); });
   }
   function formProfessores(salaId) {
     var r = (SALA.salas || []).filter(function (x) { return x.id === salaId; })[0]; if (!r) return;
@@ -751,7 +767,7 @@
     var prof = [].slice.call(document.querySelectorAll('.kp-sel:checked')).map(function (c) {
       var f = document.querySelector('.kp-fun[data-p="' + c.value + '"]'); return { pessoaId: c.value, funcao: f ? f.value : 'professor' }; });
     rpc('v39_kids_event_room_staff_set', { p: { ministerioId: S.min, salaId: salaId, professores: prof } })
-      .then(function () { toast('Professores salvos.'); return carregarSalasEvento().then(formSalasEvento); }).catch(function (e) { toast(traduz(e), true); });
+      .then(function () { toast('Professores salvos.'); return carregarSalasEvento().then(voltarSalas); }).catch(function (e) { toast(traduz(e), true); });
   }
   function carregarSalasEvento() {
     if (!SALA.ev) return Promise.resolve();
@@ -862,7 +878,7 @@
       '<div class="card" style="flex:1;min-width:90px;padding:8px 12px;margin:0"><div class="sb">Visitantes</div><div style="font-size:22px;font-weight:800">' + b.visitantes + '</div></div></div>';
     var salasAb = (SALA.salas || []).filter(function (r) { return r.status === 'open'; });
     if (salasAb.length) h += '<div class="card" style="padding:6px 14px;margin:0 0 10px">' + salasAb.map(function (r) { return '<div class="row" style="padding:5px 0"><div class="info"><div class="nm">' + esc(r.nome) + ' <span class="sb">' + esc(faixa(r)) + (r.genero ? ' · ' + esc(GEN[r.genero]) : '') + '</span></div><div class="sb">' + (r.professores.length ? r.professores.map(function (x) { return esc(x.nome); }).join(', ') : 'sem professor') + '</div></div><b>' + r.presentes + (r.capacidade ? '/' + r.capacidade : '') + '</b></div>'; }).join('') + '</div>';
-    if (!b.evento.travado) h += '<button class="btn gh sm" data-k="salasEvento" style="margin-bottom:10px">Salas deste culto' + (lider(U().minAtual()) ? ' (ajustar e professores)' : '') + '</button>';
+    if (!b.evento.travado) h += '<button class="btn gh sm" data-k="salasEvento" style="margin-bottom:10px">Salas deste culto' + (lider(U().minAtual()) ? ' (ajustar e professores)' : '') + '</button><div class="sb" style="margin:-6px 0 10px">A escala também fica no evento, em Agenda → Ajustar.</div>';
     if (b.evento.travado) h += '<div class="aviso">🔒 Evento travado (encerrado há mais de 24h).</div>';
     else h += '<div style="display:flex;gap:8px;flex-wrap:wrap">' + (b.evento.status === 'completed' ? '' : '<button class="btn pr" data-k="entrada">+ Dar entrada</button>') +
       '<button class="btn" data-k="retirarCodigo">Retirar com código</button><button class="btn gh" data-k="atualizarSala">Atualizar</button></div>';
@@ -1108,11 +1124,11 @@
     novaSala: function () { formSala(null); },
     editarSala: function (v) { var r = (SALAS.lista || []).filter(function (x) { return x.id === v; })[0]; if (r) formSala(r); },
     salvarSala: salvarSala,
-    salasEvento: function () { carregarSalasEvento().then(formSalasEvento); },
+    salasEvento: function () { SALA.volta = null; carregarSalasEvento().then(formSalasEvento); },
     editarSalaEvento: function (v) { var r = (SALA.salas || []).filter(function (x) { return x.id === v; })[0]; if (r) formSalaEvento(r); },
     novaSalaEvento: function () { formSalaEvento(null); },
     salvarSalaEvento: salvarSalaEvento,
-    voltarSalasEvento: formSalasEvento,
+    voltarSalasEvento: voltarSalas,
     professoresSala: formProfessores,
     whatsEscala: whatsEscala,
     salvarProfessores: salvarProfessores,
