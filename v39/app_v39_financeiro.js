@@ -1,4 +1,14 @@
-/* 2Gather v39 · Financeiro completo · FIN-ALL-22
+/* 2Gather v39 · Financeiro completo · FIN-ALL-23
+   FIN-ALL-23 (PC-2; requer sql/PC_2_convenio_vinculo_aplicar.sql). VERBA DE CONVÊNIO na despesa e na entrada:
+   - Nova despesa / Editar despesa: campo "A verba sai de um convênio?" (convênios em execução ou em prestação de contas), com a conta bancária do convênio,
+     o disponível depois desta despesa e aviso se a conta contábil não é do convênio. Trocar ou retirar pede motivo (histórico; nada é apagado).
+   - Lista de despesas: selo "convênio · <concedente>" e botão "Convênio" (vincula/troca/retira também despesa já aprovada ou paga).
+   - Pagar: a conta do convênio já vem escolhida; pagar por outra conta ou cartão aparece como divergência.
+   - Nova entrada: campo "É recurso de convênio?".
+   - Convênios: cartão com despesas vinculadas, comprometido e disponível; prestação de contas com as despesas e entradas vinculadas e a divergência de vínculo.
+   - Lista de conta contábil: o GRUPO aparece como título (não pode ser escolhido) e as contas finais abaixo dele. O plano modelo agora cria também
+     as contas finais 3.3.01, 3.3.02, 4.1.01, 4.1.02, 4.4.01 e 4.5.02 (antes só os grupos, que não recebem lançamento).
+   Sem o SQL PC_2 o campo de convênio não aparece e o resto funciona como no FIN-ALL-22.
    FIN-ALL-22 (PC-1; requer sql/PC_1_plano_contas_aplicar.sql). PLANO DE CONTAS EM ÁRVORE ligado aos lançamentos e aos convênios:
    - Cadastros › Plano de contas em árvore (grupo › conta, macro → micro), com "Grupo de contas" e "Criar plano de contas modelo" (3 Receitas / 4 Despesas, ITG 2002).
      Grupo só soma as contas dentro dele e não recebe lançamento (as listas de conta contábil dos lançamentos não mostram grupos; o banco também recusa).
@@ -109,7 +119,7 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
    - Pop-up: não fecha mais ao clicar fora. Só pelo botão X no canto, por Cancelar ou por Esc. Botões do rodapé alinhados. */
 (function () {
   'use strict';
-  var VERSAO = 'FIN-ALL-22';
+  var VERSAO = 'FIN-ALL-23';
   if (window.G2_FIN) return;
   window.G2_FIN = { versao: VERSAO };
   console.info('[2Gather] financeiro ' + VERSAO);
@@ -237,12 +247,17 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
       FIN_CATEGORY_GROUP: 'Esta conta é um GRUPO (só soma as contas abaixo dele). Escolha uma conta dentro do grupo.',
       FIN_CATEGORY_HAS_CHILDREN: 'Este grupo tem contas abaixo dele. Mova ou inative essas contas antes.',
       FIN_CATEGORY_PARENT_INVALID: 'O grupo escolhido precisa ser um grupo ativo, da mesma natureza (entrada ou saída).',
-      FIN_CATEGORY_CYCLE: 'Um grupo não pode ficar dentro dele mesmo.'
+      FIN_CATEGORY_CYCLE: 'Um grupo não pode ficar dentro dele mesmo.',
+      // PC-2
+      GRANT_NOT_ACTIVE: 'Este convênio não está em execução nem em prestação de contas. Edite a situação dele em Convênios.',
+      GRANT_ENTITY: 'O convênio é de outro CNPJ (Igreja x Instituto). Troque o seletor no topo do Financeiro.',
+      GRANT_INVALID: 'Convênio não encontrado. Atualize a tela.'
   };
   function traduz(e) {
     var t = String((e && (e.message || e.details || e.hint || e.code)) || e || '');
     var d = String((e && e.details) || '');
     if (/violates check constraint/i.test(t) && /grant/i.test(t)) return 'O banco não aceitou algum dado do convênio (origem, instrumento ou situação). Atualize a página e tente de novo; se continuar, avise o administrador.';
+    if (/PGRST202|find the function|does not exist/i.test(t) && /grant_link|grant_items_map/i.test(t)) return 'Falta rodar o SQL PC_2_convenio_vinculo_aplicar.sql no Supabase.';
     if (/PGRST202|find the function|does not exist/i.test(t) && /plano_modelo|cat_arvore|cat_code|grant_ramo|grant_diverg/i.test(t)) return 'Falta rodar o SQL PC_1_plano_contas_aplicar.sql no Supabase.';
     if (/PGRST202|find the function|does not exist/i.test(t) && /grants?_(list|save|report)/i.test(t)) return 'Faltam no Supabase as funções de convênio (INST_S7). Avise o administrador.';
     for (var k in MSG) if (t.indexOf(k) >= 0 || d === k) return MSG[k];
@@ -407,7 +422,8 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
     Itens: { i: 'list' }, Conferir: { i: 'check', t: 1, tone: 'ok', l: 'Conferir' }, Gerar: { i: 'repeat', t: 1, l: 'Gerar' }, Casar: { i: 'check', t: 1, l: 'Casar' }, Exportar: { i: 'dl' },
     Ignorar: { i: 'x' }, Voltar: { i: 'undo' }, Saldo: { i: 'plus', t: 1, l: 'Saldo inicial' }, Reabrir: { i: 'unlock', t: 1 }, Fechar: { i: 'lock', t: 1 },
     Mover: { i: 'swap' }, Alterar: { i: 'pencil', t: 1, l: 'Alterar saldo' }, Participante: { i: 'userplus', t: 1 }, Dispensar: { i: 'x' }, Detalhar: { i: 'list', t: 1, l: 'Detalhar fatura' }, Corrigir: { i: 'pencil', t: 1, l: 'Corrigir' },
-    'Lançar': { i: 'card', t: 1, tone: 'ok', l: 'Lançar na fatura' }, Criar: { i: 'plus', t: 1, tone: 'ok', l: 'Criar despesa' }, 'Prestação': { i: 'file', t: 1, l: 'Prestação de contas' }
+    'Lançar': { i: 'card', t: 1, tone: 'ok', l: 'Lançar na fatura' }, Criar: { i: 'plus', t: 1, tone: 'ok', l: 'Criar despesa' }, 'Prestação': { i: 'file', t: 1, l: 'Prestação de contas' },
+    'Convênio': { i: 'bank', t: 1, l: 'Convênio' }
   };
   function bt(a, v, t, cls) {
     var w = String(t).split(' ')[0], m = BTI[w] || { i: 'dot' };
@@ -428,8 +444,7 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
     if (c.t === 'check') return h + '<div class="chk"><input type="checkbox" id="' + id + '"' + (v ? ' checked' : '') + '><label for="' + id + '">' + esc(c.l) + '</label></div></div>';
     h += '<label for="' + id + '">' + esc(c.l) + rq + '</label>';
     if (c.t === 'select') {
-      h += '<select id="' + id + '">' + (c.vazio !== false ? '<option value="">' + esc(c.vazio || '— escolha —') + '</option>' : '') + (c.o || []).map(function (x) {
-        return '<option value="' + esc(x[0]) + '"' + (String(x[0]) === String(v) ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join('') + '</select>';
+      h += '<select id="' + id + '">' + (c.vazio !== false ? '<option value="">' + esc(c.vazio || '— escolha —') + '</option>' : '') + (c.o || []).map(function (x) { return opcaoHtml(x, v); }).join('') + '</select>';
     } else if (c.t === 'textarea') h += '<textarea id="' + id + '">' + esc(v) + '</textarea>';
     else if (c.t === 'file') h += '<input type="file" id="' + id + '" accept="' + esc(c.accept || 'image/*,application/pdf') + '">';
     else if (c.t === 'pessoa') h += '<input type="text" id="' + id + '" autocomplete="off" placeholder="Digite 3 letras do nome" value="' + esc(c.nome || '') + '" data-pid="' + esc(v) + '"><div class="pl" id="' + id + '-l" hidden></div>';
@@ -500,9 +515,9 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
             var lista = c.opts(vals) || [], sig = JSON.stringify(lista);
             if (el.getAttribute('data-sig') !== sig) {
               var cur = el.value;
-              el.innerHTML = (c.vazio !== false ? '<option value="">' + esc(c.vazio || '— escolha —') + '</option>' : '') + lista.map(function (x) { return '<option value="' + esc(x[0]) + '">' + esc(x[1]) + '</option>'; }).join('');
+              el.innerHTML = (c.vazio !== false ? '<option value="">' + esc(c.vazio || '— escolha —') + '</option>' : '') + lista.map(function (x) { return opcaoHtml(x, null); }).join('');
               el.setAttribute('data-sig', sig);
-              el.value = lista.some(function (x) { return String(x[0]) === String(cur); }) ? cur : '';
+              el.value = lista.some(function (x) { return x[2] !== true && String(x[0]) === String(cur); }) ? cur : '';
             }
             if (c.unico && lista.length === 1 && !el.value) el.value = lista[0][0];
           }
@@ -647,10 +662,26 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
     return arvoreCats(nat).filter(function (x) { return x.c.grupo && x.c.ativa && (!selfId || !ehDescendente(x.c.id, selfId)); })
       .map(function (x) { return [x.c.id, new Array(x.nivel + 1).join('— ') + rotCat(x.c)]; });
   }
+  /* Lista de conta contábil dos lançamentos. Com grupos (PC-1): em ordem de árvore, o GRUPO aparece como título
+     (opção desativada, não pode ser escolhida) e as contas finais logo abaixo, recuadas. Sem grupos: lista plana como antes. */
   function opCats(nat) {
-    return ((S.cat && S.cat.categorias) || []).filter(function (c) { return c.ativa && c.natureza === nat && !c.grupo; })
+    var rot = function (c) { var k = String(c.contabil || '').trim(); return k ? k + ' · ' + c.nome : c.nome + ' — sem código contábil'; };
+    if (!temArvore()) return catsTodas().filter(function (c) { return c.ativa && c.natureza === nat && !c.grupo; })
       .sort(function (a, b) { var ta = String(a.contabil || '').trim() ? 0 : 1, tb = String(b.contabil || '').trim() ? 0 : 1; return ta - tb || String(a.contabil || '').localeCompare(String(b.contabil || ''), 'pt-BR', { numeric: true }) || String(a.nome).localeCompare(String(b.nome), 'pt-BR'); })
-      .map(function (c) { var k = String(c.contabil || '').trim(), p = paiDe(c); return [c.id, (k ? k + ' · ' + c.nome : c.nome + ' — sem código contábil') + (p ? ' (' + p.nome + ')' : '')]; });
+      .map(function (c) { return [c.id, rot(c)]; });
+    var arv = arvoreCats(nat), temFolha = {};
+    arv.forEach(function (x) { if (!x.c.grupo && x.c.ativa) ancestrais(x.c.id).forEach(function (g) { temFolha[g.id] = 1; }); });
+    var out = [];
+    arv.forEach(function (x) {
+      var ind = new Array(x.nivel + 1).join('   ');
+      if (x.c.grupo) { if (x.c.ativa && temFolha[x.c.id]) out.push(['__g:' + x.c.id, ind + '▸ ' + rot(x.c).replace(' — sem código contábil', ''), true]); }
+      else if (x.c.ativa) out.push([x.c.id, ind + rot(x.c)]);
+    });
+    return out;
+  }
+  // <option> (x[2] === true = título de grupo, desativado)
+  function opcaoHtml(x, v) {
+    return '<option value="' + esc(x[2] === true ? '' : x[0]) + '"' + (x[2] === true ? ' disabled style="font-weight:700"' : '') + (x[2] !== true && String(x[0]) === String(v) ? ' selected' : '') + '>' + esc(x[1]) + '</option>';
   }
   // contas de entrada para votos/campanhas: todas, menos a conta padrão do sistema (que é o "vazio" da lista)
   function opCatsVoto() { return opCats('income').filter(function (c) { var k = catPor(c[0]); return !(k && k.codigo === 'campaign_receipt'); }); }
@@ -1398,7 +1429,7 @@ return Promise.all([rpc('v39_fin_source_pending', C({})), rpc('v39_fin_sources',
   }
   function novaEntrada() {
     var pc = pode('financial.commitments.receive') && pode('financial.campaigns.view') ? rpcCamps().catch(function () { return CAMPS || []; }) : Promise.resolve(CAMPS || []);
-    pc.then(function (l) { CAMPS = l || []; abrirFormEntrada(); });
+    Promise.all([pc, convPrep().catch(function () {})]).then(function (r) { CAMPS = r[0] || []; abrirFormEntrada(); });
   }
   function abrirFormEntrada() {
     var temCamp = pode('financial.commitments.receive');
@@ -1407,7 +1438,8 @@ return Promise.all([rpc('v39_fin_source_pending', C({})), rpc('v39_fin_sources',
     if (temCamp) cats = [['__camp', 'Recebimento de campanha ou voto']].concat(cats);
     var ehC = function (v) { return v.categoriaId === '__camp'; }, naoC = function (v) { return !ehC(v); };
     form('Nova entrada', [
-      { k: 'categoriaId', l: 'Conta contábil (tipo de entrada)', t: 'select', o: cats, req: true }, avisoSemCodigo(),
+      { k: 'categoriaId', l: 'Conta contábil (tipo de entrada)', t: 'select', o: cats, req: true }, avisoSemCodigo()
+    ].concat(camposConv('', 'ent', function (v) { return v.categoriaId; }, function (v) { return v.valor; }, naoC)).concat([
       { k: 'campanhaId', l: 'Campanha ou voto', t: 'select', o: opCampanhas(), req: true, vis: ehC, h: opCampanhas().length ? '' : 'Nenhuma campanha ativa. Crie uma em Campanhas.' },
       { k: 'catCamp', l: 'Conta contábil do recebimento', t: 'select', o: opCatsVoto(), vazio: 'Padrão do sistema (recebimento de campanha ou voto)', vis: function (v) { return ehC(v) && !!v.campanhaId; },
         fill: { dep: 'campanhaId', sempre: true, fn: function (v) { return CAMPCONTA[v.campanhaId] || ''; } }, h: 'Já vem a conta definida na campanha. Troque se este recebimento for em outra conta.' },
@@ -1422,7 +1454,7 @@ return Promise.all([rpc('v39_fin_source_pending', C({})), rpc('v39_fin_sources',
       { k: 'origemTipo', l: 'Origem', t: 'select', o: [['culto', 'Culto'], ['evento', 'Evento'], ['doacao', 'Doação'], ['avulsa', 'Avulsa']], vazio: '— avulsa —', vis: naoC },
       { k: 'descricao', l: 'Descrição', h: 'Se vazio, usa o nome da categoria.', vis: naoC },
       { k: 'arq', l: 'Comprovante', t: 'file' }, { k: 'obs', l: 'Observação', t: 'textarea' }
-    ], 'Lançar', function (v) {
+    ]), 'Lançar', function (v) {
       var tp = formaTipo(v.formaId);
       if ((tp === 'pix' || tp === 'bank_transfer') && !v.arq) return Promise.reject(new Error('FIN_EVIDENCE_REQUIRED'));
       if (v.categoriaId === '__camp') {
@@ -1437,7 +1469,7 @@ return Promise.all([rpc('v39_fin_source_pending', C({})), rpc('v39_fin_sources',
       }
       return enviarComprovante(v.arq).then(function (ev) {
         return rpc('v39_fin_post_income', C({ p: { data: v.data, valor: v.valor, categoriaId: v.categoriaId, contaId: v.contaId, formaId: v.formaId, anonimo: v.anonimo || !v.pessoaId, pessoaId: v.pessoaId || null, origemTipo: v.origemTipo || null, descricao: v.descricao, comprovanteId: ev, obs: v.obs || null, chave: uuid() } }));
-      }).then(function () { return 'Entrada lançada.'; });
+      }).then(function (r) { return vincularConv('ent', r && r.id, '', v).then(function (a) { return 'Entrada lançada.' + a; }); });
     });
   }
 
@@ -1611,19 +1643,21 @@ return Promise.all([rpc('v39_fin_source_pending', C({})), rpc('v39_fin_sources',
     if (['draft', 'correction_requested', 'pending_approval', 'approved'].indexOf(st) >= 0 && (e.meu || tes())) a.push(bt('cancDesp', e.id, 'Cancelar', 'red'));
     if (tes() && pode('financial.expenses.reverse')) (e.pagamentos || []).forEach(function (p) { if (p.status === 'posted') a.push(bt('estPag', p.id, 'Estornar pgto ' + dataBR(p.data), 'red')); });
     if (e.comprovantePath) a.push(bt('verComp', e.comprovantePath, 'Documento', 'sec'));
+    var gConv = convPor(convDe('desp', e.id));
+    if (GVINC && !GVINC.semSql && (gConv || convAtivos('').length) && ['cancelled', 'rejected', 'reversed'].indexOf(st) < 0 && (pode('financial.expenses.create') || pode('financial.expenses.approve') || pode('financial.accounts.manage'))) a.push(bt('convDesp', e.id, 'Convênio', 'sec'));
     var tom = st === 'paid' ? 'verde' : (st === 'pending_approval' || st === 'correction_requested') ? 'amarelo' : (st === 'rejected' || st === 'cancelled') ? 'vermelho' : 'cinza';
     var chip = naFatura ? pill('na fatura do cartão', 'verde') : (pl ? pill('cartão ' + (cartao(pl.cartaoId) ? '•' + cartao(pl.cartaoId).final : '') + (pl.parcelas > 1 ? ' · ' + pl.parcelas + 'x' : ''), 'dour') : (cron.length > 1 ? pill(cron.length + ' parcelas', 'dour') : ''));
     return '<div class="row g2f-mv"><span class="g2f-ri ' + (st === 'paid' ? 'in' : 'out') + '">' + ic(pl ? 'card' : 'receipt') + '</span><div class="info"><div class="nm">' + esc(e.descricao) + '</div>' +
       '<div class="sb">' + esc([temInstituto() ? visaoRot() + (visaoCnpj() ? ' · ' + visaoCnpj() : '') : '', e.categoria, e.fornecedor, e.vencimento ? 'vence ' + dataBR(e.vencimento) : '', e.solicitante ? 'por ' + e.solicitante : ''].filter(Boolean).join(' · ')) + '</div>' +
       (itensTxt(e.id) ? '<div class="sb">Itens: ' + itensTxt(e.id) + '</div>' : '') + (e.motivo ? '<div class="sb">Motivo: ' + esc(e.motivo) + '</div>' : '') + (e.boleto && e.boleto.linha ? '<div class="sb">Boleto: ' + esc(e.boleto.linha) + '</div>' : '') + detParc + '</div>' +
-      '<div class="g2f-amt"><span>' + brl(e.aprovado || e.valor) + '</span>' + (num(e.pago) ? '<span class="g2f-mut">pago ' + brl(e.pago) + '</span>' : '') + pill((ROT.desp[st] || st).toLowerCase(), tom) + chip + '</div>' +
+      '<div class="g2f-amt"><span>' + brl(e.aprovado || e.valor) + '</span>' + (num(e.pago) ? '<span class="g2f-mut">pago ' + brl(e.pago) + '</span>' : '') + pill((ROT.desp[st] || st).toLowerCase(), tom) + chip + (gConv ? pill('convênio · ' + gConv.concedente, 'verde') : (convDe('desp', e.id) ? pill('convênio', 'verde') : '')) + '</div>' +
       (a.length ? '<div class="g2f-acts g2f-noprint">' + a.join('') + '</div>' : '') + '</div>';
   }
   function tDespesas() {
-    var temRec = pode('financial.recurrences.manage'), ps = [rpc('v39_fin_expenses', C({ p_filter: S.despFiltro })), carregarPlanos()];
+    var temRec = pode('financial.recurrences.manage'), ps = [rpc('v39_fin_expenses', C({ p_filter: S.despFiltro })), carregarPlanos()], pConv = convPrep().catch(function () {});
     if (temRec) ps.push(rpc('v39_fin_recurrences', C({})));
     ps.push((tes() || pode('financial.expenses.approve')) ? rpc('v39_fin_income_corrections_list', C({ p_status: 'pending' })).catch(function () { return []; }) : Promise.resolve([]));
-    return Promise.all(ps).then(function (r) { return carregarItens(r[0] || []).then(function () { return r; }); }).then(function (r) {
+    return Promise.all(ps).then(function (r) { return pConv.then(function () { return carregarItens(r[0] || []); }).then(function () { return r; }); }).then(function (r) {
         DESP = r[0] || []; RECS = temRec ? (r[2] || []) : []; CORR = r[r.length - 1] || [];
       var h = '<div class="g2f-tool g2f-noprint">' + (pode('financial.expenses.create') ? btn('novaDesp', 'Nova despesa', 'plus') : '') +
         (pode('financial.expenses.create') || pode('financial.bills.manage') ? btn('novoFornec', 'Fornecedor', 'plus', 'g2f-soft') : '') + '</div>';
@@ -1644,11 +1678,11 @@ return Promise.all([rpc('v39_fin_source_pending', C({})), rpc('v39_fin_sources',
   }
   function despesa(id) { return DESP.filter(function (x) { return x.id === id; })[0] || null; }
   function formDesp(e, opts) {
-    return Promise.resolve(visaoInst() ? carregarProdutosEst() : []).then(function (prods) { return formDespBase(e, opts, prods); });
+    return Promise.all([visaoInst() ? carregarProdutosEst() : [], convPrep().catch(function () {})]).then(function (r) { return formDespBase(e, opts, r[0]); });
   }
   function formDespBase(e, opts, prods) {
     e = e || {}; opts = opts || {}; prods = prods || [];
-    var pre = opts.pre || {}, pl = e.id ? PLANOS[e.id] : null, K = opCartoes(), travada = !!(pl && pl.lancada);
+    var pre = opts.pre || {}, pl = e.id ? PLANOS[e.id] : null, K = opCartoes(), travada = !!(pl && pl.lancada), convAtual = e.id ? convDe('desp', e.id) : (pre.convenioId || '');
     var temC = K.length > 0 && CARTSQL !== false && !travada, noCartao = function (v) { return temC && v.meio === 'cartao'; };
     var cronExist = (e.cronograma || []).filter(function (x) { return x.status !== 'cancelled'; });
     function genCron(v) {
@@ -1660,7 +1694,8 @@ return Promise.all([rpc('v39_fin_source_pending', C({})), rpc('v39_fin_sources',
     var campos = [
       { k: 'descricao', l: 'Descrição', v: e.descricao || pre.descricao, req: true },
       { k: 'categoriaId', l: 'Conta contábil', t: 'select', o: opCats('expense'), v: e.categoriaId, req: true, h: 'A conta contábil da despesa vale também para o pagamento (saída).' }, avisoSemCodigo(),
-      { k: 'valor', l: 'Valor', t: 'money', v: e.valor || pre.valor, req: true },
+      { k: 'valor', l: 'Valor', t: 'money', v: e.valor || pre.valor, req: true }
+    ].concat(camposConv(convAtual, 'desp', function (v) { return v.categoriaId; }, function (v) { return v.valor; })).concat([
       { t: 'info', l: '<b>Será lançada em: ' + esc(visaoRot()) + '</b>' + (visaoCnpj() ? ' · CNPJ ' + esc(visaoCnpj()) : '') + '. Para lançar no outro CNPJ, feche e troque o seletor no topo do Financeiro.', vis: function () { return temInstituto(); } },
       { k: 'itens', t: 'itens', l: 'Itens comprados (para o estoque do Instituto)', o: prods, v: (e.id && ITENS[e.id]) ? ITENS[e.id].map(function (i) { return { produtoId: i.produtoId, qtd: i.qtd, valorUnit: i.valorUnit }; }) : [],
         h: 'Opcional. Informe o produto, a quantidade e o valor unitário comprados: na entrada do estoque, o Instituto já traz esses dados.', vis: function () { return visaoInst(); } },
@@ -1682,7 +1717,7 @@ return Promise.all([rpc('v39_fin_source_pending', C({})), rpc('v39_fin_sources',
       { k: 'linhaDigitavel', l: 'Linha digitável do boleto (opcional)' },
       { k: 'arq', l: 'Comprovante da compra / nota / boleto', t: 'file', h: e.comprovantePath ? 'Já existe um anexo nesta despesa. Envie outro só se quiser trocar.' : 'Obrigatório quando a despesa é no cartão de crédito. Nos demais casos, anexe se a configuração financeira exigir.' }, { k: 'obs', l: 'Observação', t: 'textarea', v: e.obs },
       { k: 'enviar', l: 'Já enviar para aprovação', t: 'check', v: !e.id }
-    ];
+    ]);
     form(e.id ? 'Editar despesa' : 'Nova despesa', campos, 'Salvar', function (v) {
       var id = null, nP = Math.max(1, Math.min(36, parseInt(v.nParc, 10) || 1)), cron = [];
       if (v.meio === 'cartao' && !v.arq && !e.comprovantePath) return Promise.reject(new Error('Anexe o comprovante da compra. Ele é exigido para lançar a despesa na fatura do cartão.'));
@@ -1707,6 +1742,8 @@ return Promise.all([rpc('v39_fin_source_pending', C({})), rpc('v39_fin_sources',
         var p = v.meio === 'cartao' ? rpc('v39_fin_expense_card_set', C({ p_expense_id: id, p_card_id: v.cartaoId, p_date: v.dataCompra, p_installments: n }))
           : (pl ? rpc('v39_fin_expense_card_set', C({ p_expense_id: id, p_card_id: null })) : Promise.resolve());
         return p.then(function () { return ''; }).catch(function (er) { return ' O cartão não ficou marcado: ' + traduz(er); });
+      }).then(function (aviso) {
+        return vincularConv('desp', id, convAtual, v).then(function (av2) { return (aviso || '') + av2; });
       }).then(function (aviso) {
         var s = (v.enviar && id && pode('financial.expenses.submit')) ? rpc('v39_fin_expense_submit', C({ p_id: id })).then(function () { return 'Despesa enviada para aprovação.'; }) : Promise.resolve('Despesa salva como rascunho.');
         return s.then(function (m) {
@@ -1733,13 +1770,15 @@ return Promise.all([rpc('v39_fin_source_pending', C({})), rpc('v39_fin_sources',
     var parcPre = parcelaPre || (cronAb[0] && cronAb[0].id) || '', parcObj = cronAb.filter(function (x) { return x.id === parcPre; })[0];
     var saldo = arr2(num(e.aprovado || e.valor) - num(e.pago)), cart = temCron ? [] : opCartoes(), pl = temCron ? null : PLANOS[id], doCartao = !!(pl && !pl.lancada && cart.some(function (c) { return c[0] === pl.cartaoId; }));
     var conta = function (v) { return v.meio !== 'cartao'; }, cartao2 = function (v) { return v.meio === 'cartao'; };
+    var gC = convPor(convDe('desp', id));
     form((doCartao ? 'Lançar na fatura · ' : 'Pagar · ') + e.descricao, [
+      { t: 'info', l: gC ? '<b>Despesa do convênio ' + esc(gC.concedente) + '.</b> ' + (gC.conta ? 'Pague pela conta do convênio (' + esc(gC.conta) + '): outra conta ou o cartão aparecem como divergência na prestação de contas.' : '') : '', vis: function () { return !!gC; } },
       { t: 'info', l: 'Aprovado ' + brl(e.aprovado || e.valor) + ' · já pago ' + brl(e.pago) + ' · a pagar ' + brl(saldo) + (doCartao ? ' · cartão ' + esc(cartaoNome(pl.cartaoId)) : '') },
       { k: 'data', l: doCartao ? 'Data da compra' : 'Data do pagamento', t: 'date', v: (doCartao && String(pl.data).slice(0, 10)) || hoje(), req: true }, { k: 'parcelaId', l: 'Parcela a pagar', t: 'select', o: cronAb.map(function (x) { return [x.id, x.n + 'ª · vence ' + dataBR(x.venc) + ' · ' + brl(x.valor)]; }), v: parcPre, req: true, vazio: false, vis: function () { return temCron; }, h: 'O valor do pagamento é o da parcela.' },
       { k: 'valor', l: 'Valor', t: 'money', v: temCron ? (parcObj ? parcObj.valor : '') : saldo, req: true,
         fill: temCron ? { dep: 'parcelaId', sempre: true, fn: function (v) { var x = cronAb.filter(function (y) { return y.id === v.parcelaId; })[0]; return x ? arr2(x.valor) : null; } } : undefined },
       { k: 'meio', l: 'Pagar com', t: 'select', o: [['conta', 'Conta / caixa']].concat(cart.length ? [['cartao', 'Cartão de crédito']] : []), v: doCartao ? 'cartao' : 'conta', vazio: false },
-      { k: 'contaId', l: 'Conta', t: 'select', o: opContas(true), vis: conta }, { k: 'formaId', l: 'Forma', t: 'select', o: opFormas(true), vis: conta },
+      { k: 'contaId', l: 'Conta', t: 'select', o: opContas(true), v: gC && gC.contaId ? gC.contaId : '', vis: conta }, { k: 'formaId', l: 'Forma', t: 'select', o: opFormas(true), vis: conta },
       { k: 'arq', l: 'Comprovante do pagamento', t: 'file', vis: conta, h: 'Obrigatório em conta/caixa.' },
       { k: 'cartaoId', l: 'Cartão', t: 'select', o: cart, v: doCartao ? pl.cartaoId : '', vis: cartao2 }, { k: 'parcelas', l: 'Parcelas no cartão', t: 'number', v: doCartao ? pl.parcelas : 1, vis: cartao2, h: 'No cartão lance o valor total; as parcelas vão para as próximas faturas.' },
       { t: 'preview', vis: cartao2, deps: ['data', 'valor', 'cartaoId', 'parcelas'], gen: previaFatura },
@@ -2386,9 +2425,10 @@ function itensAbertos(f) {
       { t: 'info', l: 'Cria os grupos de uma entidade sem fins lucrativos (ITG 2002) e coloca dentro deles as contas que já existem:<br>' +
         '<b>3 Receitas</b>: 3.1 Contribuições e doações · 3.2 Cultos e eventos · 3.3 Convênios, termos e subvenções · 3.9 Outras receitas<br>' +
         '<b>4 Despesas</b>: 4.1 Pessoal e encargos · 4.2 Administrativas e operacionais · 4.3 Cultos e eventos · 4.4 Projetos sociais e convênios · 4.5 Despesas financeiras<br>' +
-        'Nada é apagado e nenhum lançamento muda. Conta que já está num grupo fica onde está. Os códigos dos grupos são sugestão: confirme com o contador e ajuste em Editar.' }
+        'Também cria as contas finais que faltam: 3.3.01 Recursos de convênios e termos · 3.3.02 Subvenções e auxílios públicos · 4.1.01 Salários e encargos · 4.1.02 Prebenda e ajuda de custo pastoral · 4.4.01 Despesas de projetos e convênios · 4.5.02 Tarifas bancárias.<br>' +
+        'Nada é apagado e nenhum lançamento muda. Conta que já está num grupo fica onde está. Pode clicar de novo: só cria o que falta. Os códigos dos grupos são sugestão: confirme com o contador e ajuste em Editar.' }
     ], 'Criar', function () {
-      return rpc('v39_fin_plano_modelo', C({})).then(function (r) { r = r || {}; return 'Plano modelo: ' + num(r.grupos) + ' grupo(s) criado(s), ' + num(r.posicionadas) + ' conta(s) encaixada(s).'; });
+      return rpc('v39_fin_plano_modelo', C({})).then(function (r) { r = r || {}; return 'Plano modelo: ' + num(r.grupos) + ' grupo(s) e ' + num(r.contas) + ' conta(s) nova(s) criados, ' + num(r.posicionadas) + ' conta(s) encaixada(s).'; });
     });
   }
   function formFornec(f) {
@@ -2570,6 +2610,61 @@ function itensAbertos(f) {
 
   /* ───────────── CONVÊNIOS: lista, cadastro e prestação de contas (FIN-ALL-20) ───────────── */
   var GRANTS = [], GREP = null;   // GREP = prestação de contas aberta { g, de, ate, d }
+  /* PC-2: despesa/entrada com VERBA DE CONVÊNIO. GVINC = { despesas: {id: convenioId}, lancamentos: {id: convenioId} } (sem o SQL PC_2: semSql) */
+  var GVINC = null;
+  function convPrep() {
+    var ps = [];
+    if (!GRANTS.length && (pode('financial.book.view') || pode('financial.reports.view'))) ps.push(rpc('v39_fin_grants_list', C({})).then(function (l) { GRANTS = Array.isArray(l) ? l : []; }).catch(function () {}));
+    ps.push(rpc('v39_fin_grant_items_map', C({})).then(function (m) { GVINC = { despesas: (m && m.despesas) || {}, lancamentos: (m && m.lancamentos) || {} }; })
+      .catch(function () { GVINC = { despesas: {}, lancamentos: {}, semSql: true }; }));
+    return Promise.all(ps);
+  }
+  function convPor(id) { return id ? GRANTS.filter(function (g) { return g.id === id; })[0] || null : null; }
+  function convAtivos(atual) { return GRANTS.filter(function (g) { return emAndamento(g) || g.id === atual; }); }
+  function convRot(g) { return g.concedente + (g.numero ? ' nº ' + g.numero : '') + (g.disponivel != null ? ' · disponível ' + brl(g.disponivel) : ''); }
+  function convDe(tipo, id) { var m = GVINC && GVINC[tipo === 'ent' ? 'lancamentos' : 'despesas']; return (m && id && m[id]) || ''; }
+  function catNoConv(catId, g) { var l = (g && g.contasContabeis) || []; if (!l.length || !catId) return true; return l.some(function (k) { return ehDescendente(catId, k); }); }
+  // campos do formulário: tipo 'desp' | 'ent'; catDe(v) = conta contábil escolhida; valorDe(v) = valor do lançamento
+  function camposConv(atual, tipo, catDe, valorDe, visExtra) {
+    var lista = convAtivos(atual), ent = tipo === 'ent';
+    var mostra = function (v) { return lista.length > 0 && !(GVINC && GVINC.semSql) && (!visExtra || visExtra(v)); };
+    return [
+      { k: 'convenioId', l: ent ? 'É recurso de convênio?' : 'A verba sai de um convênio?', t: 'select', o: lista.map(function (g) { return [g.id, convRot(g)]; }), v: atual || '',
+        vazio: ent ? '— não, é recurso próprio —' : '— não, é verba própria —', vis: mostra,
+        h: ent ? 'Escolha o convênio se este dinheiro é repasse dele. A entrada aparece na prestação de contas.' : 'Escolha o convênio se esta despesa é paga com a verba dele. Ela entra no comprometido do convênio e na prestação de contas.' },
+      { t: 'preview', vis: function (v) { return mostra(v) && !!v.convenioId; }, gen: function (v) {
+        var g = convPor(v.convenioId); if (!g) return '';
+        var out = [], val = num(valorDe ? valorDe(v) : 0);
+        if (g.conta) out.push('Conta bancária do convênio: <b>' + esc(g.conta) + '</b>. ' + (ent ? 'Receba nela.' : 'Pague por ela') + ' — outra conta aparece como divergência na prestação de contas.');
+        if (!ent && g.disponivel != null) { var sobra = arr2(num(g.disponivel) - (atual === g.id ? 0 : val)); out.push('Disponível no convênio: ' + brl(g.disponivel) + (val > 0 && atual !== g.id ? ' · depois desta despesa: <b class="' + (sobra < 0 ? 'g2f-neg' : '') + '">' + brl(sobra) + '</b>' : '') + (sobra < 0 ? ' ⚠ acima do valor do convênio' : '')); }
+        if (!catNoConv(catDe(v), g)) out.push('⚠ A conta contábil escolhida <b>não é uma das contas do convênio</b>. Confira (Convênios › Editar mostra as contas dele).');
+        return out.join('<br>'); } },
+      { k: 'motivoConv', l: 'Motivo da troca ou retirada do convênio', t: 'textarea', req: true, vis: function (v) { return mostra(v) && !!atual && (v.convenioId || '') !== atual; }, h: 'Fica registrado no histórico (mínimo 5 letras).' }
+    ];
+  }
+  function vincularConv(tipo, id, atual, v, estrito) {
+    var novo = v.convenioId || '';
+    if (!id || novo === (atual || '') || (GVINC && GVINC.semSql)) return Promise.resolve('');
+    var p = { convenioId: novo || null, motivo: v.motivoConv || null }; p[tipo === 'ent' ? 'lancamentoId' : 'despesaId'] = id;
+    return rpc('v39_fin_grant_link', C({ p: p })).then(function (r) {
+      if (GVINC) { var m = GVINC[tipo === 'ent' ? 'lancamentos' : 'despesas']; if (novo) m[id] = novo; else delete m[id]; }
+      var g = convPor(novo); GRANTS = [];   // comprometido mudou: recarrega na próxima vez
+      return novo ? ' Vinculada ao convênio ' + (g ? g.concedente : '') + '.' + (r && r.contaForaDoConvenio ? ' Atenção: a conta contábil não é uma das contas do convênio.' : '') : ' Convênio retirado.';
+    }, function (er) { if (estrito) throw er; return ' ATENÇÃO: o convênio NÃO foi vinculado (' + traduz(er) + ').' + (tipo === 'ent' ? '' : ' Use o botão "Convênio" na despesa para tentar de novo.'); });
+  }
+  // botão "Convênio" da lista de despesas: vincula, troca ou retira (também para despesa já aprovada ou paga)
+  function formConvDesp(id) {
+    var e = despesa(id); if (!e) return;
+    return convPrep().then(function () {
+      var atual = convDe('desp', id);
+      if (!convAtivos(atual).length) return toast(GVINC && GVINC.semSql ? 'Falta rodar o SQL PC_2_convenio_vinculo_aplicar.sql no Supabase.' : 'Nenhum convênio em execução. Cadastre em Convênios.');
+      form('Convênio · ' + e.descricao, [{ t: 'info', l: 'Despesa de ' + brl(e.aprovado || e.valor) + (e.categoria ? ' · ' + esc(e.categoria) : '') + '.' }]
+        .concat(camposConv(atual, 'desp', function () { return e.categoriaId; }, function () { return e.aprovado || e.valor; })), 'Salvar', function (v) {
+        if ((v.convenioId || '') === (atual || '')) return 'Nada mudou.';
+        return vincularConv('desp', id, atual, v, true).then(function (m) { return m.trim(); });
+      });
+    });
+  }
   var ROT_CONV = {
     origem: { 'public': 'Recurso público', 'private': 'Recurso privado', 'international': 'Recurso internacional', 'other': 'Outra origem' },
     st: { draft: 'Rascunho', active: 'Em execução', reporting: 'Em prestação de contas', closed: 'Encerrado', cancelled: 'Cancelado' }
@@ -2609,6 +2704,7 @@ function itensAbertos(f) {
         stat('Recebido', brl(rec), 'in', 'down', 'g2f-pos') + stat('Gasto', brl(gasto), 'out', 'up', 'g2f-neg', val > 0 ? pc + '% do valor' : '') +
         stat('Saldo na conta', brl(g.saldo), 'pri', 'wallet', num(g.saldo) < 0 ? 'g2f-neg' : '') + '</div>' +
       (val > 0 ? '<div class="g2f-prog" role="img" aria-label="' + pc + '% do valor gasto"><i style="width:' + pc + '%"></i></div>' : '') +
+      (g.comprometido != null && (num(g.despesasVinculadas) > 0 || num(g.comprometido) > 0) ? '<div class="g2f-note" style="margin-top:6px">Despesas vinculadas: <b>' + num(g.despesasVinculadas) + '</b> · comprometido <b>' + brl(g.comprometido) + '</b>' + (g.disponivel != null ? ' · disponível <b class="' + (num(g.disponivel) < 0 ? 'g2f-neg' : '') + '">' + brl(g.disponivel) + '</b>' : '') + '</div>' : '') +
       (al ? '<div style="margin-top:8px">' + al + '</div>' : '') + '</div>';
   }
   function htmlConv() {
@@ -2726,14 +2822,30 @@ function itensAbertos(f) {
       if (num(DV.contaForaDoConvenio) > 0) h += '<div class="aviso">⚠ <b>' + num(DV.contaForaDoConvenio) + ' lançamento(s) na conta bancária do convênio com conta contábil de fora do convênio</b> (marcados abaixo). Confira se a conta contábil está certa ou se o lançamento é mesmo do convênio.</div>';
       if (num(DV.foraDaConta) > 0) h += '<div class="aviso">⚠ <b>' + num(DV.foraDaConta) + ' lançamento(s) com conta contábil do convênio feitos por OUTRA conta bancária.</b> Eles não entram nos totais desta prestação (o recurso do convênio deve passar pela conta própria). Veja a lista abaixo.</div>';
     }
+    var RV = R.resumoVinculo, DVL = R.despesasVinculadas || [], EVL = R.entradasVinculadas || [];
+    if (RV) {
+      if (num(DV.vinculoForaDaConta) > 0) h += '<div class="aviso">⚠ <b>' + num(DV.vinculoForaDaConta) + ' pagamento(s)/recebimento(s) de lançamentos vinculados ao convênio passaram por OUTRA conta bancária</b> (listados abaixo, marcados “vinculado”). Transfira para a conta do convênio ou justifique na prestação.</div>';
+      h += '<div class="card"><h3>Despesas e entradas vinculadas ao convênio</h3><div class="g2f-ext c4" role="group" aria-label="Resumo das despesas vinculadas">' +
+        '<div class="c"><small>Valor do convênio</small><b>' + (num(c.valor) > 0 ? brl(c.valor) : '—') + '</b></div>' +
+        '<div class="c"><small>Comprometido (despesas vinculadas)</small><b>' + brl(RV.comprometido) + '</b></div>' +
+        '<div class="c"><small>Pago · a pagar</small><b>' + brl(RV.pago) + '</b><span class="g2f-mut"> · ' + brl(RV.aPagar) + '</span></div>' +
+        '<div class="c big"><small>Disponível</small><b class="' + (num(RV.disponivel) < 0 ? 'g2f-neg' : '') + '">' + (RV.disponivel == null ? '—' : brl(RV.disponivel)) + '</b></div></div>' +
+        (DVL.length ? '<div class="g2f-tw"><table class="g2f-tbl"><thead><tr><th>Vencimento</th><th>Despesa</th><th>Conta contábil</th><th>Situação</th><th class="r">Valor</th><th class="r">Pago</th></tr></thead><tbody>' +
+          DVL.map(function (d) { return '<tr><td>' + (d.vencimento ? dataBR(d.vencimento) : '—') + '</td><td>' + esc(d.descricao) + (d.fornecedor ? '<div class="g2f-mut">' + esc(d.fornecedor) + '</div>' : '') + '</td><td>' + esc(d.categoria) + (d.contabil ? ' (' + esc(d.contabil) + ')' : '') + (d.noConvenio === false ? ' <span class="pill p-amarelo">conta fora do convênio</span>' : '') + '</td>' +
+            '<td>' + esc((ROT.desp[d.status] || d.status || '').toLowerCase()) + (d.cartao ? ' <span class="pill p-cinza">cartão</span>' : '') + (d.foraDaConta ? ' <span class="pill p-amarelo">pago por outra conta' + (d.contas ? ': ' + esc(d.contas) : '') + '</span>' : '') + '</td>' +
+            '<td class="r">' + brl(d.valor) + '</td><td class="r">' + brl(d.pago) + '</td></tr>'; }).join('') + '</tbody></table></div>'
+          : '<div class="empty">Nenhuma despesa vinculada. Ao lançar a despesa, escolha o convênio em “A verba sai de um convênio?” (ou use o botão Convênio na despesa).</div>') +
+        (EVL.length ? '<div class="g2f-tw" style="margin-top:8px"><table class="g2f-tbl"><thead><tr><th>Data</th><th>Entrada vinculada</th><th>Conta bancária</th><th class="r">Valor</th></tr></thead><tbody>' +
+          EVL.map(function (x) { return '<tr><td>' + dataBR(x.data) + '</td><td>' + esc(x.descricao) + '</td><td>' + esc(x.conta || '—') + (x.foraDaConta ? ' <span class="pill p-amarelo">fora da conta do convênio</span>' : '') + '</td><td class="r">' + brl(x.valor) + '</td></tr>'; }).join('') + '</tbody></table></div>' : '') + '</div>';
+    }
     var movFora = function (m) { return m.noConvenio === false && (m.tipo === 'income' || m.tipo === 'expense'); };
     h += '<div class="card"><h3>Receitas por conta contábil</h3><div class="g2f-tw"><table class="g2f-tbl"><thead><tr><th>Código</th><th>Conta</th><th class="r">Valor</th></tr></thead><tbody>' + tabCat(rec, false) + '</tbody></table></div></div>';
     h += '<div class="card"><h3>Despesas por conta contábil</h3><div class="g2f-tw"><table class="g2f-tbl"><thead><tr><th>Código</th><th>Conta</th><th class="r">Valor</th></tr></thead><tbody>' + tabCat(des, true) + '</tbody></table></div></div>';
     h += '<div class="card"><h3>Movimentação da conta (' + mov.length + ')</h3>' + (mov.length ? '<div class="g2f-tw"><table class="g2f-tbl"><thead><tr><th>Data</th><th>Descrição</th><th>Conta contábil</th><th class="r">Valor</th><th>Comp.</th></tr></thead><tbody>' +
-      mov.map(function (m) { var cod = m.contabil || codPor[m.categoria]; return '<tr><td>' + dataBR(m.data) + '</td><td>' + esc(m.descricao) + (m.favorecido ? '<div class="g2f-mut">' + esc(m.favorecido) + '</div>' : '') + '</td><td>' + esc(m.categoria) + (cod ? ' (' + esc(cod) + ')' : '') + (movFora(m) ? ' <span class="pill p-amarelo">⚠ fora do convênio</span>' : '') + '</td>' +
+      mov.map(function (m) { var cod = m.contabil || codPor[m.categoria]; return '<tr><td>' + dataBR(m.data) + '</td><td>' + esc(m.descricao) + (m.favorecido ? '<div class="g2f-mut">' + esc(m.favorecido) + '</div>' : '') + '</td><td>' + esc(m.categoria) + (cod ? ' (' + esc(cod) + ')' : '') + (movFora(m) ? ' <span class="pill p-amarelo">⚠ fora do convênio</span>' : '') + (m.vinculado ? ' <span class="pill p-verde">vinculado</span>' : '') + '</td>' +
         '<td class="r ' + (num(m.valor) < 0 ? 'g2f-neg' : 'g2f-pos') + '">' + brl(m.valor) + '</td><td>' + (m.comprovante ? '✔' : '—') + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<div class="empty">Sem movimentos no período.</div>') + '</div>';
     if (fora.length) h += '<div class="card"><h3>Lançamentos do convênio feitos por outra conta (' + fora.length + ')</h3><div class="g2f-tw"><table class="g2f-tbl"><thead><tr><th>Data</th><th>Descrição</th><th>Conta contábil</th><th>Conta bancária</th><th class="r">Valor</th><th>Comp.</th></tr></thead><tbody>' +
-      fora.map(function (m) { return '<tr><td>' + dataBR(m.data) + '</td><td>' + esc(m.descricao) + '</td><td>' + esc(m.categoria) + (m.contabil ? ' (' + esc(m.contabil) + ')' : '') + '</td><td>' + esc(m.conta || '—') + '</td><td class="r ' + (num(m.valor) < 0 ? 'g2f-neg' : 'g2f-pos') + '">' + brl(m.valor) + '</td><td>' + (m.comprovante ? '✔' : '—') + '</td></tr>'; }).join('') +
+      fora.map(function (m) { return '<tr><td>' + dataBR(m.data) + '</td><td>' + esc(m.descricao) + (m.vinculado ? ' <span class="pill p-verde">vinculado</span>' : '') + '</td><td>' + esc(m.categoria) + (m.contabil ? ' (' + esc(m.contabil) + ')' : '') + '</td><td>' + esc(m.conta || '—') + '</td><td class="r ' + (num(m.valor) < 0 ? 'g2f-neg' : 'g2f-pos') + '">' + brl(m.valor) + '</td><td>' + (m.comprovante ? '✔' : '—') + '</td></tr>'; }).join('') +
       '</tbody></table></div><div class="g2f-note">Fora dos totais acima. Para entrar na prestação, o pagamento/recebimento precisa passar pela conta bancária do convênio (ou ser transferido para ela).</div></div>';
     h += '<div class="card" style="padding-top:26px"><div style="display:flex;gap:28px;flex-wrap:wrap"><div style="flex:1 1 220px;border-top:1px solid #14161A;padding-top:6px;font-size:12px">' + esc(e.presidente || 'Responsável legal') + '<br><span class="g2f-mut">Assinatura do responsável</span></div>' +
       '<div style="flex:1 1 160px;border-top:1px solid #14161A;padding-top:6px;font-size:12px">Local e data<br><span class="g2f-mut">&nbsp;</span></div></div></div>';
@@ -2933,6 +3045,7 @@ function itensAbertos(f) {
         });
       }
       case 'novaCat': return formCat(null);
+      case 'convDesp': return formConvDesp(v);
       case 'novoGrupoCat': return formCat(null, true);
       case 'planoModelo': return planoModelo();
       case 'editCat': return formCat(achar(S.cat.categorias, v));
@@ -3144,5 +3257,6 @@ function itensAbertos(f) {
     formDesp: formDesp, pagarDesp: pagarDesp, tPagar: tPagar, previaFatura: previaFatura, linhaDesp: linhaDesp, formCorrDesp: formCorrDesp, editMov: editMov, interceptForm: null, formPagarFatura: formPagarFatura, estornarFatura: estornarFatura, itensAbertos: itensAbertos, proximaFatura: proximaFatura, resolverFone: resolverFone, foneDe: foneDe, htmlCamp: htmlCamp, zap: zap, ofertarRecibo: ofertarRecibo, resolverFonesCamp: resolverFonesCamp, totaisCaixa: totaisCaixa, despesasPrevistas: despesasPrevistas, carregarAPagar: carregarAPagar, desenharLivro: desenharLivro, htmlDetCartao: htmlDetCartao, linhaCartao: linhaCartao, parcelasPrevistas: parcelasPrevistas, formImportarFatura: formImportarFatura, parseFatura: parseFatura, conferirFatura: conferirFatura, mesFechamento: mesFechamento, vencFatura: vencFatura,
     previstasCartao: previstasCartao, setPlanos: function (p) { PLANOS = p; }, setFatimp: function (f) { FATIMP = f; }, setFats: function (f) { FATS = f; }, setDesp: function (d) { DESP = d; }, clique: clique, tConv: tConv, formConv: formConv, setGrants: function (g) { GRANTS = g; }, getGrep: function () { return GREP; },
     arvoreCats: arvoreCats, opCats: opCats, opGrupos: opGrupos, ancestrais: ancestrais, formCat: formCat, htmlCatsModelo: htmlCatsModelo, htmlConv: htmlConv,
-    setGrep: function (g) { GREP = g; }, desenharRelConv: desenharRelConv };
+    setGrep: function (g) { GREP = g; }, desenharRelConv: desenharRelConv,
+    camposConv: camposConv, setGvinc: function (g) { GVINC = g; }, linhaDesp: linhaDesp, formDespBase: formDespBase, pagarDesp: pagarDesp, setDespLista: function (d) { DESP = d; } };
 })();
