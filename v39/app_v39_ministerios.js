@@ -1,4 +1,5 @@
-/* 2Gather v39 · Ministérios · MIN-9
+/* 2Gather v39 · Ministérios · MIN-10
+   MIN-10: G2_MIN._u.fotoUrl (fotos já carregadas na Agenda, usadas nas salas do evento).
    MIN-9: botão "Retirar" na Equipe (encerra a participação com motivo; no Kids, sai das escalas futuras — KIDS_12).
    MIN-8: Agenda em cards (dia, mês e dia da semana, "amanhã/daqui a N dias", abas Próximas/Anteriores); no Kids, a escala de
           cada evento no card (fotos com a cor da resposta, confirmados/escalados, alerta < 24 h, salas sem professor, trocas) — KIDS_11.
@@ -21,7 +22,7 @@
    Diagnóstico no Console: G2_MIN.versao, G2_MIN._s */
 (function () {
   'use strict';
-  var VERSAO = 'MIN-9';
+  var VERSAO = 'MIN-10';
   if (window.G2_MIN) return;
   var M = window.G2_MIN = { versao: VERSAO };
   console.info('[2Gather] ministerios ' + VERSAO);
@@ -694,7 +695,7 @@
   M._t = { traduz: traduz, corpo: corpo, telaLista: telaLista, telaMinisterio: telaMinisterio };
   // KIDS-2: utilitários para o módulo app_v39_kids.js (mesma conexão, modal e toast)
   M._u = { rpc: rpc, cliente: cliente, toast: toast, modal: modal, fecharModal: fecharModal, traduz: traduz, pintar: pintar,
-           igrejaId: function () { return S.igreja; }, minAtual: minAtual, eventos: function (id) { return S.eventos[id]; }, membros: function (id) { return S.membros[id]; } };
+           igrejaId: function () { return S.igreja; }, minAtual: minAtual, eventos: function (id) { return S.eventos[id]; }, membros: function (id) { return S.membros[id]; }, fotoUrl: function (id) { return AG.fotos[id]; } };
   // KIDS-5: abrir um ministério numa aba (volta da tela de visitante)
   M.ajustarEvento = function (id) { ACOES.ajustarEv(id); };   // MIN-7: volta da sala/professores para o evento
   M.abrir = function (id, aba) { var g = G(); if (g.irAba) g.irAba('ministerios'); S.atual = id; S.aba = aba || 'agenda'; setTimeout(function () { pintar(); carregarDetalhe(id, true); }, 50); };
