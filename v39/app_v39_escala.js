@@ -1,4 +1,5 @@
-/* 2Gather v39 · Avisos pessoais (sino) e "Minhas escalas" · ESCALA-1 (KIDS_4)
+/* 2Gather v39 · Avisos pessoais (sino) e "Minhas escalas" · ESCALA-2 (KIDS_4)
+   ESCALA-2: "Minhas escalas" fica sempre visível no Início para quem é da equipe do Kids (ou líder/admin), mesmo sem escala.
    Carregar DEPOIS do app.js, do app_v39_ministerios.js e do app_v39_kids.js. Requer KIDS_4_escala_aplicar.sql.
    - Sino no topo com o número de avisos não lidos (app.notifications da própria conta); a lista marca como lido.
    - "Minhas escalas" no Início: Confirmo / Não posso (motivo) / Passar para outro voluntário da equipe do Kids.
@@ -7,7 +8,7 @@
    O WhatsApp continua pelo wa.me do líder (na sala do culto, módulo Kids); depois vira mensagem automática pela API. */
 (function () {
   'use strict';
-  var VERSAO = 'ESCALA-1';
+  var VERSAO = 'ESCALA-2';
   if (window.G2_ESCALA) return;
   console.info('[2Gather] escala ' + VERSAO);
 
@@ -33,14 +34,17 @@
     return m < 1 ? 'agora' : m < 60 ? 'há ' + m + ' min' : m < 1440 ? 'há ' + Math.round(m / 60) + ' h' : diaHora(iso);
   }
 
-  var E = { n: 0, itens: [], esc: null, em: 0, carregando: false, desligado: false, inicio: false };
+  var E = { n: 0, itens: [], esc: null, kids: [], kidsEm: 0, em: 0, carregando: false, desligado: false, inicio: false };
 
   function carregar() {
     if (!v39() || !U() || E.desligado || E.carregando || !U().igrejaId || !(window.G2_V39 || {}).client) return Promise.resolve();
     E.carregando = true;
     return Promise.all([
       rpc('v39_my_notifications', { p_limite: 30 }).then(function (r) { E.n = (r && r.naoLidas) || 0; E.itens = (r && r.itens) || []; }),
-      rpc('v39_kids_my_schedule', {}).then(function (r) { E.esc = r || null; })
+      rpc('v39_kids_my_schedule', {}).then(function (r) { E.esc = r || null; }),
+      (Date.now() - E.kidsEm < 600000 ? Promise.resolve() : rpc('v39_min_list', {}).then(function (l) {   // ESCALA-2: Kids em que a pessoa tem papel
+        E.kids = (Array.isArray(l) ? l : []).filter(function (m) { return m.tipo === 'kids' && m.status === 'active' && m.meuPapel; }); E.kidsEm = Date.now();
+      }).catch(function () { /* sem a lista, o card só aparece com escala */ }))
     ]).catch(function (e) { if (semFuncao(e)) E.desligado = true; else console.warn('[2Gather][escala]', e); })
       .then(function () { E.carregando = false; E.em = Date.now(); pintarSino(); pintarCard(); });
   }
@@ -92,8 +96,15 @@
   function card() {
     var r = E.esc; if (!r) return '';
     var es = r.escalas || [], pm = r.paraMim || [], au = r.autorizar || [];
-    if (!es.length && !pm.length && !au.length) return '';
+    var vazio = !es.length && !pm.length && !au.length;
+    if (vazio && !E.kids.length) return '';
     var h = '<div class="card" style="margin:10px 0 12px;padding:10px 14px"><div class="nm" style="font-size:15px;margin-bottom:4px">Minhas escalas · Kids</div>';
+    if (vazio) {
+      var lid = E.kids.some(function (m) { return m.meuPapel === 'admin' || m.meuPapel === 'leader'; });
+      return h + '<div class="sb">Nenhuma escala nos próximos 60 dias. Quando o líder escalar você numa sala, o aviso chega no sino e você confirma aqui.' +
+        (lid ? ' Para escalar: Kids → Entrada e saída → Salas deste culto → Professores.' : '') + '</div>' +
+        (lid ? '<button class="btn gh sm" style="margin-top:8px" data-e="abrirKids" data-v="' + esc(E.kids[0].id) + '">Abrir o Kids</button>' : '') + '</div>';
+    }
     au.forEach(function (t) {
       h += '<div style="padding:8px 0;border-top:1px solid var(--ln,#eceef1)">' + pill('troca para autorizar', '#6c4bd1') +
         '<div style="margin-top:4px"><b>' + esc(t.de) + '</b> → <b>' + esc(t.para) + '</b></div><div class="sb">' + rotulo(t) + (t.motivo ? ' · motivo: ' + esc(t.motivo) : '') + '</div>' +
@@ -158,6 +169,7 @@
     }).catch(falhou);
   }
   var ACOES = {
+    abrirKids: function (id) { if (window.G2_MIN && G2_MIN.abrir) G2_MIN.abrir(id, 'sala'); },
     sino: function () { if (Date.now() - E.em > 15000) carregar().then(listaAvisos); else listaAvisos(); },
     lerTodos: function () { lerAviso(null).then(listaAvisos); },
     abrirAviso: abrirAviso,
