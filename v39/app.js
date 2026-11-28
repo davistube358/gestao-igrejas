@@ -1114,6 +1114,7 @@ function limparSessao() {
   cfg = { url: url }; salvarCfg();
   db = { pessoas: [], encontros: [], gcs: [], equipe: [], pendentes: 0 }; fotos = {};
   lsDel(K_DB); lsDel(K_FOTOS);
+  try { fotosP = {}; lsDel(K_FOTOSP); } catch (e) { /* cache de fotos de pessoas: AUD-1 */ }
 }
 function sessaoExpirada() {
   limparSessao(); mostrarTela('s-login');
@@ -8469,6 +8470,10 @@ if (!(window.APP_CONFIG && APP_CONFIG.build === 'P1.2')) {
     if (aplicou) { avisoNovoEndereco(); if (cfg.token) render(); return; }
     return chamarBruto({ acao: 'configPublica' }).then(function (r) { if (r && r.ok) return atualizarConfig(r.config); }).then(function (m) { avisoNovoEndereco(); if (m && cfg.token) render(); });
   }).catch(function () {});
+} else {
+  // AUD-1: na v39 o Apps Script não é chamado; nome, cor e imagens da tela de login vêm da Edge auth ('configPublica').
+  // Sem a Edge nova (ou sem configuração salva), fica o que já estava guardado no aparelho.
+  v39ConfigPublica().then(function (aplicou) { if (aplicou) { avisoNovoEndereco(); if (cfg.token) render(); } }).catch(function () {});
 }
 if (cfg.token && cfg.usuario) {
   if (cfg.token === 'supabase-v39') v39AplicarContextoIgreja(cfg.usuario, window.G2_V39 && G2_V39.runtime && G2_V39.runtime.state ? G2_V39.runtime.state.context : null);
@@ -8496,7 +8501,7 @@ window.__gc = { db: function () { return db; }, cfg: function () { return cfg; }
 (function () {
   'use strict';
   if (window.G2_BUILD) return;                       // evita carregar duas vezes
-  var BUILD = 'KIDS-5';   // KIDS-5: família (vínculos) na ficha da pessoa; tela de visitante volta ao Kids; __gc.pode/pessoas. KIDS-3: culto mostra "Kids: N" (soma no total exibido; visitantes do Kids nos visitantes) e avisa ao encerrar quem falta retirar. KIDS-2: crianças do Kids (canal kids) fora da fila de visita e do direcionamento a GC; aba Crianças no Kids (app_v39_kids.js). MIN-1: módulo Ministérios (aba ministerios desenhada pelo app_v39_ministerios.js; eventos de ministério fora da lista de cultos). BAI-1: bairros pela base dos Correios (CEP trava o bairro; lista da cidade montada pelos CEPs). FIL-2: trocar de igreja/filial pelo menu do usuário (só master). FIL-1: filiais (derivações do CNPJ) como igrejas no app; troca de igreja. CAD-1: cadastro legal único (Igreja e Instituto em Configurações); CEP sem bairro busca na cidade da igreja. CONFIG-1b: editor da política já vem com o modelo v1 quando não há versão publicada. CONFIG-1: Configurações da igreja gravadas no Supabase (logo/ícone no Storage; encarregado em 3 campos). Antes: SYNC-V39-27   // SYNC-V39-27: checagem de duplicado no cadastro na v39; perfil sem lista de pessoas/cultos não repete chamadas; foto nova avisa o Instituto; sem Encerrar antes do dia (TRAVA24_2). SYNC-V39-26: TRAVA-1 (encerrar encontro do GC/culto; edição travada 24h depois; pastor reabre). SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
+  var BUILD = 'AUD-1';   // AUD-1: logout limpa o cache de fotos de pessoas; tela de login pela Edge auth na v39. Antes: KIDS-5   // KIDS-5: família (vínculos) na ficha da pessoa; tela de visitante volta ao Kids; __gc.pode/pessoas. KIDS-3: culto mostra "Kids: N" (soma no total exibido; visitantes do Kids nos visitantes) e avisa ao encerrar quem falta retirar. KIDS-2: crianças do Kids (canal kids) fora da fila de visita e do direcionamento a GC; aba Crianças no Kids (app_v39_kids.js). MIN-1: módulo Ministérios (aba ministerios desenhada pelo app_v39_ministerios.js; eventos de ministério fora da lista de cultos). BAI-1: bairros pela base dos Correios (CEP trava o bairro; lista da cidade montada pelos CEPs). FIL-2: trocar de igreja/filial pelo menu do usuário (só master). FIL-1: filiais (derivações do CNPJ) como igrejas no app; troca de igreja. CAD-1: cadastro legal único (Igreja e Instituto em Configurações); CEP sem bairro busca na cidade da igreja. CONFIG-1b: editor da política já vem com o modelo v1 quando não há versão publicada. CONFIG-1: Configurações da igreja gravadas no Supabase (logo/ícone no Storage; encarregado em 3 campos). Antes: SYNC-V39-27   // SYNC-V39-27: checagem de duplicado no cadastro na v39; perfil sem lista de pessoas/cultos não repete chamadas; foto nova avisa o Instituto; sem Encerrar antes do dia (TRAVA24_2). SYNC-V39-26: TRAVA-1 (encerrar encontro do GC/culto; edição travada 24h depois; pastor reabre). SYNC-V39-25: INST-9 (agenda do Instituto navega por semana, passadas e futuras). SYNC-V39-24: QA-63R (pessoa restringida/anonimizada fora das listas e travada na edição). SYNC-V39-23: LGPD-1 (Build 63: aceite, política, anonimização e auditoria pelo Supabase)
   window.G2_BUILD = BUILD;
   console.info('[2Gather] versão ' + BUILD);
 
