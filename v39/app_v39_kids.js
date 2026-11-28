@@ -1,4 +1,5 @@
-/* 2Gather v39 · Kids · KIDS-10
+/* 2Gather v39 · Kids · KIDS-11
+   KIDS-11: ao salvar professores, o sino e Minhas escalas atualizam na hora (quem se escala vê o aviso sem esperar).
    KIDS-10: saiu o botão "Salas deste culto" de Entrada e saída (a função fica no evento da Agenda), a pedido do Diogo.
    KIDS-9: salas e escala dos professores dentro do evento da Agenda (Ajustar/Editar evento); K.blocoEvento.
    KIDS-8: escala com confirmação (status de cada professor na sala, "sem resposta" a menos de 24 h, WhatsApp do líder
@@ -24,7 +25,7 @@
    Diagnóstico no Console: G2_KIDS.versao, G2_KIDS._s */
 (function () {
   'use strict';
-  var VERSAO = 'KIDS-10';
+  var VERSAO = 'KIDS-11';
   if (window.G2_KIDS) return;
   var K = window.G2_KIDS = { versao: VERSAO };
   console.info('[2Gather] kids ' + VERSAO);
@@ -768,7 +769,7 @@
     var prof = [].slice.call(document.querySelectorAll('.kp-sel:checked')).map(function (c) {
       var f = document.querySelector('.kp-fun[data-p="' + c.value + '"]'); return { pessoaId: c.value, funcao: f ? f.value : 'professor' }; });
     rpc('v39_kids_event_room_staff_set', { p: { ministerioId: S.min, salaId: salaId, professores: prof } })
-      .then(function () { toast('Professores salvos.'); return carregarSalasEvento().then(voltarSalas); }).catch(function (e) { toast(traduz(e), true); });
+      .then(function () { toast('Professores salvos.'); if (window.G2_ESCALA && G2_ESCALA.recarregar) G2_ESCALA.recarregar(); return carregarSalasEvento().then(voltarSalas); }).catch(function (e) { toast(traduz(e), true); });
   }
   function carregarSalasEvento() {
     if (!SALA.ev) return Promise.resolve();
