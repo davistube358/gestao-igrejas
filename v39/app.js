@@ -1294,6 +1294,7 @@ function render() {
   setTimeout(desenharMapa, 0);
   pintarStatus();
   garantirBotaoUsuario();
+  if (window.G2_ESCALA) { try { G2_ESCALA.aposRender(cfg.aba === inicioId()); } catch (eE) { /* segue */ } }   // KIDS-8: sino e Minhas escalas
 }
 
 /* ═══════════════════ GERENCIADOR ═══════════════════ */

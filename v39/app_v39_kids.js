@@ -1,4 +1,6 @@
-/* 2Gather v39 · Kids · KIDS-7
+/* 2Gather v39 · Kids · KIDS-8
+   KIDS-8: escala com confirmação (status de cada professor na sala, "sem resposta" a menos de 24 h, WhatsApp do líder
+           registrado); quem retira precisa ter mais de 12 anos (13 ou mais). Sino e "Minhas escalas": app_v39_escala.js.
    KIDS-7: nascimento digitado como dd/mm/aaaa (o campo de data vinha vazio ao salvar em alguns aparelhos); parentesco da
            criança deduzido do parentesco do responsável e do sexo (sem perguntar dos dois lados).
    KIDS-6: "Posição na lista" explicada na sala; mensagem quando a criança já está em outro culto/sala no mesmo horário (KIDS_6).
@@ -11,7 +13,7 @@
            Requer sql/KIDS_3_entrada_aplicar.sql.
    Arquivo NOVO. Carregar DEPOIS do app_v39_ministerios.js (MIN-3+). Requer no Supabase: sql/KIDS_2_familias_aplicar.sql.
    Aba "Crianças" do ministério Kids:
-   - Famílias: responsável -> criança -> quem pode retirar (12 anos ou mais). Base única de pessoas (busca antes de cadastrar).
+   - Famílias: responsável -> criança -> quem pode retirar (mais de 12 anos). Base única de pessoas (busca antes de cadastrar).
    - Foto do rosto (câmera do celular) da criança e de quem retira; exige a autorização (kids_care) da pessoa.
    - Autorização do responsável pela criança (LGPD); adulto autoriza por si. Revogar exige motivo.
    - Ficha da criança (alergias, doenças, restrições, medicamentos): cifrada no banco; cada abertura fica na auditoria.
@@ -20,7 +22,7 @@
    Diagnóstico no Console: G2_KIDS.versao, G2_KIDS._s */
 (function () {
   'use strict';
-  var VERSAO = 'KIDS-7';
+  var VERSAO = 'KIDS-8';
   if (window.G2_KIDS) return;
   var K = window.G2_KIDS = { versao: VERSAO };
   console.info('[2Gather] kids ' + VERSAO);
@@ -46,10 +48,13 @@
     KIDS_PHONE_REQUIRED: 'Informe o WhatsApp do responsável.', KIDS_PHONE_INVALID: 'WhatsApp inválido: use DDD + número.',
     KIDS_BIRTH_REQUIRED: 'Informe a data de nascimento.', KIDS_BIRTH_INVALID: 'A data de nascimento está no futuro.',
     KIDS_AGE_OVER: 'A criança já passou da idade do Kids.', KIDS_AGE_UNDER: 'A criança ainda não completou a idade de saída do Kids.',
-    KIDS_PICKUP_AGE: 'Quem retira precisa ter 12 anos ou mais.', KIDS_KINSHIP_INVALID: 'Grau de parentesco inválido.', KIDS_CHILD_AGE: 'Criança do Kids: menos de 12 anos e com data de nascimento.',
+    KIDS_PICKUP_AGE: 'Quem retira (ou é responsável) precisa ter mais de 12 anos.', KIDS_KINSHIP_INVALID: 'Grau de parentesco inválido.', KIDS_CHILD_AGE: 'Criança do Kids: menos de 12 anos e com data de nascimento.',
     KIDS_ROOM_AGE_INVALID: 'Faixa de idade inválida (anos até 18; meses até 48).', KIDS_ROOM_DUPLICATE: 'Já existe sala com este nome.', KIDS_ROOM_NOT_FOUND: 'Sala não encontrada ou fechada.',
     KIDS_ROOM_HAS_CHILDREN: 'Há crianças nesta sala: troque-as de sala antes de fechar.', KIDS_STAFF_NOT_MEMBER: 'O professor precisa estar na equipe ativa do Kids.', KIDS_STAFF_NO_LOGIN: 'Só quem tem acesso ao app pode ser escalado.',
     KIDS_ROOM_NAME_REQUIRED: 'Informe o nome da sala.',
+    KIDS_STAFF_NOT_FOUND: 'Escala não encontrada (talvez já tenha sido alterada).', KIDS_STATUS_INVALID: 'Resposta inválida.',
+    KIDS_TRANSFER_TARGET_INVALID: 'Escolha outra pessoa da equipe do Kids com acesso ao app (e que não esteja nesta sala).', KIDS_TRANSFER_PENDING: 'Já existe um pedido de troca em andamento para esta escala.',
+    KIDS_TRANSFER_NOT_FOUND: 'Pedido de troca não encontrado ou já respondido.', KIDS_TRANSFER_NOT_READY: 'Quem recebe ainda não aceitou a troca.',
     KIDS_CHECKIN_CONFLICT: 'A criança já está em outro culto ou sala neste horário (ou ainda não foi retirada do anterior).', KIDS_CONSENT_REQUIRED: 'Registre antes a autorização do responsável.',
     KIDS_GUARDIAN_REQUIRED: 'Escolha o responsável que autoriza.', KIDS_GUARDIAN_INVALID: 'Quem autoriza precisa ser responsável na mesma família.',
     KIDS_FAMILY_NAME_REQUIRED: 'Informe o nome da família.', KIDS_FAMILY_INACTIVE: 'Família inativa.', KIDS_PERSON_INVALID: 'Esta pessoa não pode ser usada.',
@@ -228,7 +233,7 @@
             : '<div><label>WhatsApp' + (S.form.papel === 'responsavel' ? ' *' : '') + '</label><input id="km-fone" inputmode="tel" placeholder="(11) 98888-7777" value="' + esc(p && p.whatsapp ? fone(p.whatsapp) : '') + '"></div>') + '</div>' +
       '</div>' +
       '<label>Grau de parentesco</label>' + selectParentesco('km-par', S.form.papel, p && p.parentesco) +
-      (ehCr ? '' : '<label><input type="checkbox" id="km-retira"' + (!p || p.podeRetirar ? ' checked' : '') + ' style="width:auto;margin-right:6px">Pode retirar a criança (12 anos ou mais, com foto)</label>' +
+      (ehCr ? '' : '<label><input type="checkbox" id="km-retira"' + (!p || p.podeRetirar ? ' checked' : '') + ' style="width:auto;margin-right:6px">Pode retirar a criança (mais de 12 anos, com foto)</label>' +
         '<label><input type="checkbox" id="km-princ"' + (p && p.contatoPrincipal ? ' checked' : '') + ' style="width:auto;margin-right:6px">Contato principal (recebe o WhatsApp da entrada)</label>') +
       (!podeEditarDados ? '<div class="sb">Cadastro geral da igreja: aqui só se completa o que falta (nascimento, WhatsApp).</div>' : '') +
       '<div class="gap"></div><button class="btn pr" data-k="salvarMembro">Salvar</button>' +
@@ -486,7 +491,7 @@
     if (String(q || '').trim().length < 2) { res.innerHTML = ''; return; }
     S.tBase = setTimeout(function () {
       rpc('v39_kids_people_search', { p_ministry_id: S.min, p_q: q }).then(function (l) {
-        var r = $(campo + '-res'); if (!r) return; l = (l || []).filter(function (x) { return x.idade == null || x.idade >= 12; });
+        var r = $(campo + '-res'); if (!r) return; l = (l || []).filter(function (x) { return x.idade == null || x.idade >= 13; });
         r.innerHTML = l.length ? '<div class="card" style="padding:2px 12px;margin:4px 0">' + l.map(function (x) {
           return '<div class="row cl" data-k="escolherBase" data-v="' + esc(x.id) + '" data-campo="' + campo + '" data-nome="' + esc(x.nome) + '" style="cursor:pointer;padding:8px 0"><div class="info"><div class="nm">' + esc(x.nome) + '</div>' +
             '<div class="sb">' + (x.idade != null ? x.idade + ' anos · ' : '') + (x.finalFone ? 'tel. final ' + esc(x.finalFone) : 'sem telefone') + ' · ' + (x.situacao === 'visiting' ? 'visitante' : 'da igreja') + '</div></div></div>';
@@ -533,7 +538,7 @@
     S.form = { papel: papel, vinId: null };
     modal('<h2>' + (papel === 'responsavel' ? 'Adicionar responsável' : 'Outra pessoa que pode retirar') + '</h2>' + caixaBusca('kv', 'Pessoa da base da igreja *') +
       '<label style="margin-top:8px">Grau de parentesco com a criança</label>' + selectParentesco('kv-par', 'responsavel') +
-      '<label><input type="checkbox" id="kv-retira" checked style="width:auto;margin-right:6px">Pode retirar a criança (12 anos ou mais, com foto)</label>' +
+      '<label><input type="checkbox" id="kv-retira" checked style="width:auto;margin-right:6px">Pode retirar a criança (mais de 12 anos, com foto)</label>' +
       (papel === 'responsavel' ? '<label><input type="checkbox" id="kv-princ" style="width:auto;margin-right:6px">Contato principal (recebe o WhatsApp da entrada)</label>' : '') +
       '<div class="gap"></div><button class="btn pr" data-k="salvarVinculoKids">Salvar</button>' +
       '<div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>');
@@ -686,13 +691,38 @@
     modal('<h2>Salas deste culto</h2><div class="sb">Vêm das salas padrão do Kids. O que mudar aqui vale só para este culto.</div>' +
       '<div class="card" style="padding:4px 14px;margin-top:8px">' + (l.length ? l.map(function (r) {
         return '<div style="padding:9px 0;border-bottom:1px solid var(--ln,#eceef1)"><div class="nm">' + esc(r.nome) + ' ' + (r.status === 'closed' ? pill('fechada', '#7a7f87') : '') + '</div>' +
-          '<div class="sb">' + esc(faixa(r)) + ' · ' + esc(GEN[r.genero || '']) + ' · ' + r.presentes + (r.capacidade ? '/' + r.capacidade : '') + ' na sala · professores: ' +
-          (r.professores.length ? r.professores.map(function (x) { return esc(x.nome) + (x.funcao === 'auxiliar' ? ' (aux.)' : ''); }).join(', ') : '<b style="color:#c99a1a">nenhum</b>') + '</div>' +
+          '<div class="sb">' + esc(faixa(r)) + ' · ' + esc(GEN[r.genero || '']) + ' · ' + r.presentes + (r.capacidade ? '/' + r.capacidade : '') + ' na sala · professores:' +
+          (r.professores.length ? '' : ' <b style="color:#c99a1a">nenhum</b>') + '</div>' + r.professores.map(function (x) { return linhaProfessor(r, x, lider(m)); }).join('') +
           (lider(m) ? '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn gh sm" data-k="editarSalaEvento" data-v="' + esc(r.id) + '">Ajustar</button>' +
             '<button class="btn gh sm" data-k="professoresSala" data-v="' + esc(r.id) + '">Professores</button></div>' : '') + '</div>';
       }).join('') : '<div class="empty">Nenhuma sala. Cadastre as salas padrão na aba Salas.</div>') + '</div>' +
       (lider(m) ? '<div class="gap"></div><button class="btn" data-k="novaSalaEvento">+ Sala só deste culto</button>' : '') +
       '<div class="gap"></div><button class="btn gh" data-a="fechar">Fechar</button>');
+  }
+  /* KIDS-8: resposta de cada professor à escala */
+  var RESP = { pending: ['aguardando', '#c99a1a'], confirmed: ['confirmado', '#1f7a4d'], declined: ['não pode', '#c0392b'] };
+  function linhaProfessor(r, x, ehLider) {
+    var st = RESP[x.resposta] || null, tr = x.transferencia;
+    return '<div style="padding:4px 0 2px 8px;border-left:3px solid ' + (x.semResposta24h ? '#c0392b' : 'transparent') + ';margin-top:4px">' +
+      '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><b style="font-size:13.5px">' + esc(x.nome) + '</b>' + (x.funcao === 'auxiliar' ? '<span class="sb">(aux.)</span>' : '') +
+      (st ? pill(st[0], st[1]) : '') + (x.semResposta24h ? pill('sem resposta · culto em menos de 24 h', '#c0392b') : '') + '</div>' +
+      (x.resposta === 'declined' && x.motivoRecusa ? '<div class="sb">Motivo: ' + esc(x.motivoRecusa) + '</div>' : '') +
+      (tr ? '<div class="sb">Troca pedida para ' + esc(tr.para) + ' · ' + (tr.status === 'pending_leader' ? '<b>aceita, aguardando sua autorização em Minhas escalas</b>' : 'aguardando quem recebe aceitar') + '</div>' : '') +
+      (ehLider && x.whatsappEm ? '<div class="sb">WhatsApp enviado ' + esc(diaHora(x.whatsappEm)) + '</div>' : '') +
+      (ehLider && x.whatsapp && x.resposta !== 'confirmed' ? '<button class="btn gh sm" style="margin-top:4px" data-k="whatsEscala" data-v="' + esc(x.staffId) + '" data-sala="' + esc(r.id) + '">' + (x.whatsappEm ? 'Lembrar pelo WhatsApp' : 'Avisar pelo WhatsApp') + '</button>' : '') +
+      '</div>';
+  }
+  function textoEscala(r, x) {
+    var ev = ((U().eventos && U().eventos(S.min)) || []).filter ? ((U().eventos(S.min) || []).filter(function (e) { return e.id === SALA.ev; })[0] || null) : null;
+    return 'Olá, ' + x.nome + '! Você está na escala do Kids: sala ' + r.nome + (ev ? ' · ' + ev.nome + ' · ' + diaHora(ev.inicio) : '') + ' (' + x.funcao + ').\n' +
+      'Confirme pelo app 2Gather, em "Minhas escalas" na tela inicial (Confirmo, Não posso ou Passar para outro voluntário).';
+  }
+  function whatsEscala(staffId, t) {
+    var r = (SALA.salas || []).filter(function (s) { return s.id === t.getAttribute('data-sala'); })[0]; if (!r) return;
+    var x = r.professores.filter(function (p) { return p.staffId === staffId; })[0]; if (!x || !x.whatsapp) return;
+    var tel = String(x.whatsapp).replace(/\D/g, '');
+    window.open('https://wa.me/55' + tel + '?text=' + encodeURIComponent(textoEscala(r, x)), '_blank');
+    rpc('v39_kids_schedule_whatsapp_sent', { p: { staffId: staffId } }).then(function () { return carregarSalasEvento().then(formSalasEvento); }).catch(function (e) { toast(traduz(e), true); });
   }
   function formSalaEvento(r) {
     modal('<h2>' + (r ? 'Ajustar ' + esc(r.nome) : 'Sala só deste culto') + '</h2>' + camposSala(r, !!r, true) +
@@ -708,7 +738,7 @@
     var eq = (U().membros && U().membros(S.min)) || [], marc = {};
     r.professores.forEach(function (x) { marc[x.pessoaId] = x.funcao; });
     eq = (Array.isArray(eq) ? eq : []).filter(function (x) { return x.status === 'active'; });
-    modal('<h2>Professores · ' + esc(r.nome) + '</h2><div class="sb">Só quem está na equipe do Kids e tem acesso ao app. Esta lista é a escala da sala neste culto.</div>' +
+    modal('<h2>Professores · ' + esc(r.nome) + '</h2><div class="sb">Só quem está na equipe do Kids e tem acesso ao app. Esta lista é a escala da sala neste culto: cada professor novo recebe um aviso no app para confirmar.</div>' +
       '<div class="card" style="padding:4px 14px;margin-top:8px">' + (eq.length ? eq.map(function (x) {
         var dis = !x.temLogin;
         return '<div class="row" style="padding:7px 0;gap:8px' + (dis ? ';opacity:.5' : '') + '"><input type="checkbox" class="kp-sel" value="' + esc(x.pessoaId) + '"' + (marc[x.pessoaId] ? ' checked' : '') + (dis ? ' disabled' : '') + ' style="width:auto">' +
@@ -764,7 +794,7 @@
       '<input id="kvp-q" data-k-local="1" placeholder="Nome da pessoa" autocomplete="off" style="margin-top:6px"><div id="kvp-res"></div><div id="kvp-sel" class="sb" style="margin:6px 0">Ninguém escolhido.</div>' +
       '<div class="g2"><div><label>Ele(a) é</label>' + selectParentesco('kvp-par', 'todos') + '</div><div><label>Papel</label><select id="kvp-papel"><option value="outro">Outro familiar</option>' +
       '<option value="responsavel">Responsável</option><option value="crianca">Criança sob responsabilidade</option></select></div></div>' +
-      '<label><input type="checkbox" id="kvp-ret" style="width:auto;margin-right:6px">Pode retirar criança no Kids (12 anos ou mais)</label>' +
+      '<label><input type="checkbox" id="kvp-ret" style="width:auto;margin-right:6px">Pode retirar criança no Kids (mais de 12 anos)</label>' +
       '<div class="gap"></div><button class="btn pr sm" data-k="salvarVinculoPessoa">Salvar vínculo</button></div>';
     var el = $('kvin-' + pessoaId); if (el) el.insertAdjacentHTML('beforeend', html);
   }
@@ -961,9 +991,9 @@
       '<div class="info" style="margin-left:10px"><div class="nm">' + esc(x.crianca) + '</div><div class="sb">' + esc(x.familia) + ' · entrou ' + hora(x.entrada) + '</div></div></div>' +
       '<div class="sb" style="margin:8px 0 4px">Confira o rosto de quem está retirando:</div>' +
       (pes.length ? pes.map(function (p) {
-        var ok = p.temFoto && (p.idade == null || p.idade >= 12);
+        var ok = p.temFoto && (p.idade == null || p.idade >= 13);
         return '<label class="row" style="padding:6px 0;gap:10px;align-items:center;cursor:' + (ok ? 'pointer' : 'default') + '"><input type="radio" name="kr-por-' + esc(x.id) + '" value="' + esc(p.pessoaId) + '"' + (ok ? '' : ' disabled') + ' style="width:auto">' +
-          foto({ pessoaId: p.pessoaId, temFoto: p.temFoto }, 64) + '<span><b>' + esc(p.nome) + '</b><br><span class="sb">' + (p.papel === 'responsavel' ? 'responsável' : 'autorizado') + (p.temFoto ? '' : ' · sem foto: não pode retirar') + '</span></span></label>';
+          foto({ pessoaId: p.pessoaId, temFoto: p.temFoto }, 64) + '<span><b>' + esc(p.nome) + '</b><br><span class="sb">' + (p.papel === 'responsavel' ? 'responsável' : 'autorizado') + (p.temFoto ? '' : ' · sem foto: não pode retirar') + (p.idade != null && p.idade < 13 ? ' · 12 anos ou menos: não pode retirar' : '') + '</span></span></label>';
       }).join('') : '<div class="aviso r">Ninguém autorizado a retirar nesta família.</div>') +
       (metodo === 'photo' ? '<label>Motivo da retirada sem código *</label><input id="kr-motivo-' + esc(x.id) + '" placeholder="Ex.: perdeu a etiqueta">' : '') +
       '<div class="gap"></div><button class="btn pr" data-k="confirmarRetirada" data-v="' + esc(x.id) + '" data-metodo="' + metodo + '">Confirmar retirada</button></div>';
@@ -1084,6 +1114,7 @@
     salvarSalaEvento: salvarSalaEvento,
     voltarSalasEvento: formSalasEvento,
     professoresSala: formProfessores,
+    whatsEscala: whatsEscala,
     salvarProfessores: salvarProfessores,
     trocarSala: trocarSala,
     confirmarTrocaSala: confirmarTrocaSala,
