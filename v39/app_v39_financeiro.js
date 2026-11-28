@@ -1,4 +1,12 @@
-/* 2Gather v39 · Financeiro completo · FIN-ALL-21
+/* 2Gather v39 · Financeiro completo · FIN-ALL-22
+   FIN-ALL-22 (PC-1; requer sql/PC_1_plano_contas_aplicar.sql). PLANO DE CONTAS EM ÁRVORE ligado aos lançamentos e aos convênios:
+   - Cadastros › Plano de contas em árvore (grupo › conta, macro → micro), com "Grupo de contas" e "Criar plano de contas modelo" (3 Receitas / 4 Despesas, ITG 2002).
+     Grupo só soma as contas dentro dele e não recebe lançamento (as listas de conta contábil dos lançamentos não mostram grupos; o banco também recusa).
+   - Conta padrão do sistema: escolhe o grupo e o código contábil DESTA igreja (antes o código valia para todas as igrejas).
+   - Relatório do período: "Resultado por categoria" com subtotal por grupo e as contas abaixo (mesmo total).
+   - Convênios: cada convênio tem as suas contas contábeis (marcar um grupo vale para as contas dentro dele). A conta bancária continua sendo a fonte dos totais;
+     a prestação de contas mostra as contas do convênio, marca "fora do convênio" e lista o que foi pago/recebido por outra conta bancária. CSV com a coluna "Conta do convenio".
+   Sem o SQL PC_1 a tela continua funcionando como no FIN-ALL-21 (tudo num nível só).
    FIN-ALL-21 (parte do FIN-ALL-20.2; não exige SQL novo). CARTÕES: cada cartão em Transf. e cartões passa a mostrar, além da fatura do mês e do total no cartão:
      - SALDO ATUAL DA FATURA: o que falta pagar na fatura vigente (lançado + previsto) e, em vermelho, o que ficou em aberto de faturas anteriores.
      - SALDO FUTURO: soma das faturas seguintes, com o valor de cada mês (jan/27 R$ ..., fev/27 R$ ...).
@@ -101,7 +109,7 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
    - Pop-up: não fecha mais ao clicar fora. Só pelo botão X no canto, por Cancelar ou por Esc. Botões do rodapé alinhados. */
 (function () {
   'use strict';
-  var VERSAO = 'FIN-ALL-21';
+  var VERSAO = 'FIN-ALL-22';
   if (window.G2_FIN) return;
   window.G2_FIN = { versao: VERSAO };
   console.info('[2Gather] financeiro ' + VERSAO);
@@ -221,12 +229,21 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
       FIN_ITEMS_LOCKED: 'Esta despesa já recebeu entradas no estoque: os itens comprados não podem mais mudar.',
       FIN_ITEMS_INVALID: 'Confira os itens comprados: produto, quantidade e valor unitário.',
       GRANT_ACCOUNT_REQUIRED: 'Recurso público exige uma conta bancária específica para o convênio (Lei 13.019/14, art. 51). Escolha a conta.',
-      GRANT_ACCOUNT_IN_USE: 'Esta conta já está ligada a outro convênio em execução. Use uma conta própria para cada convênio.'
+      GRANT_ACCOUNT_IN_USE: 'Esta conta já está ligada a outro convênio em execução. Use uma conta própria para cada convênio.',
+      // PC-1 (as chaves mais longas vêm antes de FIN_CATEGORY_GROUP, porque a busca é por trecho)
+      FIN_CATEGORY_GROUP_IN_USE: 'Esta conta já tem lançamentos e não pode virar grupo. Crie um grupo novo e coloque a conta dentro dele.',
+      FIN_CATEGORY_GROUP_SYSTEM: 'Conta padrão do sistema não pode ser grupo.',
+      FIN_CATEGORY_GROUP_NATURE: 'Grupo só pode ser de entrada ou de saída.',
+      FIN_CATEGORY_GROUP: 'Esta conta é um GRUPO (só soma as contas abaixo dele). Escolha uma conta dentro do grupo.',
+      FIN_CATEGORY_HAS_CHILDREN: 'Este grupo tem contas abaixo dele. Mova ou inative essas contas antes.',
+      FIN_CATEGORY_PARENT_INVALID: 'O grupo escolhido precisa ser um grupo ativo, da mesma natureza (entrada ou saída).',
+      FIN_CATEGORY_CYCLE: 'Um grupo não pode ficar dentro dele mesmo.'
   };
   function traduz(e) {
     var t = String((e && (e.message || e.details || e.hint || e.code)) || e || '');
     var d = String((e && e.details) || '');
     if (/violates check constraint/i.test(t) && /grant/i.test(t)) return 'O banco não aceitou algum dado do convênio (origem, instrumento ou situação). Atualize a página e tente de novo; se continuar, avise o administrador.';
+    if (/PGRST202|find the function|does not exist/i.test(t) && /plano_modelo|cat_arvore|cat_code|grant_ramo|grant_diverg/i.test(t)) return 'Falta rodar o SQL PC_1_plano_contas_aplicar.sql no Supabase.';
     if (/PGRST202|find the function|does not exist/i.test(t) && /grants?_(list|save|report)/i.test(t)) return 'Faltam no Supabase as funções de convênio (INST_S7). Avise o administrador.';
     for (var k in MSG) if (t.indexOf(k) >= 0 || d === k) return MSG[k];
     if (/PGRST202|find the function|does not exist/i.test(t) && /view_set|expense_items|campaign_entities|campaign_adopt|campaign_move|campaign_account/i.test(t)) return 'Falta rodar o SQL FIN_S15_visao_cnpj_itens.sql (ou FIN_S17_conta_contabil.sql) no Supabase.';
@@ -606,10 +623,34 @@ Substitui o app_v39_financeiro.js (FIN-ALL-1 a 6): no index.html deixe só este 
   function catPor(id) { return achar((S.cat && S.cat.categorias) || [], id); }
   function semCodigoContabil(id) { var c = catPor(id); return !!(c && !String(c.contabil || '').trim()); }
   function nSemCodigo() { return ((S.cat && S.cat.categorias) || []).filter(function (c) { return c.ativa && !String(c.contabil || '').trim(); }).length; }
+  /* PC-1: plano de contas em árvore (grupo = conta sintética, só soma; lançamento só na conta final).
+     Sem o SQL PC_1 o banco não manda paiId/grupo e tudo fica num nível só, como antes. */
+  function catsTodas() { return (S.cat && S.cat.categorias) || []; }
+  function temArvore() { return catsTodas().some(function (c) { return c.grupo; }); }
+  function chaveCat(c) { return String(c.contabil || '').trim(); }
+  // com código primeiro (ordem do código: 4.2 antes de 4.10), sem código no fim; depois pelo nome
+  function cmpCat(a, b) { var ka = chaveCat(a), kb = chaveCat(b); return (ka ? 0 : 1) - (kb ? 0 : 1) || ka.localeCompare(kb, 'pt-BR', { numeric: true }) || String(a.nome).localeCompare(String(b.nome), 'pt-BR'); }
+  // [{ c, nivel }] em ordem de árvore (grupo antes das contas dele); nat opcional
+  function arvoreCats(nat) {
+    var l = catsTodas().filter(function (c) { return !nat || c.natureza === nat; }), ids = {}, filhos = {}, out = [], vis = {};
+    l.forEach(function (c) { ids[c.id] = 1; });
+    l.forEach(function (c) { var p = c.paiId && ids[c.paiId] ? c.paiId : ''; (filhos[p] = filhos[p] || []).push(c); });
+    (function desce(p, n) { (filhos[p] || []).sort(cmpCat).forEach(function (c) { if (vis[c.id] || n > 12) return; vis[c.id] = 1; out.push({ c: c, nivel: n }); desce(c.id, n + 1); }); })('', 0);
+    return out;
+  }
+  function paiDe(c) { return c && c.paiId ? catPor(c.paiId) : null; }
+  function ancestrais(id) { var out = [], c = paiDe(catPor(id)), n = 0; while (c && n++ < 15) { out.unshift(c); c = paiDe(c); } return out; }
+  function ehDescendente(id, de) { var c = catPor(id), n = 0; while (c && n++ < 15) { if (c.id === de) return true; c = paiDe(c); } return false; }
+  function rotCat(c) { var k = String(c.contabil || '').trim(); return (k ? k + ' · ' : '') + c.nome; }
+  // grupos ativos que podem ser pai (mesma natureza; nunca a própria conta nem um grupo abaixo dela)
+  function opGrupos(nat, selfId) {
+    return arvoreCats(nat).filter(function (x) { return x.c.grupo && x.c.ativa && (!selfId || !ehDescendente(x.c.id, selfId)); })
+      .map(function (x) { return [x.c.id, new Array(x.nivel + 1).join('— ') + rotCat(x.c)]; });
+  }
   function opCats(nat) {
-    return ((S.cat && S.cat.categorias) || []).filter(function (c) { return c.ativa && c.natureza === nat; })
+    return ((S.cat && S.cat.categorias) || []).filter(function (c) { return c.ativa && c.natureza === nat && !c.grupo; })
       .sort(function (a, b) { var ta = String(a.contabil || '').trim() ? 0 : 1, tb = String(b.contabil || '').trim() ? 0 : 1; return ta - tb || String(a.contabil || '').localeCompare(String(b.contabil || ''), 'pt-BR', { numeric: true }) || String(a.nome).localeCompare(String(b.nome), 'pt-BR'); })
-      .map(function (c) { var k = String(c.contabil || '').trim(); return [c.id, k ? k + ' · ' + c.nome : c.nome + ' — sem código contábil']; });
+      .map(function (c) { var k = String(c.contabil || '').trim(), p = paiDe(c); return [c.id, (k ? k + ' · ' + c.nome : c.nome + ' — sem código contábil') + (p ? ' (' + p.nome + ')' : '')]; });
   }
   // contas de entrada para votos/campanhas: todas, menos a conta padrão do sistema (que é o "vazio" da lista)
   function opCatsVoto() { return opCats('income').filter(function (c) { var k = catPor(c[0]); return !(k && k.codigo === 'campaign_receipt'); }); }
@@ -1825,7 +1866,7 @@ function itensAbertos(f) {
   }
   function itensComId(f) { var l = f.itens || []; return l.length > 0 && l.every(function (i) { return !!i.id; }); }
   function catJuros() {
-    return ((S.cat && S.cat.categorias) || []).filter(function (c) { return c.ativa && c.natureza === 'expense' && norm(c.nome).replace(/\s+/g, ' ').trim() === 'juros e encargos do cartao'; })[0] || null;
+    return ((S.cat && S.cat.categorias) || []).filter(function (c) { return c.ativa && !c.grupo && c.natureza === 'expense' && norm(c.nome).replace(/\s+/g, ' ').trim() === 'juros e encargos do cartao'; })[0] || null;
   }
   // fatura que recebe o saldo: a do mês seguinte (mesma regra do servidor)
   function proximaFatura(f) {
@@ -2292,10 +2333,16 @@ function itensAbertos(f) {
       }).join('') || '<div class="empty">Nenhuma conta.</div>') + '</div>';
     }
     if (pode('financial.categories.manage')) {
-      h += '<div class="sec">Plano de contas (contas contábeis)</div>' + (nSemCodigo() ? '<div class="aviso">⚠ <b>' + nSemCodigo() + ' conta(s) sem código contábil.</b> Toque em <b>Editar</b> e informe o código do contador. Elas continuam funcionando, mas aparecem sem código nos relatórios.</div>' : '') + '<div class="g2f-tool g2f-noprint">' + btn('novaCat', 'Conta contábil', 'plus', 'g2f-soft') + '</div><div class="card lp">' + ((C2.categorias || []).map(function (c) {
-        return '<div class="row g2f-mv"><span class="g2f-ri ' + (c.natureza === 'income' ? 'in' : c.natureza === 'expense' ? 'out' : '') + '">' + ic('tag') + '</span><div class="info"><div class="nm">' + esc(c.nome) + (c.ativa ? '' : ' ' + pill('inativa', 'cinza')) + (c.sistema ? ' ' + pill('padrão', 'cinza') : '') + '</div>' +
-          '<div class="sb">' + esc([c.codigo, ROT.nat[c.natureza] || c.natureza, c.contabil ? 'cód. contábil ' + c.contabil : '⚠ sem código contábil'].join(' · ')) + '</div></div><div class="g2f-acts">' + bt('editCat', c.id, 'Editar', 'sec') + '</div></div>';
-      }).join('') || '<div class="empty">Nenhuma categoria.</div>') + '</div><div class="g2f-note">O código contábil é o do contador; preencha quando receber a lista.</div>';
+      // PC-1: em árvore (grupo › conta), com recuo por nível. Sem grupos, a lista fica como antes (um nível só).
+      var arv = arvoreCats(null), nFilhos = {};
+      (C2.categorias || []).forEach(function (c) { if (c.paiId) nFilhos[c.paiId] = (nFilhos[c.paiId] || 0) + 1; });
+      h += '<div class="sec">Plano de contas (contas contábeis)</div>' + (nSemCodigo() ? '<div class="aviso">⚠ <b>' + nSemCodigo() + ' conta(s) sem código contábil.</b> Toque em <b>Editar</b> e informe o código do contador. Elas continuam funcionando, mas aparecem sem código nos relatórios.</div>' : '') +
+        '<div class="g2f-tool g2f-noprint">' + btn('novaCat', 'Conta contábil', 'plus', 'g2f-soft') + btn('novoGrupoCat', 'Grupo de contas', 'plus', 'g2f-soft') + (temArvore() ? '' : btn('planoModelo', 'Criar plano de contas modelo', 'sliders', 'g2f-soft')) + '</div><div class="card lp">' + (arv.map(function (x) {
+        var c = x.c, nf = nFilhos[c.id] || 0;
+        return '<div class="row g2f-mv"' + (x.nivel ? ' style="padding-left:' + (x.nivel * 18) + 'px"' : '') + '><span class="g2f-ri ' + (c.natureza === 'income' ? 'in' : c.natureza === 'expense' ? 'out' : '') + '">' + ic(c.grupo ? 'sliders' : 'tag') + '</span><div class="info"><div class="nm">' + (c.grupo ? '<b>' + esc(c.nome) + '</b> ' + pill('grupo', 'cinza') : esc(c.nome)) + (c.ativa ? '' : ' ' + pill('inativa', 'cinza')) + (c.sistema ? ' ' + pill('padrão', 'cinza') : '') + '</div>' +
+          '<div class="sb">' + esc([c.codigo, ROT.nat[c.natureza] || c.natureza, c.contabil ? 'cód. contábil ' + c.contabil : '⚠ sem código contábil', c.grupo ? nf + ' conta(s) abaixo · não recebe lançamento' : ''].filter(Boolean).join(' · ')) + '</div></div><div class="g2f-acts">' + bt('editCat', c.id, 'Editar', 'sec') + '</div></div>';
+      }).join('') || '<div class="empty">Nenhuma categoria.</div>') + '</div><div class="g2f-note">O código contábil é o do contador; preencha quando receber a lista. <b>Grupo</b> (ex.: 4.2 Administrativas) só soma as contas que estão dentro dele: o lançamento vai sempre numa conta final (ex.: 4.2.01 Energia). As contas padrão do sistema também podem ser colocadas dentro de um grupo (Editar).' +
+        (temArvore() ? '' : ' <b>Criar plano de contas modelo</b> cria os grupos 3 Receitas e 4 Despesas (entidade sem fins lucrativos) e encaixa as contas atuais; depois é só ajustar.') + '</div>';
     }
     if (pode('financial.expenses.create') || pode('financial.bills.manage')) {
       h += '<div class="sec">Fornecedores e beneficiários</div><div class="g2f-tool g2f-noprint">' + btn('novoFornec', 'Fornecedor', 'plus', 'g2f-soft') + '</div><div class="card lp">' + ((C2.fornecedores || []).map(function (f) {
@@ -2313,15 +2360,35 @@ function itensAbertos(f) {
       { k: 'status', l: 'Situação', t: 'select', o: [['active', 'Ativa'], ['inactive', 'Inativa']], v: a.status || 'active', vazio: false }, { k: 'obs', l: 'Observação', t: 'textarea', v: a.obs }
     ], 'Salvar', function (v) { return rpc('v39_fin_save_account', C({ p_id: a.id || null, p_payload: Object.assign({ abertaEm: a.abertaEm || null }, v) })).then(function () { return 'Conta salva.'; }); });
   }
-  function formCat(c) {
-    c = c || {}; var fixa = !!c.sistema;
-    form(c.id ? 'Editar conta contábil' : 'Nova conta contábil', (fixa ? [{ t: 'info', l: 'Conta padrão do sistema: só o código contábil pode mudar.' }] : [
+  function formCat(c, novoGrupo) {
+    c = c || {}; var fixa = !!c.sistema, grupo0 = c.id ? !!c.grupo : !!novoGrupo;
+    var campoPai = function (natFixa) {
+      var nat0 = natFixa || c.natureza || 'expense';
+      return { k: 'paiId', l: 'Dentro do grupo', t: 'select', o: opGrupos(nat0, c.id), v: c.paiId || '', vazio: '— nenhum (primeiro nível) —',
+        opts: natFixa ? null : function (v) { return opGrupos(v.natureza || 'expense', c.id); },
+        h: temArvore() ? 'Macro → micro: escolha o grupo onde esta conta fica (ex.: 4 Despesas › 4.2 Administrativas).' : 'Ainda não há grupos. Crie em “Grupo de contas” ou use “Criar plano de contas modelo”.' };
+    };
+    var titulo = c.id ? (c.grupo ? 'Editar grupo de contas' : 'Editar conta contábil') : (novoGrupo ? 'Novo grupo de contas' : 'Nova conta contábil');
+    form(titulo, (fixa ? [{ t: 'info', l: 'Conta padrão do sistema: o nome não muda. Pode escolher o grupo e o código contábil <b>desta igreja</b> (as outras igrejas não são afetadas).' }, campoPai(c.natureza)] : [
       { k: 'codigo', l: 'Código interno', v: c.codigo, req: true }, { k: 'nome', l: 'Nome', v: c.nome, req: true },
       { k: 'natureza', l: 'Natureza', t: 'select', o: [['income', 'Entrada'], ['expense', 'Saída']], v: c.natureza || 'expense', vazio: false },
+      { k: 'grupo', l: 'É um grupo (só soma as contas dentro dele; não recebe lançamento)', t: 'check', v: grupo0 },
+      { t: 'info', l: 'Conta que já tem lançamento não vira grupo. Grupo com contas dentro não deixa de ser grupo nem é inativado antes de mover essas contas.', vis: function (v) { return !!v.grupo !== !!c.grupo && !!c.id; } },
+      campoPai(null),
       { k: 'descricao', l: 'Descrição', v: c.descricao }, { k: 'ativa', l: 'Ativa', t: 'check', v: c.id ? c.ativa : true }
-    ]).concat([{ k: 'contabil', l: 'Código contábil (do contador)', v: c.contabil, req: true, h: 'Obrigatório: é com este código que a conta aparece nos lançamentos e nos relatórios do contador.' }]), 'Salvar', function (v) {
-      var p = fixa ? { codigo: c.codigo, nome: c.nome, natureza: c.natureza, contabil: v.contabil } : v;
+    ]).concat([{ k: 'contabil', l: 'Código contábil (do contador)', v: c.contabil, req: true, h: 'Obrigatório: é com este código que a conta aparece nos lançamentos e nos relatórios do contador. No grupo, use o código do grupo (ex.: 4.2).' }]), 'Salvar', function (v) {
+      var p = fixa ? { codigo: c.codigo, nome: c.nome, natureza: c.natureza, contabil: v.contabil, paiId: v.paiId || null } : Object.assign({}, v, { grupo: !!v.grupo, paiId: v.paiId || null });
       return rpc('v39_fin_save_category', C({ p_id: c.id || null, p_payload: p })).then(function () { return 'Categoria salva.'; });
+    });
+  }
+  function planoModelo() {
+    form('Criar plano de contas modelo', [
+      { t: 'info', l: 'Cria os grupos de uma entidade sem fins lucrativos (ITG 2002) e coloca dentro deles as contas que já existem:<br>' +
+        '<b>3 Receitas</b>: 3.1 Contribuições e doações · 3.2 Cultos e eventos · 3.3 Convênios, termos e subvenções · 3.9 Outras receitas<br>' +
+        '<b>4 Despesas</b>: 4.1 Pessoal e encargos · 4.2 Administrativas e operacionais · 4.3 Cultos e eventos · 4.4 Projetos sociais e convênios · 4.5 Despesas financeiras<br>' +
+        'Nada é apagado e nenhum lançamento muda. Conta que já está num grupo fica onde está. Os códigos dos grupos são sugestão: confirme com o contador e ajuste em Editar.' }
+    ], 'Criar', function () {
+      return rpc('v39_fin_plano_modelo', C({})).then(function (r) { r = r || {}; return 'Plano modelo: ' + num(r.grupos) + ' grupo(s) criado(s), ' + num(r.posicionadas) + ' conta(s) encaixada(s).'; });
     });
   }
   function formFornec(f) {
@@ -2337,7 +2404,7 @@ function itensAbertos(f) {
   var ANO = null;   // { k, em, carregando, meses: [overview|null ×12] }
   function podeAno() { return pode('financial.book.view') || pode('financial.reports.view'); }
   function catCartao() {
-    var l = ((S.cat && S.cat.categorias) || []).filter(function (c) { return c.ativa !== false && c.natureza === 'expense' && norm(c.nome).indexOf('cartao') >= 0 && norm(c.nome).indexOf('juros') < 0; });
+    var l = ((S.cat && S.cat.categorias) || []).filter(function (c) { return c.ativa !== false && !c.grupo && c.natureza === 'expense' && norm(c.nome).indexOf('cartao') >= 0 && norm(c.nome).indexOf('juros') < 0; });
     if (!l.length) return null;
     l.sort(function (a, b) { return (norm(b.nome).indexOf('credito') >= 0 ? 1 : 0) - (norm(a.nome).indexOf('credito') >= 0 ? 1 : 0) || (b.contabil ? 1 : 0) - (a.contabil ? 1 : 0); });
     return l[0];
@@ -2408,13 +2475,31 @@ function itensAbertos(f) {
       'Compra no cartão vale pelo pagamento/vencimento da fatura, e o cartão aparece numa linha só nas categorias.</div>';
   }
   function htmlCatsModelo(R) {
+    function linhaCat(c, nivel) {
+      return '<tr><td' + (nivel ? ' style="padding-left:' + (8 + nivel * 16) + 'px"' : '') + '>' + esc(c.nome) + (c.cartao ? ' <span class="pill p-cinza">cartão consolidado</span>' : '') + '<div class="g2f-mut">' + (c.contabil ? 'cód. ' + esc(c.contabil) + ' · ' : '') + c.qtd + ' lançamento(s)</div></td><td class="r">' + brl(c.pago) + '</td><td class="r">' + (c.aberto ? brl(c.aberto) : '—') + '</td><td class="r"><b>' + brl(c.total) + '</b></td></tr>';
+    }
+    /* PC-1: com grupos, cada grupo mostra o subtotal (macro) e, abaixo, as contas dele (micro). O total é o mesmo. */
+    function arvoreLinhas(l, lado) {
+      var por = {}, sub = {}, usados = {}, out = '';
+      l.forEach(function (c) {
+        por[c.key] = c;
+        ancestrais(c.key).forEach(function (g) { var s = sub[g.id] = sub[g.id] || { pago: 0, aberto: 0, qtd: 0 }; s.pago += c.pago; s.aberto += c.aberto; s.qtd += c.qtd; });
+      });
+      arvoreCats(lado === 'in' ? 'income' : 'expense').forEach(function (x) {
+        if (x.c.grupo) {
+          var s = sub[x.c.id]; if (!s) return;
+          out += '<tr style="background:var(--bg2,#F6F7F9)"><td' + (x.nivel ? ' style="padding-left:' + (8 + x.nivel * 16) + 'px"' : '') + '><b>' + esc(x.c.nome) + '</b><div class="g2f-mut">' + (x.c.contabil ? 'cód. ' + esc(x.c.contabil) + ' · ' : '') + 'grupo · ' + s.qtd + ' lançamento(s)</div></td><td class="r"><b>' + brl(arr2(s.pago)) + '</b></td><td class="r"><b>' + (s.aberto ? brl(arr2(s.aberto)) : '—') + '</b></td><td class="r"><b>' + brl(arr2(s.pago + s.aberto)) + '</b></td></tr>';
+        } else if (por[x.c.id]) { usados[x.c.id] = 1; out += linhaCat(por[x.c.id], x.nivel); }
+      });
+      var resto = l.filter(function (c) { return !usados[c.key]; });   // cartão sem conta, campanhas, contas de outra natureza
+      if (resto.length) out += '<tr><td colspan="4" class="g2f-mut"><b>Fora dos grupos</b></td></tr>' + resto.map(function (c) { return linhaCat(c, 0); }).join('');
+      return out;
+    }
     function tab(lado) {
       var l = listaCats(R, lado), tp = 0, ta = 0, tq = 0;
       if (!l.length) return '<tr><td colspan="4">Sem lançamentos.</td></tr>';
-      var linhas = l.map(function (c) {
-        tp += c.pago; ta += c.aberto; tq += c.qtd;
-        return '<tr><td>' + esc(c.nome) + (c.cartao ? ' <span class="pill p-cinza">cartão consolidado</span>' : '') + '<div class="g2f-mut">' + (c.contabil ? 'cód. ' + esc(c.contabil) + ' · ' : '') + c.qtd + ' lançamento(s)</div></td><td class="r">' + brl(c.pago) + '</td><td class="r">' + (c.aberto ? brl(c.aberto) : '—') + '</td><td class="r"><b>' + brl(c.total) + '</b></td></tr>';
-      }).join('');
+      l.forEach(function (c) { tp += c.pago; ta += c.aberto; tq += c.qtd; });
+      var linhas = temArvore() ? arvoreLinhas(l, lado) : l.map(function (c) { return linhaCat(c, 0); }).join('');
       return linhas + '<tr><td><b>Total</b><div class="g2f-mut">' + tq + ' lançamento(s)</div></td><td class="r"><b>' + brl(tp) + '</b></td><td class="r"><b>' + brl(ta) + '</b></td><td class="r"><b>' + brl(tp + ta) + '</b></td></tr>';
     }
     var cab = function (a, b) { return '<thead><tr><th>Categoria</th><th class="r">' + a + '</th><th class="r">' + b + '</th><th class="r">Total</th></tr></thead>'; };
@@ -2505,6 +2590,8 @@ function itensAbertos(f) {
       else if (d <= 60) out.push(pill('vence em ' + d + ' dia(s)', 'amarelo'));
     }
     if (!g.contaId && g.origem === 'public' && emAndamento(g)) out.push(pill('sem conta bancária', 'amarelo'));
+    if (num(g.divergencias) > 0) out.push(pill(num(g.divergencias) + ' lançamento(s) com conta divergente', 'amarelo'));
+    if (g.contasContabeis && !g.contasContabeis.length && emAndamento(g)) out.push(pill('sem conta contábil ligada', 'cinza'));
     return out.join(' ');
   }
   function cardConv(g, i) {
@@ -2515,7 +2602,8 @@ function itensAbertos(f) {
     var al = convAlertas(g);
     return '<div class="card"><div class="row g2f-mv" style="border:none;padding:0 0 8px"><span class="g2f-ri pri">' + ic('bank') + '</span><div class="info"><div class="nm">' + esc(g.concedente) + ' ' + convStPill(g) + '</div>' +
       '<div class="sb">' + esc([instrRot(g.instrumento), g.numero ? 'nº ' + g.numero : '', ROT_CONV.origem[g.origem] || ''].filter(Boolean).join(' · ')) + '</div>' +
-      '<div class="sb">' + esc(g.objeto) + '</div><div class="sb">Vigência: ' + esc(vig) + (g.conta ? ' · conta: ' + esc(g.conta) : '') + (g.documento ? ' · CNPJ/CPF do concedente: ' + esc(cnpjFmt(g.documento)) : '') + '</div></div>' +
+      '<div class="sb">' + esc(g.objeto) + '</div><div class="sb">Vigência: ' + esc(vig) + (g.conta ? ' · conta: ' + esc(g.conta) : '') + (g.documento ? ' · CNPJ/CPF do concedente: ' + esc(cnpjFmt(g.documento)) : '') + '</div>' +
+      (g.contasContabeis && g.contasContabeis.length ? '<div class="sb">Contas contábeis: ' + esc(g.contasContabeis.map(function (id) { var k = catPor(id); return k ? rotCat(k) : '?'; }).join(', ')) + '</div>' : '') + '</div>' +
       '<div class="g2f-acts g2f-noprint">' + acts.join('') + '</div></div>' +
       '<div class="stats">' + stat('Valor do convênio', val > 0 ? brl(val) : '—', 'pri', 'bank', '', num(g.contrapartida) > 0 ? 'contrapartida ' + brl(g.contrapartida) : '') +
         stat('Recebido', brl(rec), 'in', 'down', 'g2f-pos') + stat('Gasto', brl(gasto), 'out', 'up', 'g2f-neg', val > 0 ? pc + '% do valor' : '') +
@@ -2533,7 +2621,8 @@ function itensAbertos(f) {
       stat('Gasto', brl(som(ativos, 'gasto')), 'out', 'up', 'g2f-neg') + stat('Saldo nas contas', brl(som(ativos, 'saldo')), 'pri', 'wallet') + '</div>';
     ativos.forEach(function (g) { h += cardConv(g, GRANTS.indexOf(g)); });
     if (outros.length) { h += '<div class="sec">Rascunhos, encerrados e cancelados</div>'; outros.forEach(function (g) { h += cardConv(g, GRANTS.indexOf(g)); }); }
-    return h + '<div class="g2f-note">Recebido, gasto e saldo vêm da <b>conta bancária do convênio</b> (só lançamentos efetivados). Recurso público exige conta bancária específica (Lei 13.019/14, art. 51). A prestação de contas sai com o cabeçalho e o CNPJ da entidade.</div>';
+    return h + '<div class="g2f-note">Recebido, gasto e saldo vêm da <b>conta bancária do convênio</b> (só lançamentos efetivados). Recurso público exige conta bancária específica (Lei 13.019/14, art. 51). A prestação de contas sai com o cabeçalho e o CNPJ da entidade. ' +
+      'As <b>contas contábeis do convênio</b> (um grupo vale para todas as contas dentro dele) organizam a prestação e acusam divergência: despesa ou receita do convênio feita por outra conta bancária, ou lançamento na conta do convênio com conta contábil de fora.</div>';
   }
   function tConv() {
     if (GREP) return Promise.resolve(desenharRelConv());
@@ -2541,6 +2630,7 @@ function itensAbertos(f) {
   }
   function formConv(g) {
     g = g || {};
+    var ligadas = {}; (g.contasContabeis || []).forEach(function (id) { ligadas[id] = 1; });
     var contas = ((S.cat && S.cat.contas) || []).filter(function (a) { return a.status === 'active' && a.tipo !== 'cash' || a.id === g.contaId; }).map(function (a) { return [a.id, a.nome + ' · ' + (ROT.conta[a.tipo] || a.tipo)]; });
     form(g.id ? 'Editar convênio' : 'Novo convênio', [
       { t: 'info', l: 'Cada convênio usa <b>uma conta bancária própria</b>: o que entra e sai dessa conta forma a prestação de contas. Cadastre a conta antes em <b>Cadastros › Contas</b>. Recurso público <b>em execução</b> exige conta específica.' },
@@ -2555,13 +2645,18 @@ function itensAbertos(f) {
       { k: 'fim', l: 'Fim da vigência', t: 'date', v: convFim(g) },
       { k: 'valor', l: 'Valor do convênio', t: 'money', v: g.valor }, { k: 'contrapartida', l: 'Contrapartida da entidade (se houver)', t: 'money', v: g.contrapartida },
       { k: 'contaId', l: 'Conta bancária do convênio', t: 'select', o: contas, v: g.contaId || '', vazio: '— sem conta (só se não for recurso público em execução) —' },
+      { t: 'info', l: '<b>Contas contábeis do convênio</b>: marque as contas (ou o grupo inteiro, ex.: 4.4 Projetos sociais e convênios) onde entram e saem os recursos deste convênio. Marcar um grupo vale para todas as contas dentro dele. ' +
+        (temArvore() ? '' : 'Dica: organize antes o plano de contas em grupos (Cadastros › Plano de contas).') },
+      { k: 'contasContabeis', l: 'Contas contábeis', t: 'checks', o: arvoreCats(null).filter(function (x) { return (x.c.natureza === 'income' || x.c.natureza === 'expense') && (x.c.ativa || ligadas[x.c.id]); })
+          .map(function (x) { return [x.c.id, new Array(x.nivel + 1).join('— ') + rotCat(x.c) + (x.c.grupo ? ' (grupo)' : '') + ' · ' + (ROT.nat[x.c.natureza] || x.c.natureza), !!ligadas[x.c.id]]; }) },
       { k: 'obs', l: 'Observações', t: 'textarea', v: g.obs }
     ], 'Salvar', function (v) {
       var conc = String(v.concedente || '').trim(), obj = String(v.objeto || '').trim();
       if (conc.length < 3 || obj.length < 5) return Promise.reject(new Error('Informe o concedente com ao menos 3 letras e o objeto com ao menos 5 letras.'));
       if (v.origem === 'public' && v.situacao === 'active' && !v.contaId) return Promise.reject(new Error('GRANT_ACCOUNT_REQUIRED'));
       if (v.inicio && v.fim && v.fim < v.inicio) return Promise.reject(new Error('A data final da vigência é anterior ao início.'));
-      var p = { origem: v.origem, instrumento: v.instrumento, status: v.situacao || 'active', concedente: conc, documento: v.documento || '', numero: v.numero || '', objeto: obj, inicio: v.inicio || '', fim: v.fim || '', valor: v.valor, contrapartida: v.contrapartida, contaId: v.contaId || '', obs: v.obs || '' };
+      var p = { origem: v.origem, instrumento: v.instrumento, status: v.situacao || 'active', concedente: conc, documento: v.documento || '', numero: v.numero || '', objeto: obj, inicio: v.inicio || '', fim: v.fim || '', valor: v.valor, contrapartida: v.contrapartida, contaId: v.contaId || '', obs: v.obs || '',
+        contasContabeis: v.contasContabeis || [] };
       if (g.id) p.id = g.id;
       return rpc('v39_fin_grant_save', C({ p: p })).then(function () { return 'Convênio salvo.'; });
     });
@@ -2600,7 +2695,7 @@ function itensAbertos(f) {
     function tabCat(l, neg) {
       if (!l.length) return '<tr><td colspan="3">Sem lançamentos no período.</td></tr>';
       var t = 0;
-      return l.map(function (x) { var v = neg ? -num(x.valor) : num(x.valor); t += v; return '<tr><td>' + esc(x.contabil || '—') + '</td><td>' + esc(x.categoria) + '</td><td class="r">' + brl(v) + '</td></tr>'; }).join('') +
+      return l.map(function (x) { var v = neg ? -num(x.valor) : num(x.valor); t += v; return '<tr><td>' + esc(x.contabil || '—') + '</td><td>' + esc(x.caminho || x.categoria) + (x.noConvenio === false ? ' <span class="pill p-amarelo">fora do convênio</span>' : '') + '</td><td class="r">' + brl(v) + '</td></tr>'; }).join('') +
         '<tr><td colspan="2"><b>Total</b></td><td class="r"><b>' + brl(arr2(t)) + '</b></td></tr>';
     }
     var h = '<div class="g2f-tool g2f-noprint">' + btn('convVoltar', 'Convênios', 'chevl', 'g2f-soft') + btn('imprimir', 'Imprimir / PDF', 'file', 'g2f-soft') + btn('csvConv', 'Exportar CSV', 'dl', 'g2f-soft') + btn('relConvAtual', 'Alterar período', 'cal', 'g2f-soft') + '</div>';
@@ -2622,11 +2717,24 @@ function itensAbertos(f) {
     if (Math.abs(T.dif) > 0.01) h += '<div class="aviso">⚠ O saldo final difere em <b>' + brl(T.dif) + '</b> do saldo inicial + entradas − saídas + transferências. Confira os lançamentos antes de entregar.</div>';
     if (T.sem) h += '<div class="aviso">⚠ <b>' + T.sem + ' lançamento(s) sem comprovante</b> no período. A prestação de contas exige o comprovante de cada despesa.</div>';
     if (semCod) h += '<div class="aviso">⚠ <b>' + semCod + ' conta(s) contábil(eis) sem código.</b> Preencha o código em Cadastros › Plano de contas para o contador.</div>';
+    // PC-1: contas contábeis do convênio e divergências (a conta bancária continua sendo a fonte dos totais)
+    var CC = R.contasContabeis, DV = R.divergencias || {}, fora = R.foraDaConta || [];
+    if (CC) {
+      h += '<div class="card"><h3>Contas contábeis do convênio</h3>' + (CC.length ? '<div class="g2f-tw"><table class="g2f-tbl"><thead><tr><th>Código</th><th>Conta</th><th>Natureza</th></tr></thead><tbody>' +
+        CC.map(function (x) { return '<tr><td>' + esc(x.contabil || '—') + '</td><td>' + esc(x.caminho || x.nome) + (x.grupo ? ' <span class="pill p-cinza">grupo: vale para as contas dentro dele</span>' : '') + '</td><td>' + esc(ROT.nat[x.natureza] || x.natureza) + '</td></tr>'; }).join('') + '</tbody></table></div>'
+        : '<div class="empty">Nenhuma conta contábil ligada a este convênio. Ligue em Editar para conferir as divergências.</div>') + '</div>';
+      if (num(DV.contaForaDoConvenio) > 0) h += '<div class="aviso">⚠ <b>' + num(DV.contaForaDoConvenio) + ' lançamento(s) na conta bancária do convênio com conta contábil de fora do convênio</b> (marcados abaixo). Confira se a conta contábil está certa ou se o lançamento é mesmo do convênio.</div>';
+      if (num(DV.foraDaConta) > 0) h += '<div class="aviso">⚠ <b>' + num(DV.foraDaConta) + ' lançamento(s) com conta contábil do convênio feitos por OUTRA conta bancária.</b> Eles não entram nos totais desta prestação (o recurso do convênio deve passar pela conta própria). Veja a lista abaixo.</div>';
+    }
+    var movFora = function (m) { return m.noConvenio === false && (m.tipo === 'income' || m.tipo === 'expense'); };
     h += '<div class="card"><h3>Receitas por conta contábil</h3><div class="g2f-tw"><table class="g2f-tbl"><thead><tr><th>Código</th><th>Conta</th><th class="r">Valor</th></tr></thead><tbody>' + tabCat(rec, false) + '</tbody></table></div></div>';
     h += '<div class="card"><h3>Despesas por conta contábil</h3><div class="g2f-tw"><table class="g2f-tbl"><thead><tr><th>Código</th><th>Conta</th><th class="r">Valor</th></tr></thead><tbody>' + tabCat(des, true) + '</tbody></table></div></div>';
     h += '<div class="card"><h3>Movimentação da conta (' + mov.length + ')</h3>' + (mov.length ? '<div class="g2f-tw"><table class="g2f-tbl"><thead><tr><th>Data</th><th>Descrição</th><th>Conta contábil</th><th class="r">Valor</th><th>Comp.</th></tr></thead><tbody>' +
-      mov.map(function (m) { return '<tr><td>' + dataBR(m.data) + '</td><td>' + esc(m.descricao) + (m.favorecido ? '<div class="g2f-mut">' + esc(m.favorecido) + '</div>' : '') + '</td><td>' + esc(m.categoria) + (codPor[m.categoria] ? ' (' + esc(codPor[m.categoria]) + ')' : '') + '</td>' +
+      mov.map(function (m) { var cod = m.contabil || codPor[m.categoria]; return '<tr><td>' + dataBR(m.data) + '</td><td>' + esc(m.descricao) + (m.favorecido ? '<div class="g2f-mut">' + esc(m.favorecido) + '</div>' : '') + '</td><td>' + esc(m.categoria) + (cod ? ' (' + esc(cod) + ')' : '') + (movFora(m) ? ' <span class="pill p-amarelo">⚠ fora do convênio</span>' : '') + '</td>' +
         '<td class="r ' + (num(m.valor) < 0 ? 'g2f-neg' : 'g2f-pos') + '">' + brl(m.valor) + '</td><td>' + (m.comprovante ? '✔' : '—') + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<div class="empty">Sem movimentos no período.</div>') + '</div>';
+    if (fora.length) h += '<div class="card"><h3>Lançamentos do convênio feitos por outra conta (' + fora.length + ')</h3><div class="g2f-tw"><table class="g2f-tbl"><thead><tr><th>Data</th><th>Descrição</th><th>Conta contábil</th><th>Conta bancária</th><th class="r">Valor</th><th>Comp.</th></tr></thead><tbody>' +
+      fora.map(function (m) { return '<tr><td>' + dataBR(m.data) + '</td><td>' + esc(m.descricao) + '</td><td>' + esc(m.categoria) + (m.contabil ? ' (' + esc(m.contabil) + ')' : '') + '</td><td>' + esc(m.conta || '—') + '</td><td class="r ' + (num(m.valor) < 0 ? 'g2f-neg' : 'g2f-pos') + '">' + brl(m.valor) + '</td><td>' + (m.comprovante ? '✔' : '—') + '</td></tr>'; }).join('') +
+      '</tbody></table></div><div class="g2f-note">Fora dos totais acima. Para entrar na prestação, o pagamento/recebimento precisa passar pela conta bancária do convênio (ou ser transferido para ela).</div></div>';
     h += '<div class="card" style="padding-top:26px"><div style="display:flex;gap:28px;flex-wrap:wrap"><div style="flex:1 1 220px;border-top:1px solid #14161A;padding-top:6px;font-size:12px">' + esc(e.presidente || 'Responsável legal') + '<br><span class="g2f-mut">Assinatura do responsável</span></div>' +
       '<div style="flex:1 1 160px;border-top:1px solid #14161A;padding-top:6px;font-size:12px">Local e data<br><span class="g2f-mut">&nbsp;</span></div></div></div>';
     corpo(h);
@@ -2635,8 +2743,8 @@ function itensAbertos(f) {
     if (!GREP) return; var R = GREP.d || {}, mov = R.movimentos || [];
     if (!mov.length) return toast('Nada para exportar.');
     var cod = {}; (R.porCategoria || []).forEach(function (x) { cod[x.categoria] = x.contabil || ''; });
-    var lin = [['Data', 'Descricao', 'Conta contabil', 'Codigo contabil', 'Favorecido', 'Valor', 'Comprovante']].concat(mov.map(function (m) {
-      return [dataBR(m.data), m.descricao, m.categoria, cod[m.categoria] || '', m.favorecido || '', String(num(m.valor).toFixed(2)).replace('.', ','), m.comprovante ? 'sim' : 'nao'];
+    var lin = [['Data', 'Descricao', 'Conta contabil', 'Codigo contabil', 'Favorecido', 'Valor', 'Comprovante', 'Conta do convenio']].concat(mov.map(function (m) {
+      return [dataBR(m.data), m.descricao, m.categoria, m.contabil || cod[m.categoria] || '', m.favorecido || '', String(num(m.valor).toFixed(2)).replace('.', ','), m.comprovante ? 'sim' : 'nao', m.noConvenio === true ? 'sim' : m.noConvenio === false ? 'nao' : ''];
     }));
     var txt = '\ufeff' + lin.map(function (r) { return r.map(function (c) { c = String(c == null ? '' : c); return /[;"\n]/.test(c) ? '"' + c.replace(/"/g, '""') + '"' : c; }).join(';'); }).join('\r\n');
     var b = new Blob([txt], { type: 'text/csv;charset=utf-8' }), a = document.createElement('a');
@@ -2825,6 +2933,8 @@ function itensAbertos(f) {
         });
       }
       case 'novaCat': return formCat(null);
+      case 'novoGrupoCat': return formCat(null, true);
+      case 'planoModelo': return planoModelo();
       case 'editCat': return formCat(achar(S.cat.categorias, v));
       case 'novoFornec': return formFornec(null);
       case 'editFornec': return formFornec(achar(S.cat.fornecedores, v));
@@ -3032,5 +3142,7 @@ function itensAbertos(f) {
     setCamps: function (c) { CAMPS = c; }, setSent: function (s) { SENT = s; }, filaMsgs: filaMsgs, previstos: previstos, novaEntrada: novaEntrada, novoComp: novoComp, editParc: editParc, zap: zap, receber: receber,
     msgTexto: msgTexto, genParcelas: genParcelas, addMeses: addMeses, bt: bt, carregarCtx: carregarCtx, carregarCat: carregarCat, pintarBase: pintarBase, restaurar: restaurar, manter: manter, corpo: corpo,
     formDesp: formDesp, pagarDesp: pagarDesp, tPagar: tPagar, previaFatura: previaFatura, linhaDesp: linhaDesp, formCorrDesp: formCorrDesp, editMov: editMov, interceptForm: null, formPagarFatura: formPagarFatura, estornarFatura: estornarFatura, itensAbertos: itensAbertos, proximaFatura: proximaFatura, resolverFone: resolverFone, foneDe: foneDe, htmlCamp: htmlCamp, zap: zap, ofertarRecibo: ofertarRecibo, resolverFonesCamp: resolverFonesCamp, totaisCaixa: totaisCaixa, despesasPrevistas: despesasPrevistas, carregarAPagar: carregarAPagar, desenharLivro: desenharLivro, htmlDetCartao: htmlDetCartao, linhaCartao: linhaCartao, parcelasPrevistas: parcelasPrevistas, formImportarFatura: formImportarFatura, parseFatura: parseFatura, conferirFatura: conferirFatura, mesFechamento: mesFechamento, vencFatura: vencFatura,
-    previstasCartao: previstasCartao, setPlanos: function (p) { PLANOS = p; }, setFatimp: function (f) { FATIMP = f; }, setFats: function (f) { FATS = f; }, setDesp: function (d) { DESP = d; }, clique: clique, tConv: tConv, formConv: formConv, setGrants: function (g) { GRANTS = g; }, getGrep: function () { return GREP; } };
+    previstasCartao: previstasCartao, setPlanos: function (p) { PLANOS = p; }, setFatimp: function (f) { FATIMP = f; }, setFats: function (f) { FATS = f; }, setDesp: function (d) { DESP = d; }, clique: clique, tConv: tConv, formConv: formConv, setGrants: function (g) { GRANTS = g; }, getGrep: function () { return GREP; },
+    arvoreCats: arvoreCats, opCats: opCats, opGrupos: opGrupos, ancestrais: ancestrais, formCat: formCat, htmlCatsModelo: htmlCatsModelo, htmlConv: htmlConv,
+    setGrep: function (g) { GREP = g; }, desenharRelConv: desenharRelConv };
 })();
