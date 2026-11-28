@@ -1,4 +1,5 @@
-/* 2Gather v39 · Ministérios · MIN-8
+/* 2Gather v39 · Ministérios · MIN-9
+   MIN-9: botão "Retirar" na Equipe (encerra a participação com motivo; no Kids, sai das escalas futuras — KIDS_12).
    MIN-8: Agenda em cards (dia, mês e dia da semana, "amanhã/daqui a N dias", abas Próximas/Anteriores); no Kids, a escala de
           cada evento no card (fotos com a cor da resposta, confirmados/escalados, alerta < 24 h, salas sem professor, trocas) — KIDS_11.
    MIN-7: no Kids, o Ajustar/Editar evento da Agenda mostra as salas e a escala dos professores (KIDS-9); evento novo do Kids reabre para montar a escala.
@@ -20,7 +21,7 @@
    Diagnóstico no Console: G2_MIN.versao, G2_MIN._s */
 (function () {
   'use strict';
-  var VERSAO = 'MIN-8';
+  var VERSAO = 'MIN-9';
   if (window.G2_MIN) return;
   var M = window.G2_MIN = { versao: VERSAO };
   console.info('[2Gather] ministerios ' + VERSAO);
@@ -411,7 +412,8 @@
       return '<div class="row"><div class="info"><div class="nm">' + esc(p.nome) + ' ' + pill(TIPO[p.tipo] || p.tipo, '#2f6fd6') + (pausa ? ' ' + pill('Pausado', '#c99a1a') : '') + '</div>' +
         '<div class="sb">' + (fun ? esc(fun) : 'sem função definida') + (p.temLogin ? '' : ' · sem acesso ao app (não pode ser escalado)') + '</div>' +
         (pausa && p.motivoPausa ? '<div class="sb">Pausa: ' + esc(p.motivoPausa) + '</div>' : '') + '</div>' +
-        (lid && m.status !== 'closed' ? '<button class="btn gh sm" data-m="editarMembro" data-v="' + esc(p.pessoaId) + '">Alterar</button>' : '') + '</div>';
+        (lid && m.status !== 'closed' ? '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"><button class="btn gh sm" data-m="editarMembro" data-v="' + esc(p.pessoaId) + '">Alterar</button>' +
+          (p.pessoaId === m.liderId || p.pessoaId === m.auxiliarId ? '' : '<button class="btn gh sm" style="color:#c0392b" data-m="retirarMembro" data-v="' + esc(p.pessoaId) + '">Retirar</button>') + '</div>' : '') + '</div>';
     }).join('') + '</div>';
     return h;
   }
@@ -537,10 +539,28 @@
       '<label>Tipo</label><select id="mm-tipo">' + opcoesTipo(p ? p.tipo : 'volunteer') + '</select>' +
       '<label>Funções</label>' + checksFuncoes(m, marc) +
       (novo ? '' : '<label>Situação</label><select id="mm-status"><option value="active"' + (p.status === 'active' ? ' selected' : '') + '>Ativo</option><option value="paused"' + (p.status === 'paused' ? ' selected' : '') + '>Pausado</option><option value="ended">Encerrar participação</option></select>' +
-        '<label>Motivo (obrigatório para pausar ou encerrar)</label><input id="mm-motivo">') +
+        '<label>Motivo (obrigatório para pausar ou encerrar)</label><input id="mm-motivo">' + (minAtual() && minAtual().tipo === 'kids' ? '<div class="sb">Ao pausar ou encerrar, a pessoa sai das escalas dos próximos cultos do Kids.</div>' : '')) +
       '<div class="gap"></div><button class="btn pr" data-m="salvarMembro">Salvar</button>' +
       '<div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>');
     S.busca = { q: '', res: [], sel: null, t: 0, ministerio: m.id };
+  }
+  /* MIN-9: retirar da equipe = encerrar a participação (nada é apagado; histórico fica) */
+  function formRetirar(p) {
+    var m = minAtual(); if (!m) return;
+    modal('<h2>Retirar ' + esc(p.nome) + '</h2><div class="ini-sub">A pessoa sai da equipe de ' + esc(m.nome) + '. O histórico fica guardado e ela pode ser incluída de novo depois.' +
+      (m.tipo === 'kids' ? '<br><b>No Kids, ela também sai das escalas dos próximos cultos</b> e recebe um aviso no app.' : '') + '</div>' +
+      '<label>Motivo *</label><input id="mr-motivo" maxlength="300" placeholder="Ex.: mudou de igreja">' +
+      '<div class="gap"></div><button class="btn pr" style="background:#c0392b" data-m="confirmarRetirar" data-v="' + esc(p.pessoaId) + '">Retirar da equipe</button>' +
+      '<div class="gap"></div><button class="btn gh" data-a="fechar">Cancelar</button>');
+  }
+  function confirmarRetirar(pid) {
+    var l = S.membros[S.atual], p = Array.isArray(l) && l.filter(function (x) { return x.pessoaId === pid; })[0]; if (!p) return;
+    var mot = $('mr-motivo') ? $('mr-motivo').value.trim() : ''; if (!mot) return toast('Informe o motivo.', true);
+    rpc('v39_min_member_set', { p: { ministerioId: S.atual, pessoaId: pid, tipo: p.tipo, funcoes: (p.funcoes || []).map(function (f) { return f.id; }), status: 'ended', motivo: mot } }).then(function () {
+      fecharModal(); toast(p.nome + ' saiu da equipe.'); var id = S.atual; delete S.membros[id]; delete AG.resumo[id];
+      if (window.G2_ESCALA && G2_ESCALA.recarregar) G2_ESCALA.recarregar();
+      return carregarLista(true).then(function () { carregarDetalhe(id, true); });
+    }).catch(function (e) { toast(traduz(e), true); });
   }
   function salvarMembro() {
     var pes = $('mm-pessoa') && $('mm-pessoa').value;
@@ -641,6 +661,8 @@
     novoMembro: function () { formMembro(null); },
     editarMembro: function (v) { var l = S.membros[S.atual]; var p = Array.isArray(l) && l.filter(function (x) { return x.pessoaId === v; })[0]; if (p) formMembro(p); },
     salvarMembro: salvarMembro,
+    retirarMembro: function (v) { var l = S.membros[S.atual]; var p = Array.isArray(l) && l.filter(function (x) { return x.pessoaId === v; })[0]; if (p) formRetirar(p); },
+    confirmarRetirar: confirmarRetirar,
     novoEv: function () { formEvento(null); },
     ajustarEv: function (v) { var l = S.eventos[S.atual]; var e = Array.isArray(l) && l.filter(function (x) { return x.id === v; })[0]; if (e) formEvento(e); },
     salvarEv: salvarEv,

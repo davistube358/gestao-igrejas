@@ -3,7 +3,7 @@
    - Arquivos do app (HTML/JS/CSS/config) sempre buscados na internet primeiro, sem cache HTTP.
    - Sem internet: usa a última cópia guardada.
    - Pré-cache tolerante: um arquivo ausente não impede a instalação da versão nova. */
-var VERSAO = '2gather-v39-kids11b';   // ESCALA-4 (sino recarrega após o login). Antes: kids11
+var VERSAO = '2gather-v39-kids12';   // KIDS-11/ESCALA-5/MIN-9 (sino na hora; Retirar da equipe). Antes: kids11b
 var PRECACHE = ['./', './index.html', './manifest.webmanifest', './config.js', './app.js', './icons/icon-192.png'];
 
 self.addEventListener('install', function (e) {

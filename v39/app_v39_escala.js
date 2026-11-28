@@ -1,4 +1,5 @@
-/* 2Gather v39 · Avisos pessoais (sino) e "Minhas escalas" · ESCALA-4 (KIDS_4)
+/* 2Gather v39 · Avisos pessoais (sino) e "Minhas escalas" · ESCALA-5 (KIDS_4)
+   ESCALA-5: atualiza a cada render após 15 s (antes 60 s) e a cada 60 s com o app aberto (antes 2 min); recarregar() chamado pelo Kids ao salvar.
    ESCALA-4: o sino não esperava o login: a 1ª busca falhava (sem sessão) e só tentava de novo após 2 min. Agora tenta de novo em
              poucos segundos, recarrega ao entrar/trocar de conta ou igreja e ao voltar para o app.
    ESCALA-3: o caminho para escalar agora é Kids → Agenda → Ajustar evento (salas e escala).
@@ -11,7 +12,7 @@
    O WhatsApp continua pelo wa.me do líder (na sala do culto, módulo Kids); depois vira mensagem automática pela API. */
 (function () {
   'use strict';
-  var VERSAO = 'ESCALA-4';
+  var VERSAO = 'ESCALA-5';
   if (window.G2_ESCALA) return;
   console.info('[2Gather] escala ' + VERSAO);
 
@@ -214,10 +215,10 @@
       if (ch !== E.chave) { E.chave = ch; E.n = 0; E.itens = []; E.esc = null; E.kids = []; E.kidsEm = 0; E.em = 0; E.tentativas = 0; }   // ESCALA-4: entrou/trocou de conta ou igreja
       E.inicio = !!ehInicio && v39();
       pintarSino(); pintarCard();
-      if (Date.now() - E.em > 60000) carregar();
+      if (Date.now() - E.em > 15000) carregar();
     },
-    recarregar: function () { E.em = 0; return carregar(); }
+    recarregar: function () { E.em = 0; if (E.carregando) { setTimeout(function () { carregar(); }, 1500); return Promise.resolve(); } return carregar(); }
   };
-  setInterval(function () { if (!document.hidden && cfg().token) carregar(); }, 120000);
-  document.addEventListener('visibilitychange', function () { if (!document.hidden && Date.now() - E.em > 60000 && cfg().token) carregar(); });
+  setInterval(function () { if (!document.hidden && cfg().token) carregar(); }, 60000);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && Date.now() - E.em > 15000 && cfg().token) carregar(); });
 })();
